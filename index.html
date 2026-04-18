@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRP Manager</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
+:root {
+  --bg:#0b0d12; --surface:#12151d; --card:#181b24; --card2:#1e2230; --border:#252a38;
+  --accent:#4ade80; --accent2:#38bdf8; --warn:#fbbf24; --danger:#f87171;
+  --text:#e2e8f0; --muted:#64748b;
+  --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif; --r:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;display:flex;flex-direction:column;}
+::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+
+/* Header */
+header{background:var(--surface);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;position:sticky;top:0;z-index:100;gap:1rem;}
+.logo{font-family:var(--mono);font-weight:700;font-size:1rem;display:flex;align-items:center;gap:.5rem;white-space:nowrap;}
+.logo-dot{color:var(--accent);font-size:1.1rem;}
+.ver-badge{font-family:var(--mono);font-size:.63rem;background:rgba(74,222,128,.1);color:var(--accent);border:1px solid rgba(74,222,128,.2);padding:.14rem .48rem;border-radius:999px;}
+.btn-logout{font-size:.71rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:.23rem .62rem;cursor:pointer;font-family:var(--sans);transition:all .15s;}
+.btn-logout:hover{color:var(--danger);border-color:rgba(248,113,113,.4);}
+
+/* Nav */
+nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 1.5rem;overflow-x:auto;}
+.tab{padding:.68rem 1.1rem;font-size:.81rem;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .15s;user-select:none;}
+.tab:hover{color:var(--text);}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+/* Main */
+main{flex:1;padding:1.2rem 1.5rem;max-width:1280px;width:100%;margin:0 auto;}
+.section{display:none;}.section.active{display:block;}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:1.1rem 1.25rem;margin-bottom:.85rem;}
+.card-title{font-size:.69rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.9rem;display:flex;align-items:center;gap:.45rem;}
+.card-title .tip{font-size:.67rem;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);opacity:.7;font-style:italic;}
+
+/* Buttons */
+.btn{font-family:var(--sans);font-size:.73rem;font-weight:600;padding:.37rem .78rem;border-radius:6px;border:1px solid transparent;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:.28rem;white-space:nowrap;}
+.btn:disabled{opacity:.4;cursor:default;}
+.btn-primary{background:rgba(74,222,128,.11);color:var(--accent);border-color:rgba(74,222,128,.22);}
+.btn-primary:hover:not(:disabled){background:rgba(74,222,128,.21);}
+.btn-danger{background:rgba(248,113,113,.11);color:var(--danger);border-color:rgba(248,113,113,.22);}
+.btn-danger:hover:not(:disabled){background:rgba(248,113,113,.21);}
+.btn-secondary{background:rgba(100,116,139,.09);color:var(--muted);border-color:rgba(100,116,139,.18);}
+.btn-secondary:hover:not(:disabled){background:rgba(100,116,139,.18);color:var(--text);}
+.btn-info{background:rgba(56,189,248,.11);color:var(--accent2);border-color:rgba(56,189,248,.22);}
+.btn-info:hover:not(:disabled){background:rgba(56,189,248,.21);}
+.btn-warn{background:rgba(251,191,36,.11);color:var(--warn);border-color:rgba(251,191,36,.22);}
+.btn-warn:hover:not(:disabled){background:rgba(251,191,36,.21);}
+.btn-row{display:flex;gap:.38rem;flex-wrap:wrap;}
+
+/* Instance cards */
+.inst-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(295px,1fr));gap:.8rem;margin-bottom:.8rem;}
+.inst-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:1.05rem;position:relative;overflow:hidden;}
+.inst-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;transition:background .3s;}
+.inst-card.running::before{background:var(--accent);}
+.inst-card.stopped::before{background:var(--danger);}
+.inst-card.unknown::before{background:var(--border);}
+.inst-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;}
+.inst-name{font-family:var(--mono);font-weight:700;font-size:1.02rem;}
+.inst-name .tl{color:var(--accent2);}
+.inst-name.srv .tl{color:var(--accent);}
+.pill{font-family:var(--mono);font-size:.63rem;font-weight:600;padding:.16rem .52rem;border-radius:999px;display:flex;align-items:center;gap:.28rem;}
+.pill.active{background:rgba(74,222,128,.09);color:var(--accent);border:1px solid rgba(74,222,128,.18);}
+.pill.inactive{background:rgba(248,113,113,.09);color:var(--danger);border:1px solid rgba(248,113,113,.18);}
+.pill.unknown{background:rgba(100,116,139,.09);color:var(--muted);border:1px solid rgba(100,116,139,.18);}
+.pdot{width:5px;height:5px;border-radius:50%;background:currentColor;}
+.pdot.pulse{animation:pulse 1.4s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.inst-meta{display:flex;flex-direction:column;gap:.26rem;margin-bottom:.85rem;font-size:.73rem;}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:.5rem;}
+.mkey{color:var(--muted);flex-shrink:0;}
+.mval{font-family:var(--mono);font-size:.66rem;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:185px;}
+.mval.ok{color:var(--accent);}.mval.err{color:var(--danger);}.mval.ver{color:var(--accent2);}
+
+/* Detect banner */
+.det-banner{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:.72rem 1rem;margin-bottom:.8rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;}
+.det-text{font-family:var(--mono);font-size:.7rem;color:var(--muted);}
+
+/* Tooltip */
+.tip-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:rgba(100,116,139,.18);color:var(--muted);font-size:.58rem;cursor:help;flex-shrink:0;position:relative;}
+.tip-i:hover::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 5px);transform:translateX(-50%);background:#1e2230;border:1px solid var(--border);border-radius:6px;padding:.38rem .58rem;font-size:.67rem;white-space:pre;width:max-content;max-width:220px;color:var(--text);pointer-events:none;z-index:60;line-height:1.6;font-family:var(--sans);}
+
+/* Form */
+.fcols{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:.72rem;}
+.ffield{display:flex;flex-direction:column;gap:.28rem;}
+.flabel{font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:.32rem;}
+.fkey{font-family:var(--mono);font-size:.6rem;color:var(--accent2);background:rgba(56,189,248,.07);padding:.07rem .28rem;border-radius:3px;}
+.finput{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.4rem .62rem;font-family:var(--mono);font-size:.76rem;outline:none;transition:border-color .15s;width:100%;}
+.finput:focus{border-color:var(--accent2);}
+.finput:disabled{opacity:.33;cursor:not-allowed;}
+select.finput{cursor:pointer;}
+.fsect{margin-bottom:.95rem;}
+.fsect-head{font-size:.67rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.62rem;padding-bottom:.38rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.38rem;}
+.port-f .finput{border-color:rgba(56,189,248,.2);}
+.port-f .finput:focus{border-color:var(--accent2);}
+
+/* Token */
+.tok-wrap{display:flex;gap:.35rem;align-items:center;}
+.tok-wrap .finput{flex:1;}
+
+/* Toggle */
+.tog{position:relative;display:inline-block;width:31px;height:17px;flex-shrink:0;}
+.tog input{opacity:0;width:0;height:0;}
+.sldr{position:absolute;inset:0;background:var(--border);border-radius:17px;cursor:pointer;transition:background .2s;}
+.sldr::before{content:'';position:absolute;width:11px;height:11px;left:3px;top:3px;background:var(--muted);border-radius:50%;transition:all .2s;}
+.tog input:checked + .sldr{background:rgba(74,222,128,.32);}
+.tog input:checked + .sldr::before{transform:translateX(14px);background:var(--accent);}
+.tog-row{display:flex;align-items:center;gap:.55rem;font-size:.76rem;cursor:pointer;}
+
+/* Adv */
+.adv-btn{font-size:.7rem;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:.32rem;padding:.45rem 0;user-select:none;width:fit-content;}
+.adv-btn:hover{color:var(--text);}
+.adv-body{display:none;padding-top:.5rem;}
+.adv-body.open{display:block;}
+.adv-arr{transition:transform .2s;font-size:.58rem;display:inline-block;}
+.adv-arr.open{transform:rotate(90deg);}
+
+/* Mode bar */
+.mode-bar{display:flex;gap:.28rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.18rem;width:fit-content;}
+.mbtn{font-size:.7rem;padding:.26rem .62rem;border-radius:4px;border:none;background:none;color:var(--muted);cursor:pointer;font-family:var(--sans);font-weight:500;transition:all .15s;}
+.mbtn.active{background:rgba(56,189,248,.11);color:var(--accent2);}
+
+/* Proxy */
+.px-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.82rem;margin-bottom:.6rem;}
+.px-head{display:flex;align-items:center;gap:.45rem;margin-bottom:.62rem;}
+.px-badge{font-family:var(--mono);font-size:.6rem;font-weight:700;padding:.1rem .42rem;border-radius:4px;background:rgba(56,189,248,.1);color:var(--accent2);border:1px solid rgba(56,189,248,.18);}
+.px-namelbl{font-family:var(--mono);font-size:.76rem;color:var(--text);}
+.px-del{margin-left:auto;background:none;border:none;color:var(--danger);cursor:pointer;opacity:.5;font-size:.88rem;transition:opacity .15s;padding:0 .22rem;}
+.px-del:hover{opacity:1;}
+
+/* Logs */
+.log-area{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.82rem;font-family:var(--mono);font-size:.68rem;color:#94a3b8;height:480px;overflow-y:auto;white-space:pre;overflow-x:auto;line-height:1.55;}
+.lerr{color:var(--danger);}.lwarn{color:var(--warn);}.lok{color:var(--accent);}
+.live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--danger);animation:pulse 1s infinite;margin-right:.3rem;}
+
+/* Update log */
+.upd-log{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.82rem;font-family:var(--mono);font-size:.7rem;height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;}
+.uok{color:var(--accent);}.uerr{color:var(--danger);}.uinfo{color:var(--accent2);}
+
+/* Info rows */
+.irow{display:flex;justify-content:space-between;align-items:center;padding:.48rem 0;border-bottom:1px solid var(--border);font-size:.78rem;}
+.irow:last-child{border-bottom:none;}
+.ilabel{color:var(--muted);}
+.ival{font-family:var(--mono);font-weight:600;font-size:.73rem;}
+
+/* Settings */
+.srow{display:flex;align-items:center;justify-content:space-between;padding:.62rem 0;border-bottom:1px solid var(--border);gap:1rem;}
+.srow:last-child{border-bottom:none;}
+.stitle{font-size:.8rem;font-weight:500;margin-bottom:.14rem;}
+.sdesc{font-size:.69rem;color:var(--muted);line-height:1.5;}
+
+/* Grids */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:.82rem;}
+@media(max-width:680px){.g2{grid-template-columns:1fr;}}
+
+/* Conn item */
+.conn-item{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.62rem .78rem;}
+.conn-name{font-family:var(--mono);font-size:.7rem;font-weight:700;}
+.conn-ver{font-size:.66rem;color:var(--muted);margin-top:.13rem;font-family:var(--mono);}
+
+/* Toast */
+#toast{position:fixed;bottom:1.2rem;right:1.2rem;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:.62rem .95rem;font-size:.76rem;font-family:var(--mono);transform:translateY(55px);opacity:0;transition:all .2s;z-index:999;max-width:330px;pointer-events:none;}
+#toast.show{transform:translateY(0);opacity:1;}
+#toast.ok{border-color:rgba(74,222,128,.4);color:var(--accent);}
+#toast.err{border-color:rgba(248,113,113,.4);color:var(--danger);}
+#toast.info{border-color:rgba(56,189,248,.4);color:var(--accent2);}
+
+input[type=file]{font-family:var(--mono);font-size:.7rem;color:var(--muted);background:var(--bg);border:1px dashed var(--border);border-radius:6px;padding:.38rem .62rem;cursor:pointer;width:100%;}
+input[type=file]:hover{border-color:var(--accent2);}
+code{font-family:var(--mono);font-size:.76rem;color:var(--accent2);background:rgba(56,189,248,.07);padding:.09rem .33rem;border-radius:4px;}
+pre.cblock{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.62rem .82rem;font-family:var(--mono);font-size:.7rem;color:var(--text);line-height:1.6;overflow-x:auto;margin:.35rem 0;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="logo-dot">⬡</span> FRP Manager</div>
+  <div style="display:flex;align-items:center;gap:.7rem;">
+    <span class="ver-badge" id="ver-badge">—</span>
+    <button class="btn-logout" onclick="doLogout()">Déconnexion</button>
+  </div>
+</header>
+
+<nav>
+  <div class="tab active" data-tab="overview">Vue d'ensemble</div>
+  <div class="tab" data-tab="config">Configuration</div>
+  <div class="tab" data-tab="logs">Logs</div>
+  <div class="tab" data-tab="update">Mise à jour</div>
+  <div class="tab" data-tab="settings">Paramètres</div>
+</nav>
+
+<main>
+
+<!-- ══ OVERVIEW ══ -->
+<div class="section active" id="tab-overview">
+  <div class="det-banner" id="det-banner">
+    <span class="det-text" id="det-text">🔍 Détection en cours…</span>
+    <button class="btn btn-secondary" onclick="runDetect()">↺ Relancer</button>
+  </div>
+  <div class="inst-grid" id="inst-grid"></div>
+  <div class="card">
+    <div class="card-title">Actions globales</div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="refreshStatus()">↻ Actualiser</button>
+      <button class="btn btn-warn" onclick="switchTab('update')">⬆ Mises à jour</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIG ══ -->
+<div class="section" id="tab-config">
+  <div class="card" style="padding:.72rem 1.1rem;margin-bottom:.75rem;">
+    <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;">
+      <select class="finput" id="cfg-sel" onchange="onCfgSel()" style="width:auto;min-width:155px;"></select>
+      <div class="mode-bar">
+        <button class="mbtn active" id="mb-form" onclick="setMode('form')">⊞ Formulaire</button>
+        <button class="mbtn" id="mb-raw" onclick="setMode('raw')">⌨ TOML brut</button>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:.38rem;">
+        <button class="btn btn-primary" onclick="saveConfig()">💾 Sauvegarder</button>
+        <button class="btn btn-secondary" onclick="saveReload()">💾 + ⟳</button>
+        <button class="btn btn-secondary" onclick="loadConfig()">↩</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cfg-form">
+
+    <!-- frps -->
+    <div id="frps-form" style="display:none;">
+      <div class="card">
+        <div class="card-title">🌐 Ports & authentification <span class="tip">l'essentiel à configurer</span></div>
+        <div class="fsect">
+          <div class="fcols">
+            <div class="ffield port-f">
+              <label class="flabel">Port principal <span class="fkey">bindPort</span> <span class="tip-i" data-tip="Port sur lequel frps attend les connexions
+des clients frpc. Doit être ouvert
+dans votre firewall.">?</span></label>
+              <input class="finput" id="s-bindPort" type="number" value="7000" min="1" max="65535">
+            </div>
+            <div class="ffield">
+              <label class="flabel">Adresse <span class="fkey">bindAddr</span> <span class="tip-i" data-tip="IP d'écoute. 0.0.0.0 = toutes les interfaces.">?</span></label>
+              <input class="finput" id="s-bindAddr" type="text" value="0.0.0.0">
+            </div>
+            <div class="ffield">
+              <label class="flabel">Auth <span class="fkey">auth.method</span> <span class="tip-i" data-tip="token = clé secrète partagée (simple).
+oidc = OpenID Connect pour les entreprises.">?</span></label>
+              <select class="finput" id="s-authmethod"><option value="token">token</option><option value="oidc">oidc</option></select>
+            </div>
+            <div class="ffield">
+              <label class="flabel">Token secret <span class="fkey">auth.token</span> <span class="tip-i" data-tip="Clé partagée avec frpc. Doit être identique des deux côtés.">?</span></label>
+              <div class="tok-wrap">
+                <input class="finput" id="s-authtoken" type="password" placeholder="votre-token-secret">
+                <button class="btn btn-secondary" onclick="toggleTok('s-authtoken')" style="padding:.37rem .52rem;">👁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="fsect">
+          <div class="fsect-head">📊 Dashboard web <span class="tip-i" data-tip="Interface web intégrée de frps.
+Permet de voir les clients connectés et les statistiques de trafic en temps réel.">?</span></div>
+          <div style="margin-bottom:.6rem;">
+            <label class="tog-row"><div class="tog"><input type="checkbox" id="s-ws-en" onchange="tg('s-ws-g',this.checked)"><span class="sldr"></span></div>Activer le dashboard</label>
+          </div>
+          <div id="s-ws-g" class="fcols" style="opacity:.33;pointer-events:none;">
+            <div class="ffield port-f"><label class="flabel">Port <span class="fkey">webServer.port</span></label><input class="finput" id="s-ws-port" type="number" value="7500"></div>
+            <div class="ffield"><label class="flabel">Adresse <span class="fkey">webServer.addr</span></label><input class="finput" id="s-ws-addr" type="text" value="0.0.0.0"></div>
+            <div class="ffield"><label class="flabel">Utilisateur <span class="fkey">webServer.user</span></label><input class="finput" id="s-ws-user" type="text" value="admin"></div>
+            <div class="ffield"><label class="flabel">Mot de passe <span class="fkey">webServer.password</span></label><input class="finput" id="s-ws-pass" type="password" placeholder="changeme"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="adv-btn" onclick="tgAdv('s-adv')"><span class="adv-arr" id="s-adv-arr">▶</span> Options avancées <span style="font-size:.67rem;color:var(--muted);font-style:italic;">TLS, ports optionnels, performance, logs</span></div>
+        <div class="adv-body" id="s-adv">
+          <div class="fsect">
+            <div class="fsect-head">🔒 TLS <span class="tip-i" data-tip="Chiffrement de la connexion entre frpc et frps.
+Nécessite des certificats SSL/TLS.">?</span></div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="s-tls-en" onchange="tg('s-tls-g',this.checked)"><span class="sldr"></span></div>Activer TLS</label></div>
+            <div id="s-tls-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield"><label class="flabel">Certificat <span class="fkey">transport.tls.certFile</span></label><input class="finput" id="s-tls-cert" type="text" placeholder="/etc/frp/server.crt"></div>
+              <div class="ffield"><label class="flabel">Clé privée <span class="fkey">transport.tls.keyFile</span></label><input class="finput" id="s-tls-key" type="text" placeholder="/etc/frp/server.key"></div>
+              <div class="ffield"><label class="flabel">CA cert <span class="fkey">transport.tls.trustedCaFile</span></label><input class="finput" id="s-tls-ca" type="text" placeholder="/etc/frp/ca.crt"></div>
+              <div class="ffield"><label class="tog-row" style="padding-top:.75rem;"><div class="tog"><input type="checkbox" id="s-tls-force"><span class="sldr"></span></div><span style="font-size:.73rem;">Forcer TLS (rejeter non-TLS)</span></label></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚡ Ports optionnels</div>
+            <div class="fcols">
+              <div class="ffield port-f"><label class="flabel">KCP <span class="fkey">kcpBindPort</span> <span class="tip-i" data-tip="Alternative UDP, meilleures perfs sur mauvaises connexions.">?</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-kcp-en" onchange="ti('s-kcp',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-kcp" type="number" value="7000" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">QUIC <span class="fkey">quicBindPort</span> <span class="tip-i" data-tip="Protocole HTTP/3 basé sur UDP.">?</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-quic-en" onchange="ti('s-quic',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-quic" type="number" value="7002" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">vhost HTTP <span class="fkey">vhostHTTPPort</span> <span class="tip-i" data-tip="Pour exposer des services HTTP avec un domaine personnalisé.">?</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-vh-en" onchange="ti('s-vh',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-vh" type="number" value="80" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">vhost HTTPS <span class="fkey">vhostHTTPSPort</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-vhs-en" onchange="ti('s-vhs',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-vhs" type="number" value="443" min="1" max="65535" disabled></div></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚙️ Limites & performance</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Max ports/client <span class="fkey">maxPortsPerClient</span> <span class="tip-i" data-tip="0 = illimité. Limite les proxies par client.">?</span></label><input class="finput" id="s-maxports" type="number" value="0" min="0"></div>
+              <div class="ffield"><label class="flabel">Pool connexions <span class="fkey">transport.maxPoolCount</span> <span class="tip-i" data-tip="Connexions pré-établies pour réduire la latence.">?</span></label><input class="finput" id="s-pool" type="number" value="5" min="0"></div>
+              <div class="ffield"><label class="flabel">Heartbeat timeout <span class="fkey">transport.heartbeatTimeout</span></label><input class="finput" id="s-hbt" type="number" value="90" min="1"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📝 Logs</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Fichier <span class="fkey">log.to</span></label><input class="finput" id="s-logto" type="text" value="/var/log/frp/frps.log"></div>
+              <div class="ffield"><label class="flabel">Niveau <span class="fkey">log.level</span></label><select class="finput" id="s-loglvl"><option>trace</option><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></div>
+              <div class="ffield"><label class="flabel">Rétention jours <span class="fkey">log.maxDays</span></label><input class="finput" id="s-logdays" type="number" value="3" min="1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /frps -->
+
+    <!-- frpc -->
+    <div id="frpc-form" style="display:none;">
+      <div class="card">
+        <div class="card-title">🌐 Connexion au serveur <span class="tip">configurez l'adresse de votre VPS et le token</span></div>
+        <div class="fsect">
+          <div class="fcols">
+            <div class="ffield"><label class="flabel">Adresse serveur <span class="fkey">serverAddr</span> <span class="tip-i" data-tip="IP ou domaine du VPS où tourne frps.">?</span></label><input class="finput" id="c-addr" type="text" placeholder="IP ou domaine du VPS"></div>
+            <div class="ffield port-f"><label class="flabel">Port serveur <span class="fkey">serverPort</span> <span class="tip-i" data-tip="Doit correspondre au bindPort de frps.">?</span></label><input class="finput" id="c-port" type="number" value="7000" min="1" max="65535"></div>
+            <div class="ffield"><label class="flabel">Auth <span class="fkey">auth.method</span></label><select class="finput" id="c-authmethod"><option value="token">token</option><option value="oidc">oidc</option></select></div>
+            <div class="ffield"><label class="flabel">Token <span class="fkey">auth.token</span></label><div class="tok-wrap"><input class="finput" id="c-authtoken" type="password" placeholder="même token que frps"><button class="btn btn-secondary" onclick="toggleTok('c-authtoken')" style="padding:.37rem .52rem;">👁</button></div></div>
+            <div class="ffield"><label class="flabel">Protocole <span class="fkey">transport.protocol</span> <span class="tip-i" data-tip="tcp : standard et stable.
+kcp : UDP, meilleures perfs sur liens dégradés.
+quic : HTTP/3.
+websocket : passe par les proxies HTTP.">?</span></label><select class="finput" id="c-proto"><option value="tcp">tcp (défaut)</option><option value="kcp">kcp</option><option value="quic">quic</option><option value="websocket">websocket</option><option value="wss">wss</option></select></div>
+          </div>
+        </div>
+        <div class="fsect">
+          <div class="fsect-head">🔌 Tunnels (proxies) <span class="tip-i" data-tip="Chaque tunnel expose un service local sur le serveur.
+Ex: SSH local port 22 → serveur port 6022.">?</span></div>
+          <div id="px-list"></div>
+          <button class="btn btn-info" onclick="addProxy()" style="margin-top:.35rem;">+ Ajouter un tunnel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="adv-btn" onclick="tgAdv('c-adv')"><span class="adv-arr" id="c-adv-arr">▶</span> Options avancées</div>
+        <div class="adv-body" id="c-adv">
+          <div class="fsect">
+            <div class="fsect-head">🔒 TLS</div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="c-tls-en" onchange="tg('c-tls-g',this.checked)"><span class="sldr"></span></div>Activer TLS</label></div>
+            <div id="c-tls-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield"><label class="flabel">Cert <span class="fkey">transport.tls.certFile</span></label><input class="finput" id="c-tls-cert" type="text" placeholder="/etc/frp/client.crt"></div>
+              <div class="ffield"><label class="flabel">Clé <span class="fkey">transport.tls.keyFile</span></label><input class="finput" id="c-tls-key" type="text" placeholder="/etc/frp/client.key"></div>
+              <div class="ffield"><label class="flabel">CA <span class="fkey">transport.tls.trustedCaFile</span></label><input class="finput" id="c-tls-ca" type="text" placeholder="/etc/frp/ca.crt"></div>
+              <div class="ffield"><label class="flabel">Server name <span class="fkey">transport.tls.serverName</span></label><input class="finput" id="c-tls-sn" type="text" placeholder="mon-vps.example.com"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📊 Dashboard local <span class="tip-i" data-tip="Interface web locale pour voir les proxies actifs de frpc.">?</span></div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="c-ws-en" onchange="tg('c-ws-g',this.checked)"><span class="sldr"></span></div>Activer dashboard</label></div>
+            <div id="c-ws-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield port-f"><label class="flabel">Port <span class="fkey">webServer.port</span></label><input class="finput" id="c-ws-port" type="number" value="7400"></div>
+              <div class="ffield"><label class="flabel">Adresse <span class="fkey">webServer.addr</span></label><input class="finput" id="c-ws-addr" type="text" value="127.0.0.1"></div>
+              <div class="ffield"><label class="flabel">User <span class="fkey">webServer.user</span></label><input class="finput" id="c-ws-user" type="text" value="admin"></div>
+              <div class="ffield"><label class="flabel">Pass <span class="fkey">webServer.password</span></label><input class="finput" id="c-ws-pass" type="password"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚙️ Performance & réseau</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Pool <span class="fkey">transport.poolCount</span></label><input class="finput" id="c-pool" type="number" value="5" min="0"></div>
+              <div class="ffield"><label class="flabel">Heartbeat interval <span class="fkey">transport.heartbeatInterval</span></label><input class="finput" id="c-hbi" type="number" value="30" min="1"></div>
+              <div class="ffield"><label class="flabel">DNS <span class="fkey">dnsServer</span></label><input class="finput" id="c-dns" type="text" placeholder="8.8.8.8 (optionnel)"></div>
+              <div class="ffield"><label class="flabel">Proxy HTTP <span class="fkey">transport.proxyURL</span></label><input class="finput" id="c-purl" type="text" placeholder="http://proxy:8080 (optionnel)"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📝 Logs</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Fichier <span class="fkey">log.to</span></label><input class="finput" id="c-logto" type="text" value="/var/log/frp/frpc.log"></div>
+              <div class="ffield"><label class="flabel">Niveau <span class="fkey">log.level</span></label><select class="finput" id="c-loglvl"><option>trace</option><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></div>
+              <div class="ffield"><label class="flabel">Rétention <span class="fkey">log.maxDays</span></label><input class="finput" id="c-logdays" type="number" value="3" min="1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /frpc -->
+
+  </div><!-- /cfg-form -->
+
+  <div id="cfg-raw" style="display:none;">
+    <div class="card">
+      <div class="card-title">TOML brut <span class="tip">édité directement — formulaire non synchronisé</span></div>
+      <textarea class="finput" id="raw-area" spellcheck="false" style="min-height:460px;resize:vertical;line-height:1.6;"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LOGS ══ -->
+<div class="section" id="tab-logs">
+  <div class="card" style="padding:.72rem 1.1rem;margin-bottom:.75rem;">
+    <div style="display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;">
+      <select class="finput" id="log-sel" style="width:auto;min-width:125px;" onchange="loadLogs()"></select>
+      <select class="finput" id="log-src" style="width:auto;" onchange="loadLogs()">
+        <option value="journal">journalctl</option>
+        <option value="file">Fichier log</option>
+      </select>
+      <button class="btn btn-secondary" onclick="loadLogs()">↻</button>
+      <button class="btn btn-info" id="btn-live" onclick="toggleLive()">● Live</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('log-area').scrollTop=9999">⬇</button>
+      <span id="live-ind" style="display:none;font-size:.7rem;color:var(--danger);font-family:var(--mono);"><span class="live-dot"></span>LIVE</span>
+    </div>
+  </div>
+  <div class="card" style="padding:.75rem;"><div class="log-area" id="log-area">Sélectionnez un service…</div></div>
+</div>
+
+<!-- ══ UPDATE ══ -->
+<div class="section" id="tab-update">
+  <div class="g2" style="margin-bottom:.82rem;">
+    <div class="card">
+      <div class="card-title">Versions <span class="tip-i" data-tip="Vérifie la dernière version disponible sur GitHub ou via le relay ProDesk.">?</span></div>
+      <div class="irow"><span class="ilabel">Installée</span><span class="ival" id="u-inst">—</span></div>
+      <div class="irow"><span class="ilabel">Disponible</span><span class="ival" id="u-latest">—</span></div>
+      <div class="irow"><span class="ilabel">Source</span><span class="ival" id="u-src">—</span></div>
+      <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="u-status">—</span></div>
+      <br>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="checkUpdate()">🔍 Vérifier</button>
+        <button class="btn btn-warn" onclick="installUpdate()">⬆ Installer</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Log d'installation</div>
+      <div class="upd-log" id="upd-log">En attente…</div>
+      <br><div class="btn-row"><button class="btn btn-secondary" onclick="pollLog()">↻ Rafraîchir</button></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">📦 Installation manuelle <span class="tip">si GitHub et tous les miroirs sont inaccessibles</span></div>
+    <p style="font-size:.73rem;color:var(--muted);margin-bottom:.82rem;line-height:1.7;">Téléchargez <code>frp_X.X.X_linux_amd64.tar.gz</code> depuis <strong style="color:var(--text)">github.com/fatedier/frp/releases</strong> sur votre machine locale, puis uploadez-le ci-dessous.</p>
+    <div style="display:flex;gap:.62rem;align-items:flex-end;flex-wrap:wrap;">
+      <div><div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Version (ex: 0.68.1)</div><input class="finput" id="u-ver" type="text" placeholder="0.68.1" style="width:125px;"></div>
+      <div style="flex:1;min-width:190px;"><div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Archive .tar.gz</div><input type="file" id="u-file" accept=".tar.gz,.gz"></div>
+      <button class="btn btn-primary" onclick="uploadInstall()">⬆ Installer</button>
+    </div>
+  </div>
+
+
+  <div class="card">
+    <div class="card-title">🌐 Connectivité — sources</div>
+    <div id="conn-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:.62rem;margin-bottom:.72rem;"><div style="color:var(--muted);font-size:.76rem;">Cliquez sur Tester…</div></div>
+    <button class="btn btn-secondary" onclick="testConn()">🔌 Tester</button>
+  </div>
+</div>
+
+<!-- ══ SETTINGS ══ -->
+<div class="section" id="tab-settings">
+  <div class="g2">
+    <div class="card">
+      <div class="card-title">⚙️ Paramètres généraux <span class="tip-i" data-tip="Nécessite un redémarrage de frp-manager pour bind_host/bind_port.">?</span></div>
+      <div class="fcols" style="margin-bottom:.85rem;">
+        <div class="ffield port-f"><label class="flabel">Port interface <span class="fkey">bind_port</span> <span class="tip-i" data-tip="Port de cette interface web.
+Redémarrage requis pour prendre effet.">?</span></label><input class="finput" id="m-port" type="number" value="8765" min="1" max="65535"></div>
+        <div class="ffield"><label class="flabel">IP d'écoute <span class="fkey">bind_host</span> <span class="tip-i" data-tip="0.0.0.0 = toutes les IPs.
+127.0.0.1 = local uniquement.">?</span></label><input class="finput" id="m-host" type="text" value="0.0.0.0"></div>
+        <div class="ffield"><label class="flabel">Timeout session (sec) <span class="fkey">session_timeout</span></label><input class="finput" id="m-timeout" type="number" value="3600" min="300"></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-primary" onclick="saveMgr()">💾 Sauvegarder</button></div>
+      <p style="font-size:.68rem;color:var(--muted);margin-top:.6rem;">⚠ bind_host/bind_port : redémarrez frp-manager pour appliquer.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔐 Accès sécurisé <span class="tip-i" data-tip="Sans mot de passe configuré, l'interface est accessible sans authentification.">?</span></div>
+      <div id="auth-state" style="font-size:.71rem;color:var(--muted);margin-bottom:.72rem;">—</div>
+      <div class="fcols" style="margin-bottom:.82rem;">
+        <div class="ffield"><label class="flabel">Identifiant <span class="fkey">username</span></label><input class="finput" id="m-user" type="text" value="admin"></div>
+        <div class="ffield"><label class="flabel">Nouveau mot de passe</label><div class="tok-wrap"><input class="finput" id="m-pass" type="password" placeholder="Laisser vide = inchangé"><button class="btn btn-secondary" onclick="toggleTok('m-pass')" style="padding:.37rem .52rem;">👁</button></div></div>
+        <div class="ffield"><label class="flabel">Confirmation</label><input class="finput" id="m-pass2" type="password" placeholder="Confirmation"></div>
+      </div>
+      <div class="btn-row"><button class="btn btn-primary" onclick="saveAuth()">💾 Mettre à jour</button></div>
+    </div>
+  </div>
+
+  <!-- Panel version -->
+  <div class="card" style="margin-top:.82rem;">
+    <div class="card-title">🔄 Version du panel FRP Manager</div>
+    <div class="g2">
+      <div>
+        <div class="irow"><span class="ilabel">Version installée</span><span class="ival" id="panel-current">—</span></div>
+        <div class="irow"><span class="ilabel">Dernière dispo</span><span class="ival" id="panel-latest">—</span></div>
+        <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="panel-status">—</span></div>
+        <br>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="checkPanelVersion()">🔍 Vérifier</button>
+          <button class="btn btn-warn" id="btn-panel-update" onclick="updatePanel()" style="display:none;">⬆ Mettre à jour le panel</button>
+          <a id="panel-release-link" href="#" target="_blank" style="display:none;"><button class="btn btn-secondary">📋 Voir la release</button></a>
+        </div>
+        <div style="margin-top:.6rem;font-size:.68rem;font-family:var(--mono);color:var(--muted);" id="panel-repo-info">—</div>
+      </div>
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.4rem;">Log de mise à jour</div>
+        <div class="upd-log" id="panel-upd-log" style="height:130px;">—</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:.5rem;line-height:1.6;">
+          La mise à jour télécharge le zip depuis GitHub, remplace <code>app.py</code> et <code>templates/</code>, puis redémarre <code>frp-manager</code> automatiquement.<br>
+          Repo : <code id="panel-repo-display">VOTRE_USER/frp-manager</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+<div id="toast"></div>
+
+<script>
+// ═══ Utils ════════════════════════════════════════════════════════════
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+let _tt;
+function toast(msg,type='info'){const el=document.getElementById('toast');el.textContent=msg;el.className=`show ${type}`;clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3100);}
+function gv(id){const e=document.getElementById(id);if(!e)return'';return e.type==='checkbox'?e.checked:e.value.trim();}
+function sv(id,val){const e=document.getElementById(id);if(!e)return;if(e.type==='checkbox')e.checked=!!val;else e.value=val??'';}
+function tg(id,on){const el=document.getElementById(id);if(!el)return;el.style.opacity=on?'1':'.33';el.style.pointerEvents=on?'':'none';}
+function ti(id,on){const el=document.getElementById(id);if(!el)return;el.disabled=!on;}
+function tgAdv(id){const b=document.getElementById(id);const a=document.getElementById(id+'-arr');const o=b.classList.toggle('open');a.classList.toggle('open',o);}
+function toggleTok(id){const e=document.getElementById(id);e.type=e.type==='password'?'text':'password';}
+
+// ═══ Tab nav ══════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>switchTab(t.dataset.tab)));
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id==='tab-'+name));
+  if(name==='config'){if(!gv('cfg-sel'))return;adaptForm(gv('cfg-sel'));loadConfig();}
+  if(name==='logs')populateLogSel();
+  if(name==='update'){checkUpdate();}
+  if(name==='settings')loadMgrCfg();
+}
+
+// ═══ Auth ═════════════════════════════════════════════════════════════
+async function doLogout(){await fetch('/api/logout',{method:'POST'});window.location.href='/login';}
+
+// ═══ Overview ════════════════════════════════════════════════════════
+let lastInst={};
+
+async function runDetect(){
+  document.getElementById('det-text').textContent='🔍 Détection en cours…';
+  const r=await fetch('/api/detect');
+  const d=await r.json();
+  lastInst=d.instances||{};
+  renderGrid(lastInst,true);
+  const parts=Object.entries(lastInst).map(([id,i])=>i.binary_found?`${id} (${i.version||'?'})`:id+' ✗');
+  document.getElementById('det-text').textContent='🔍 '+(parts.join('  ·  ')||'Aucun binaire détecté');
+  const iv=Object.values(lastInst).find(i=>i.version)?.version;
+  if(iv)document.getElementById('ver-badge').textContent=`v${iv}`;
+}
+
+async function refreshStatus(){
+  const r=await fetch('/api/status');
+  const d=await r.json();
+  if(!d.ok)return;
+  lastInst=d.instances||{};
+  renderGrid(lastInst,false);
+  const iv=d.installed_version;
+  if(iv)document.getElementById('ver-badge').textContent=`v${iv}`;
+}
+
+function sIds(inst){return Object.keys(inst).sort((a,b)=>{const ta=inst[a].type,tb=inst[b].type;if(ta!==tb)return ta==='frps'?-1:1;return a.localeCompare(b);});}
+
+function renderGrid(inst,full){
+  const grid=document.getElementById('inst-grid');
+  const ids=sIds(inst);
+  const curIds=[...grid.querySelectorAll('.inst-card')].map(c=>c.dataset.iid);
+  if(full||curIds.sort().join()!==ids.slice().sort().join()){
+    // Full rebuild
+    grid.innerHTML='';
+    ids.forEach(id=>{const el=document.createElement('div');el.innerHTML=mkCard(id,inst[id]);grid.appendChild(el.firstElementChild);});
+  } else {
+    ids.forEach(id=>patchCard(id,inst[id]));
+  }
+  updateSelects(ids,inst);
+}
+
+function mkCard(iid,inst){
+  const type=inst.type,srv=type==='frps';
+  const sc=!inst.binary_found?'unknown':inst.status.running?'running':'stopped';
+  const pc=!inst.binary_found?'unknown':inst.status.running?'active':'inactive';
+  const pt=!inst.binary_found?'non détecté':(inst.status.active||'inactive');
+  const pulse=inst.status.running?' pulse':'';
+  const sfx=iid.replace(type,'');
+  const nm=`frp<span class="tl">${type.slice(-1)}</span>${esc(sfx)}`;
+  const cfgok=inst.config_exists;
+  const cfgtxt=inst.config_path?(cfgok?'✓ ':'✗ ')+inst.config_path.replace('/etc/frp/',''):'✗ non trouvée';
+  return `<div class="inst-card ${sc}" data-iid="${esc(iid)}">
+  <div class="inst-header">
+    <div class="inst-name${srv?' srv':''}">${nm}</div>
+    <div class="pill ${pc}" id="pill-${esc(iid)}"><span class="pdot${pulse}"></span><span>${esc(pt)}</span></div>
+  </div>
+  <div class="inst-meta">
+    <div class="mrow"><span class="mkey">Statut</span><span class="mval ${inst.binary_found?(inst.status.enabled?'ok':''):'err'}" id="men-${esc(iid)}">${inst.binary_found?(inst.status.enabled?'✓ enabled':'✗ disabled'):'—'}</span></div>
+    <div class="mrow"><span class="mkey">Binaire</span><span class="mval ${inst.binary_found?'ok':'err'}" title="${esc(inst.binary_path||'')}">${inst.binary_found?'✓ '+esc((inst.binary_path||'').split('/').pop()):'✗ non trouvé'}</span></div>
+    <div class="mrow"><span class="mkey">Version</span><span class="mval ver">${esc(inst.version||'—')}</span></div>
+    <div class="mrow"><span class="mkey">Config</span><span class="mval ${cfgok?'ok':'err'}" title="${esc(inst.config_path||'')}">${esc(cfgtxt)}</span></div>
+    <div class="mrow"><span class="mkey">Unit</span><span class="mval">${esc(inst.service)}</span></div>
+  </div>
+  <div class="btn-row" style="margin-bottom:.38rem;">
+    <button class="btn btn-primary" onclick="svcAct('${esc(iid)}','start')">▶ Start</button>
+    <button class="btn btn-danger" onclick="svcAct('${esc(iid)}','stop')">■ Stop</button>
+    <button class="btn btn-secondary" onclick="svcAct('${esc(iid)}','restart')">↺ Restart</button>
+    <button class="btn btn-secondary" onclick="svcAct('${esc(iid)}','reload')">⟳ Reload</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-info" onclick="svcAct('${esc(iid)}','enable')">Enable</button>
+    <button class="btn btn-secondary" onclick="svcAct('${esc(iid)}','disable')">Disable</button>
+    <button class="btn btn-secondary" onclick="goConfig('${esc(iid)}')">⚙ Config</button>
+    <button class="btn btn-secondary" onclick="goLogs('${esc(iid)}')">📋 Logs</button>
+  </div>
+</div>`;
+}
+
+function patchCard(iid,inst){
+  const card=document.querySelector(`[data-iid="${iid}"]`);if(!card)return;
+  const sc=!inst.binary_found?'unknown':inst.status.running?'running':'stopped';
+  card.className=`inst-card ${sc}`;
+  const pill=document.getElementById(`pill-${iid}`);
+  if(pill){
+    const pc=!inst.binary_found?'unknown':inst.status.running?'active':'inactive';
+    pill.className=`pill ${pc}`;
+    const dot=pill.querySelector('.pdot');if(dot)dot.className=`pdot${inst.status.running?' pulse':''}`;
+    const txt=pill.querySelector('span:last-child');if(txt)txt.textContent=!inst.binary_found?'non détecté':(inst.status.active||'inactive');
+  }
+  const en=document.getElementById(`men-${iid}`);
+  if(en){en.textContent=inst.binary_found?(inst.status.enabled?'✓ enabled':'✗ disabled'):'—';en.className=`mval ${inst.binary_found?(inst.status.enabled?'ok':''):'err'}`;}
+}
+
+function updateSelects(ids,inst){
+  const cs=document.getElementById('cfg-sel');
+  if(cs){const prev=cs.value;cs.innerHTML=ids.map(id=>`<option value="${id}">${id} (${inst[id].type})</option>`).join('');if(ids.includes(prev))cs.value=prev;else cs.value=ids[0]||'';}
+  const ls=document.getElementById('log-sel');
+  if(ls){const prev=ls.value;ls.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');if(ids.includes(prev))ls.value=prev;}
+}
+
+async function svcAct(iid,action){
+  toast(`${action} ${iid}…`,'info');
+  const r=await fetch(`/api/service/${iid}/${action}`,{method:'POST'});
+  const d=await r.json();
+  toast(d.msg,d.ok?'ok':'err');
+  setTimeout(refreshStatus,700);
+}
+
+function goConfig(iid){switchTab('config');const s=document.getElementById('cfg-sel');if(s)s.value=iid;adaptForm(iid);loadConfig();}
+function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
+
+// ═══ Config ═══════════════════════════════════════════════════════════
+let cfgMode='form',cfgTgt='',pxCount=0;
+
+function onCfgSel(){cfgTgt=gv('cfg-sel');adaptForm(cfgTgt);loadConfig();}
+function adaptForm(iid){
+  cfgTgt=iid;
+  const inst=lastInst[iid];
+  const type=inst?inst.type:(iid.startsWith('frpc')?'frpc':'frps');
+  document.getElementById('frps-form').style.display=type==='frps'?'':'none';
+  document.getElementById('frpc-form').style.display=type==='frpc'?'':'none';
+}
+function setMode(m){
+  cfgMode=m;
+  document.getElementById('cfg-form').style.display=m==='form'?'':'none';
+  document.getElementById('cfg-raw').style.display=m==='raw'?'':'none';
+  document.getElementById('mb-form').classList.toggle('active',m==='form');
+  document.getElementById('mb-raw').classList.toggle('active',m==='raw');
+  if(m==='raw')document.getElementById('raw-area').value=genToml();
+}
+
+// TOML parser
+function parseToml(toml){
+  // Parse TOML complet : sections [x], tables imbriqués [x.y], et [[proxies]]
+  const r={_px:[]};
+  let cur=null;      // proxy courant si dans [[proxies]]
+  let section='';    // section courante ex: "auth", "transport.tls"
+
+  for(let raw of toml.split('\n')){
+    const line=raw.trim();
+    if(!line||line.startsWith('#'))continue;
+
+    // [[proxies]] — tableau de proxies
+    if(line==='[[proxies]]'){
+      if(cur)r._px.push(cur);
+      cur={};section='';
+      continue;
+    }
+
+    // [section] — changer la section active
+    if(line.startsWith('[')){
+      const sec=line.slice(1,line.indexOf(']'));
+      if(cur!==null){
+        // On est dans un proxy, ignorer les sous-sections pour l'instant
+      } else {
+        section=sec;  // ex: "auth", "webServer", "transport.tls", "log"
+      }
+      continue;
+    }
+
+    // Clé = valeur
+    const eq=line.indexOf('=');if(eq<0)continue;
+    const k=line.slice(0,eq).trim();
+    let val=line.slice(eq+1).trim();
+    // Strip commentaire inline
+    const ci=val.indexOf(' #');if(ci>0&&!val.startsWith('"'))val=val.slice(0,ci).trim();
+    // Strip quotes
+    if((val.startsWith('"')&&val.endsWith('"'))||(val.startsWith("'")&&val.endsWith("'")))val=val.slice(1,-1);
+
+    if(cur!==null){
+      // Dans [[proxies]] : clé directe
+      cur[k]=val;
+    } else {
+      // Clé avec préfixe de section : "auth.token", "webServer.port", etc.
+      const fullKey=section?`${section}.${k}`:k;
+      r[fullKey]=val;
+    }
+  }
+  if(cur)r._px.push(cur);
+  return r;
+}
+
+async function loadConfig(){
+  if(!cfgTgt)return;
+  const r=await fetch(`/api/config/${cfgTgt}`);
+  const d=await r.json();
+  const toml=d.content||'';
+  if(cfgMode==='raw'){sv('raw-area',toml);return;}
+  const cfg=parseToml(toml);
+  const inst=lastInst[cfgTgt];
+  const type=inst?inst.type:(cfgTgt.startsWith('frpc')?'frpc':'frps');
+  if(type==='frps'){
+    sv('s-bindAddr',cfg['bindAddr']||'0.0.0.0');sv('s-bindPort',cfg['bindPort']||'7000');
+    sv('s-authmethod',cfg['auth.method']||'token');sv('s-authtoken',cfg['auth.token']||'');
+    sv('s-logto',cfg['log.to']||'/var/log/frp/frps.log');sv('s-loglvl',cfg['log.level']||'info');sv('s-logdays',cfg['log.maxDays']||'3');
+    sv('s-maxports',cfg['maxPortsPerClient']||'0');sv('s-pool',cfg['transport.maxPoolCount']||'5');sv('s-hbt',cfg['transport.heartbeatTimeout']||'90');
+    const wsEn=!!cfg['webServer.port'];sv('s-ws-en',wsEn);tg('s-ws-g',wsEn);
+    sv('s-ws-addr',cfg['webServer.addr']||'0.0.0.0');sv('s-ws-port',cfg['webServer.port']||'7500');sv('s-ws-user',cfg['webServer.user']||'admin');sv('s-ws-pass',cfg['webServer.password']||'');
+    const tlsEn=!!cfg['transport.tls.certFile'];sv('s-tls-en',tlsEn);tg('s-tls-g',tlsEn);
+    sv('s-tls-cert',cfg['transport.tls.certFile']||'');sv('s-tls-key',cfg['transport.tls.keyFile']||'');sv('s-tls-ca',cfg['transport.tls.trustedCaFile']||'');sv('s-tls-force',cfg['transport.tls.force']==='true');
+    sop('s-kcp','s-kcp-en',cfg['kcpBindPort']);sop('s-quic','s-quic-en',cfg['quicBindPort']);
+    sop('s-vh','s-vh-en',cfg['vhostHTTPPort']);sop('s-vhs','s-vhs-en',cfg['vhostHTTPSPort']);
+  }else{
+    sv('c-addr',cfg['serverAddr']||'');sv('c-port',cfg['serverPort']||'7000');
+    sv('c-authmethod',cfg['auth.method']||'token');sv('c-authtoken',cfg['auth.token']||'');
+    sv('c-proto',cfg['transport.protocol']||'tcp');
+    sv('c-logto',cfg['log.to']||'/var/log/frp/frpc.log');sv('c-loglvl',cfg['log.level']||'info');sv('c-logdays',cfg['log.maxDays']||'3');
+    sv('c-pool',cfg['transport.poolCount']||'5');sv('c-hbi',cfg['transport.heartbeatInterval']||'30');
+    sv('c-dns',cfg['dnsServer']||'');sv('c-purl',cfg['transport.proxyURL']||'');
+    const wsEn=!!cfg['webServer.port'];sv('c-ws-en',wsEn);tg('c-ws-g',wsEn);
+    sv('c-ws-addr',cfg['webServer.addr']||'127.0.0.1');sv('c-ws-port',cfg['webServer.port']||'7400');sv('c-ws-user',cfg['webServer.user']||'admin');sv('c-ws-pass',cfg['webServer.password']||'');
+    const tlsEn=!!cfg['transport.tls.certFile'];sv('c-tls-en',tlsEn);tg('c-tls-g',tlsEn);
+    sv('c-tls-cert',cfg['transport.tls.certFile']||'');sv('c-tls-key',cfg['transport.tls.keyFile']||'');sv('c-tls-ca',cfg['transport.tls.trustedCaFile']||'');sv('c-tls-sn',cfg['transport.tls.serverName']||'');
+    document.getElementById('px-list').innerHTML='';pxCount=0;
+    for(const p of cfg._px)addPxFromData(p);
+  }
+}
+function sop(inputId,chkId,val){const en=!!val;sv(chkId,en);ti(inputId,en);if(en)sv(inputId,val);}
+
+// TOML generator
+function genToml(){
+  const inst=lastInst[cfgTgt];const type=inst?inst.type:(cfgTgt.startsWith('frpc')?'frpc':'frps');
+  return type==='frps'?genS():genC();
+}
+function gl(arr){return arr.join('\n');}
+function genS(){
+  const L=[];
+  L.push(`# ${cfgTgt}.toml — généré par FRP Manager\n`);
+  L.push(`bindAddr = "${gv('s-bindAddr')}"`);L.push(`bindPort = ${gv('s-bindPort')}`);
+  if(gv('s-kcp-en'))L.push(`kcpBindPort = ${gv('s-kcp')}`);
+  if(gv('s-quic-en'))L.push(`quicBindPort = ${gv('s-quic')}`);
+  if(gv('s-vh-en'))L.push(`vhostHTTPPort = ${gv('s-vh')}`);
+  if(gv('s-vhs-en'))L.push(`vhostHTTPSPort = ${gv('s-vhs')}`);
+  if(+gv('s-maxports')>0)L.push(`maxPortsPerClient = ${gv('s-maxports')}`);
+  L.push('\n[auth]');L.push(`method = "${gv('s-authmethod')}"`);if(gv('s-authtoken'))L.push(`token = "${gv('s-authtoken')}"`);
+  L.push('\n[log]');L.push(`to = "${gv('s-logto')}"`);L.push(`level = "${gv('s-loglvl')}"`);L.push(`maxDays = ${gv('s-logdays')}`);
+  if(gv('s-ws-en')){L.push('\n[webServer]');L.push(`addr = "${gv('s-ws-addr')}"`);L.push(`port = ${gv('s-ws-port')}`);if(gv('s-ws-user'))L.push(`user = "${gv('s-ws-user')}"`);if(gv('s-ws-pass'))L.push(`password = "${gv('s-ws-pass')}"`);}
+  if(gv('s-tls-en')){L.push('\n[transport.tls]');L.push(`certFile = "${gv('s-tls-cert')}"`);L.push(`keyFile = "${gv('s-tls-key')}"`);if(gv('s-tls-ca'))L.push(`trustedCaFile = "${gv('s-tls-ca')}"`);if(gv('s-tls-force'))L.push('force = true');}
+  const pool=+gv('s-pool'),hbt=+gv('s-hbt');if(pool!==5||hbt!==90){L.push('\n[transport]');L.push(`maxPoolCount = ${pool}`);L.push(`heartbeatTimeout = ${hbt}`);}
+  return L.join('\n');
+}
+function genC(){
+  const L=[];
+  L.push(`# ${cfgTgt}.toml — généré par FRP Manager\n`);
+  L.push(`serverAddr = "${gv('c-addr')}"`);L.push(`serverPort = ${gv('c-port')}`);
+  if(gv('c-dns'))L.push(`dnsServer = "${gv('c-dns')}"`);
+  L.push('\n[auth]');L.push(`method = "${gv('c-authmethod')}"`);if(gv('c-authtoken'))L.push(`token = "${gv('c-authtoken')}"`);
+  L.push('\n[log]');L.push(`to = "${gv('c-logto')}"`);L.push(`level = "${gv('c-loglvl')}"`);L.push(`maxDays = ${gv('c-logdays')}`);
+  const proto=gv('c-proto'),purl=gv('c-purl'),pool=+gv('c-pool'),hbi=+gv('c-hbi');
+  if(proto!=='tcp'||purl||pool!==5||hbi!==30||gv('c-tls-en')){L.push('\n[transport]');if(proto!=='tcp')L.push(`protocol = "${proto}"`);if(purl)L.push(`proxyURL = "${purl}"`);if(pool!==5)L.push(`poolCount = ${pool}`);if(hbi!==30)L.push(`heartbeatInterval = ${hbi}`);}
+  if(gv('c-tls-en')){L.push('\n[transport.tls]');L.push(`certFile = "${gv('c-tls-cert')}"`);L.push(`keyFile = "${gv('c-tls-key')}"`);if(gv('c-tls-ca'))L.push(`trustedCaFile = "${gv('c-tls-ca')}"`);if(gv('c-tls-sn'))L.push(`serverName = "${gv('c-tls-sn')}"`);  }
+  if(gv('c-ws-en')){L.push('\n[webServer]');L.push(`addr = "${gv('c-ws-addr')}"`);L.push(`port = ${gv('c-ws-port')}`);if(gv('c-ws-user'))L.push(`user = "${gv('c-ws-user')}"`);if(gv('c-ws-pass'))L.push(`password = "${gv('c-ws-pass')}"`);}
+  document.querySelectorAll('.px-card').forEach(card=>{
+    const i=card.dataset.idx,t=gv(`p-type-${i}`);
+    L.push('\n[[proxies]]');L.push(`name = "${gv(`p-name-${i}`)}"`);L.push(`type = "${t}"`);
+    const li=gv(`p-lip-${i}`);if(li)L.push(`localIP = "${li}"`);
+    const lp=gv(`p-lport-${i}`);if(lp)L.push(`localPort = ${lp}`);
+    if(['tcp','udp','stcp','xtcp'].includes(t)){const rp=gv(`p-rport-${i}`);if(rp)L.push(`remotePort = ${rp}`);}
+    if(['http','https'].includes(t)){const cd=gv(`p-dom-${i}`);if(cd)L.push(`customDomains = ["${cd.split(',').map(s=>s.trim()).join('","')}"]`);}
+    if(gv(`p-cmp-${i}`))L.push('transport.useCompression = true');
+    if(gv(`p-enc-${i}`))L.push('transport.useEncryption = true');
+    const ppv=gv(`p-ppv-${i}`);if(ppv)L.push(`transport.proxyProtocolVersion = "${ppv}"`);
+  });
+  return L.join('\n');
+}
+
+async function saveConfig(){
+  const content=cfgMode==='raw'?gv('raw-area'):genToml();
+  const r=await fetch(`/api/config/${cfgTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+  const d=await r.json();toast(d.msg,d.ok?'ok':'err');
+}
+async function saveReload(){await saveConfig();await svcAct(cfgTgt,'reload');}
+
+// Proxies
+function addProxy(){addPxFromData({});}
+function addPxFromData(data){
+  const i=++pxCount,type=data.type||'tcp';
+  const nr=['tcp','udp','stcp','xtcp'].includes(type),nd=['http','https'].includes(type);
+  const el=document.createElement('div');el.className='px-card';el.dataset.idx=i;
+  el.innerHTML=`<div class="px-head">
+    <span class="px-badge" id="pb-${i}">${type.toUpperCase()}</span>
+    <span class="px-namelbl" id="pnl-${i}">${esc(data.name||'nouveau tunnel')}</span>
+    <button class="px-del" onclick="this.closest('.px-card').remove()">✕</button>
+  </div>
+  <div class="fcols">
+    <div class="ffield"><label class="flabel">Nom <span class="fkey">name</span></label><input class="finput" id="p-name-${i}" value="${esc(data.name||'')}" placeholder="ex: ssh" oninput="document.getElementById('pnl-${i}').textContent=this.value||'tunnel'"></div>
+    <div class="ffield"><label class="flabel">Type <span class="fkey">type</span></label><select class="finput" id="p-type-${i}" onchange="updPxType(this,${i})">${['tcp','udp','http','https','stcp','xtcp'].map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="ffield"><label class="flabel">IP locale <span class="fkey">localIP</span></label><input class="finput" id="p-lip-${i}" value="${esc(data.localIP||'127.0.0.1')}"></div>
+    <div class="ffield port-f"><label class="flabel">Port local <span class="fkey">localPort</span> <span class="tip-i" data-tip="Port du service sur cette machine.">?</span></label><input class="finput" id="p-lport-${i}" type="number" value="${esc(data.localPort||'')}" min="1" max="65535" placeholder="ex: 22"></div>
+    <div class="ffield port-f" id="prf-${i}" ${nr?'':'style="display:none"'}><label class="flabel">Port distant <span class="fkey">remotePort</span> <span class="tip-i" data-tip="Port exposé sur le serveur frps.">?</span></label><input class="finput" id="p-rport-${i}" type="number" value="${esc(data.remotePort||'')}" min="1" max="65535" placeholder="ex: 6022"></div>
+    <div class="ffield" id="pdf-${i}" ${nd?'':'style="display:none"'}><label class="flabel">Domaines <span class="fkey">customDomains</span></label><input class="finput" id="p-dom-${i}" value="${esc((data.customDomains||'').replace(/["\[\]]/g,''))}" placeholder="mon.domaine.fr"></div>
+    <div class="ffield"><label class="flabel">Proxy Protocol <span class="fkey">proxyProtocolVersion</span> <span class="tip-i" data-tip="Transmet l'IP réelle du client au service local.
+v2 recommandé pour nginx/haproxy.">?</span></label><select class="finput" id="p-ppv-${i}"><option value="">Désactivé</option><option value="v1"${data['transport.proxyProtocolVersion']==='v1'?' selected':''}>v1</option><option value="v2"${data['transport.proxyProtocolVersion']==='v2'?' selected':''}>v2 (recommandé)</option></select></div>
+    <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="p-cmp-${i}" ${data['transport.useCompression']==='true'?'checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Compression</span></label></div>
+    <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="p-enc-${i}" ${data['transport.useEncryption']==='true'?'checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Chiffrement</span></label></div>
+  </div>`;
+  document.getElementById('px-list').appendChild(el);
+}
+function updPxType(sel,i){
+  const t=sel.value;
+  document.getElementById(`pb-${i}`).textContent=t.toUpperCase();
+  document.getElementById(`prf-${i}`).style.display=['tcp','udp','stcp','xtcp'].includes(t)?'':'none';
+  document.getElementById(`pdf-${i}`).style.display=['http','https'].includes(t)?'':'none';
+}
+
+// ═══ Logs ════════════════════════════════════════════════════════════
+let liveEs=null;
+function populateLogSel(){const sel=document.getElementById('log-sel');if(!sel||sel.options.length>0)return;const ids=sIds(lastInst);sel.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');if(ids.length)loadLogs();}
+async function loadLogs(){
+  stopLive();
+  const svc=gv('log-sel'),src=gv('log-src');if(!svc)return;
+  const area=document.getElementById('log-area');area.textContent='Chargement…';
+  const r=await fetch(`/api/logs/${svc}?source=${src}`);const d=await r.json();
+  area.innerHTML=(d.content||'').split('\n').map(l=>{const cls=/error|ERR/i.test(l)?'lerr':/warn|WARN/i.test(l)?'lwarn':/start|connect|ok|success/i.test(l)?'lok':'';return`<span class="${cls}">${esc(l)}\n</span>`;}).join('');
+  area.scrollTop=area.scrollHeight;
+}
+function toggleLive(){liveEs?stopLive():startLive();}
+function startLive(){
+  stopLive();const svc=gv('log-sel');const area=document.getElementById('log-area');area.textContent='';
+  liveEs=new EventSource(`/api/logs/stream/${svc}`);
+  liveEs.onmessage=e=>{const l=e.data;const cls=/error|ERR/i.test(l)?'lerr':/warn|WARN/i.test(l)?'lwarn':'';const sp=document.createElement('span');sp.className=cls;sp.textContent=l+'\n';area.appendChild(sp);if(area.children.length>2000)area.removeChild(area.firstChild);area.scrollTop=area.scrollHeight;};
+  document.getElementById('live-ind').style.display='';document.getElementById('btn-live').textContent='■ Stop';
+}
+function stopLive(){if(liveEs){liveEs.close();liveEs=null;}document.getElementById('live-ind').style.display='none';document.getElementById('btn-live').textContent='● Live';}
+function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
+
+// ═══ Update ══════════════════════════════════════════════════════════
+async function checkUpdate(){
+  document.getElementById('u-inst').textContent='…';
+  document.getElementById('u-latest').textContent='…';
+  document.getElementById('u-src').textContent='…';
+  const s=document.getElementById('u-status');s.textContent='…';s.style.color='var(--muted)';
+  const r=await fetch('/api/update/check');const d=await r.json();
+  if(!d.ok){s.textContent='⚠ '+d.msg;s.style.color='var(--danger)';
+    document.getElementById('u-inst').textContent='—';
+    document.getElementById('u-latest').textContent='—';
+    document.getElementById('u-src').textContent='—';
+    return;}
+  document.getElementById('u-inst').textContent=d.installed?`v${d.installed}`:'non installé';
+  document.getElementById('u-latest').textContent=`v${d.latest}`;
+  document.getElementById('u-src').textContent=d.source||'—';
+  s.textContent=d.update_available?'⬆ Mise à jour disponible':'✓ À jour';
+  s.style.color=d.update_available?'var(--warn)':'var(--accent)';
+  if(d.installed)document.getElementById('ver-badge').textContent=`v${d.installed}`;
+}
+async function installUpdate(){
+  document.getElementById('upd-log').textContent='Démarrage…';
+  const r=await fetch('/api/update/install',{method:'POST'});const d=await r.json();
+  if(!d.ok){document.getElementById('upd-log').textContent='⚠ '+d.msg;return;}
+  toast('Installation…','info');pollLog(true);
+}
+async function uploadInstall(){
+  const file=document.getElementById('u-file').files[0];const ver=gv('u-ver');
+  if(!file){toast('Sélectionnez un fichier','err');return;}if(!ver){toast('Entrez la version','err');return;}
+  document.getElementById('upd-log').textContent=`Upload ${file.name}…`;
+  const fd=new FormData();fd.append('file',file);fd.append('version',ver);
+  const r=await fetch('/api/update/upload',{method:'POST',body:fd});const d=await r.json();
+  if(!d.ok){document.getElementById('upd-log').textContent='⚠ '+d.msg;return;}
+  toast('Installation…','info');pollLog(true);
+}
+let _pt;
+async function pollLog(repeat=false){
+  clearTimeout(_pt);
+  const r=await fetch('/api/update/log');const d=await r.json();
+  const area=document.getElementById('upd-log');
+  area.innerHTML=d.lines.map(l=>{const cls=l.includes('[OK]')?'uok':l.includes('[ERROR]')?'uerr':l.includes('[INFO]')?'uinfo':'';return`<span class="${cls}">${esc(l)}</span>`;}).join('\n');
+  area.scrollTop=area.scrollHeight;
+  if(repeat){const last=d.lines[d.lines.length-1]||'';if(!last.includes('[OK]')&&!last.includes('[ERROR]'))_pt=setTimeout(()=>pollLog(true),1100);else{refreshStatus();checkUpdate();}}
+}
+async function testConn(){
+  const g=document.getElementById('conn-grid');
+  g.innerHTML='<div style="color:var(--muted);font-size:.74rem;font-family:var(--mono);">Test en cours…</div>';
+  const r=await fetch('/api/connectivity');const d=await r.json();
+  const sources=d.sources||{};
+  const entries=Object.entries(sources);
+  if(!entries.length){g.innerHTML='<div style="color:var(--muted);font-size:.74rem;">Aucune source testée</div>';return;}
+  g.innerHTML=entries.map(([n,s])=>`<div class="conn-item" style="border-color:${s.ok?'rgba(74,222,128,.22)':'rgba(248,113,113,.22)'}"><div class="conn-name" style="color:${s.ok?'var(--accent)':'var(--danger)'}">${s.ok?'✓':'✗'} ${esc(n)}</div><div class="conn-ver">${s.ok?esc(s.version):(s.error||'inaccessible')}</div></div>`).join('');
+}
+
+// ═══ Settings ════════════════════════════════════════════════════════
+async function loadMgrCfg(){
+  const r=await fetch('/api/manager/config');const d=await r.json();if(!d.ok)return;
+  const cfg=d.config;
+  sv('m-port',cfg.bind_port||8765);sv('m-host',cfg.bind_host||'0.0.0.0');sv('m-timeout',cfg.session_timeout||3600);
+  sv('m-user',cfg.username||'admin');
+  const at=document.getElementById('auth-state');
+  at.textContent=cfg.has_password?'🔒 Mot de passe configuré':'⚠️ Aucun mot de passe — accès libre';
+  at.style.color=cfg.has_password?'var(--accent)':'var(--warn)';
+  checkPanelVersion();
+}
+async function saveMgr(){
+  const r=await fetch('/api/manager/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bind_port:+gv('m-port'),bind_host:gv('m-host'),session_timeout:+gv('m-timeout')})});
+  const d=await r.json();toast(d.msg,d.ok?'ok':'err');
+}
+async function saveAuth(){
+  const pw1=gv('m-pass'),pw2=gv('m-pass2');
+  if(pw1&&pw1!==pw2){toast('Mots de passe différents','err');return;}
+  const r=await fetch('/api/manager/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:gv('m-user'),new_password:pw1||undefined})});
+  const d=await r.json();toast(d.msg,d.ok?'ok':'err');
+  if(d.ok){sv('m-pass','');sv('m-pass2','');loadMgrCfg();}
+}
+
+async function checkPanelVersion(){
+  const cur=document.getElementById('panel-current');
+  const lat=document.getElementById('panel-latest');
+  const sta=document.getElementById('panel-status');
+  const lnk=document.getElementById('panel-release-link');
+  const btn=document.getElementById('btn-panel-update');
+  const rep=document.getElementById('panel-repo-info');
+  const repd=document.getElementById('panel-repo-display');
+  cur.textContent='…';lat.textContent='…';sta.textContent='…';
+  const r=await fetch('/api/panel/version');
+  const d=await r.json();
+  if(!d.ok){sta.textContent='Erreur';return;}
+  cur.textContent=`v${d.current}`;
+  if(repd)repd.textContent=d.repo;
+  if(!d.repo_configured){
+    lat.textContent='—';
+    sta.textContent='Repo non configuré';sta.style.color='var(--muted)';
+    if(rep)rep.textContent=`Repo actuel : ${d.repo} (placeholder — modifier PANEL_GITHUB_REPO dans app.py)`;
+    if(lnk)lnk.style.display='none';
+    if(btn)btn.style.display='none';
+    return;
+  }
+  if(rep)rep.textContent=`github.com/${d.repo}`;
+  if(d.latest){
+    lat.textContent=`v${d.latest}`;
+    if(d.update_available){
+      sta.textContent='⬆ Mise à jour disponible';sta.style.color='var(--warn)';
+      if(lnk){lnk.href=d.release_url||`https://github.com/${d.repo}/releases`;lnk.style.display='';}
+      if(btn)btn.style.display='';
+    } else {
+      sta.textContent='✓ À jour';sta.style.color='var(--accent)';
+      if(lnk)lnk.style.display='none';
+      if(btn)btn.style.display='none';
+    }
+  } else {
+    lat.textContent='Inaccessible';sta.textContent='GitHub non joignable';sta.style.color='var(--muted)';
+    if(btn)btn.style.display='none';
+  }
+}
+
+async function updatePanel(){
+  const logEl=document.getElementById('panel-upd-log');
+  logEl.textContent='Démarrage…';
+  document.getElementById('btn-panel-update').disabled=true;
+  const r=await fetch('/api/panel/update',{method:'POST'});
+  const d=await r.json();
+  if(!d.ok){logEl.textContent='⚠ '+d.msg;document.getElementById('btn-panel-update').disabled=false;return;}
+  toast('Mise à jour du panel en cours…','info');
+  pollPanelLog(true);
+}
+
+let _panelPollTimer;
+async function pollPanelLog(repeat=false){
+  clearTimeout(_panelPollTimer);
+  const r=await fetch('/api/panel/update/log');
+  const d=await r.json();
+  const area=document.getElementById('panel-upd-log');
+  area.innerHTML=d.lines.map(l=>{
+    const cls=l.includes('[OK]')?'uok':l.includes('[ERROR]')?'uerr':l.includes('[INFO]')?'uinfo':'';
+    return`<span class="${cls}">${esc(l)}</span>`;
+  }).join('\n');
+  area.scrollTop=area.scrollHeight;
+  if(repeat){
+    const last=d.lines[d.lines.length-1]||'';
+    if(last.includes('Redémarrage')||last.includes('[ERROR]')){
+      // Le service va redémarrer, on attend puis on recharge la page
+      if(last.includes('Redémarrage'))setTimeout(()=>window.location.reload(),4000);
+    } else {
+      _panelPollTimer=setTimeout(()=>pollPanelLog(true),1000);
+    }
+  }
+}
+
+// ═══ Init ════════════════════════════════════════════════════════════
+runDetect();
+setInterval(refreshStatus,12000);
+</script>
+</body>
+</html>

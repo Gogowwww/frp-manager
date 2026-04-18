@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRP Manager — Connexion</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;600&display=swap');
+  :root {
+    --bg: #0d0f14; --surface: #13161e; --card: #191c26; --border: #252933;
+    --accent: #4ade80; --accent2: #38bdf8; --danger: #f87171;
+    --text: #e2e8f0; --muted: #64748b;
+    --mono: 'JetBrains Mono', monospace; --sans: 'Space Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 2.5rem 2rem; width: 100%; max-width: 380px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  }
+  .logo {
+    font-family: var(--mono); font-weight: 700; font-size: 1.2rem;
+    text-align: center; margin-bottom: 0.25rem;
+  }
+  .logo span { color: var(--accent); }
+  .subtitle { text-align: center; font-size: 0.78rem; color: var(--muted); margin-bottom: 2rem; }
+  label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 0.35rem; }
+  input {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.65rem 0.9rem; font-family: var(--mono); font-size: 0.85rem;
+    outline: none; transition: border-color 0.15s; margin-bottom: 1rem;
+  }
+  input:focus { border-color: var(--accent2); }
+  .btn {
+    width: 100%; background: rgba(74,222,128,0.15); color: var(--accent);
+    border: 1px solid rgba(74,222,128,0.3); border-radius: 8px;
+    padding: 0.7rem; font-family: var(--sans); font-size: 0.88rem; font-weight: 600;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn:hover { background: rgba(74,222,128,0.25); }
+  .error { color: var(--danger); font-size: 0.78rem; text-align: center; margin-top: 0.75rem; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">⬡ FRP <span>Manager</span></div>
+  <div class="subtitle">Interface de gestion — Authentification requise</div>
+  <label>Identifiant</label>
+  <input type="text" id="username" autocomplete="username" placeholder="admin">
+  <label>Mot de passe</label>
+  <input type="password" id="password" autocomplete="current-password" placeholder="••••••••">
+  <button class="btn" onclick="doLogin()">Se connecter</button>
+  <div class="error" id="err"></div>
+</div>
+<script>
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+async function doLogin() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  const r = await fetch('/api/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: u, password: p})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    window.location.href = '/';
+  } else {
+    document.getElementById('err').textContent = d.msg || 'Erreur';
+  }
+}
+</script>
+</body>
+</html>
