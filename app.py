@@ -1109,25 +1109,49 @@ def api_update_log():
 def _extract_ports_from_config(content, bin_type):
     """Extrait les numéros de port d'une config frp TOML."""
     ports = []
-    # Patterns top-level (frps & frpc)
-    patterns = []
     if bin_type == "frps":
-        patterns = [
+        top_patterns = [
             (r'^bindPort\s*=\s*(\d+)', "tcp", "Connexion frpc"),
             (r'^kcpBindPort\s*=\s*(\d+)', "udp", "KCP"),
             (r'^quicBindPort\s*=\s*(\d+)', "udp", "QUIC"),
             (r'^vhostHTTPPort\s*=\s*(\d+)', "tcp", "vhost HTTP"),
             (r'^vhostHTTPSPort\s*=\s*(\d+)', "tcp", "vhost HTTPS"),
         ]
+        for pat, proto, label in top_patterns:
+            m = re.search(pat, content, re.MULTILINE | re.IGNORECASE)
+            if m:
+                ports.append({"port": int(m.group(1)), "proto": proto, "label": label})
     elif bin_type == "frpc":
-        patterns = [
-            (r'^serverPort\s*=\s*(\d+)', "tcp", "Connexion serveur"),
-        ]
-    for pat, proto, label in patterns:
-        m = re.search(pat, content, re.MULTILINE | re.IGNORECASE)
+        m = re.search(r'^serverPort\s*=\s*(\d+)', content, re.MULTILINE | re.IGNORECASE)
         if m:
-            ports.append({"port": int(m.group(1)), "proto": proto, "label": label})
-    # Port du webServer (dans la section [webServer])
+            ports.append({"port": int(m.group(1)), "proto": "tcp", "label": "Connexion serveur"})
+        # Extraire les remotePort de chaque [[proxies]] (ports exposés côté serveur frps)
+        in_proxy = False
+        proxy_name = ""
+        proxy_type = "tcp"
+        for line in content.splitlines():
+            s = line.strip()
+            if s == "[[proxies]]":
+                in_proxy = True
+                proxy_name = ""
+                proxy_type = "tcp"
+                continue
+            if s.startswith("[") and not s.startswith("[[proxies]]"):
+                in_proxy = False
+                continue
+            if in_proxy:
+                nm = re.match(r'name\s*=\s*["\']?([^"\']+)["\']?', s)
+                if nm:
+                    proxy_name = nm.group(1).strip()
+                tm = re.match(r'type\s*=\s*["\']?(\w+)["\']?', s)
+                if tm:
+                    proxy_type = tm.group(1).strip()
+                rm = re.match(r'remotePort\s*=\s*(\d+)', s)
+                if rm:
+                    proto = "udp" if proxy_type == "udp" else "tcp"
+                    label = f"Tunnel {proxy_name or proxy_type} (remotePort)"
+                    ports.append({"port": int(rm.group(1)), "proto": proto, "label": label})
+    # Port du webServer (section [webServer]) — frps & frpc
     in_ws = False
     for line in content.splitlines():
         s = line.strip()
@@ -1144,15 +1168,18 @@ def _extract_ports_from_config(content, bin_type):
 def _ufw_allowed_ports():
     """Retourne (ufw_disponible, ensemble_des_ports_autorisés)."""
     ok, out, err = run_cmd(["ufw", "status"])
-    if not ok or any(x in (err + out).lower() for x in ("not found", "command not found", "no such")):
+    combined = (out + err).lower()
+    if any(x in combined for x in ("not found", "command not found", "no such file")):
         return False, set()
     allowed = set()
     if "inactive" in out.lower():
         return True, allowed  # UFW dispo mais inactif
     for line in out.splitlines():
+        # Lignes comme : "7000/tcp    ALLOW IN    Anywhere"
         m = re.match(r'\s*(\d+)(?:/(\w+))?\s+ALLOW', line, re.IGNORECASE)
         if m:
-            port, proto = int(m.group(1)), (m.group(2) or "tcp").lower()
+            port = int(m.group(1))
+            proto = (m.group(2) or "tcp").lower()
             allowed.add((port, proto))
             allowed.add((port, "any"))
     return True, allowed
