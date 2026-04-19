@@ -220,3 +220,9 @@ MIT — voir [LICENSE](LICENSE)
 
 - [fatedier/frp](https://github.com/fatedier/frp) — le projet frp sans lequel rien de tout ça n'aurait de sens
 - Communauté open source pour les retours et contributions
+
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Gogowwww/frp-manager&type=Date)](https://star-history.com/#Gogowwww/frp-manager&Date)
