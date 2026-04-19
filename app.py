@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-PANEL_VERSION     = "0.0.7"
+PANEL_VERSION     = "0.0.8"
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -970,29 +970,42 @@ def api_panel_update():
                 import zipfile
                 with zipfile.ZipFile(tmp_path, "r") as zf:
                     members = zf.namelist()
-                    # Détecter le préfixe en cherchant app.py dans la liste
-                    # (ne pas se fier à members[0] : l'ordre varie selon l'outil de zip)
+                    # Normaliser les backslashes Windows → / dans les noms d'entrées
+                    # (Compress-Archive stocke templates\index.html au lieu de templates/index.html,
+                    # ce qui fait que Python extrait un fichier littéralement nommé
+                    # "templates\index.html" au lieu de créer le sous-dossier templates/)
+                    norm_members = [m.replace("\\", "/") for m in members]
+
+                    # Détecter le préfixe en cherchant app.py dans la liste normalisée
                     prefix = ""
-                    for m in members:
+                    for m in norm_members:
                         if m == "app.py" or m.endswith("/app.py"):
                             prefix = m[: m.rfind("/") + 1] if "/" in m else ""
                             break
 
                     with tempfile.TemporaryDirectory() as tmpdir:
-                        zf.extractall(tmpdir)
+                        # Extraire manuellement avec chemins normalisés
+                        for info, norm_name in zip(zf.infolist(), norm_members):
+                            info.filename = norm_name
+                            zf.extract(info, tmpdir)
                         src_dir = Path(tmpdir) / prefix if prefix else Path(tmpdir)
+                        _panel_log(f"[INFO] Source zip : {src_dir} — contenu : {[p.name for p in src_dir.iterdir()] if src_dir.exists() else '?'}")
 
-                        # Copier app.py, templates/, frp-autoupdate.py
-                        for item in ["app.py", "frp-autoupdate.py", "templates"]:
+                        # Copier app.py, templates/, frp-autoupdate.py, install.sh
+                        for item in ["app.py", "frp-autoupdate.py", "templates", "install.sh"]:
                             src = src_dir / item
                             dst = install_dir / item
+                            if not src.exists():
+                                _panel_log(f"[WARN] Absent du zip : {item}")
+                                continue
                             if src.is_dir():
                                 if dst.exists():
                                     shutil.rmtree(dst)
                                 shutil.copytree(str(src), str(dst))
+                                n = sum(1 for _ in dst.rglob("*") if _.is_file())
+                                _panel_log(f"[INFO] Mis à jour : {item}/ ({n} fichiers)")
                             elif src.is_file():
                                 shutil.copy2(str(src), str(dst))
-                            if src.exists():
                                 _panel_log(f"[INFO] Mis à jour : {item}")
             except Exception as e:
                 _panel_log(f"[ERROR] Extraction : {e}")
