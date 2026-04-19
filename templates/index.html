@@ -21,8 +21,8 @@ header{background:var(--surface);border-bottom:1px solid var(--border);height:52
 .logo{font-family:var(--mono);font-weight:700;font-size:1rem;display:flex;align-items:center;gap:.5rem;white-space:nowrap;}
 .logo-dot{color:var(--accent);font-size:1.1rem;}
 .ver-badge{font-family:var(--mono);font-size:.63rem;background:rgba(74,222,128,.1);color:var(--accent);border:1px solid rgba(74,222,128,.2);padding:.14rem .48rem;border-radius:999px;}
-.btn-logout{font-size:.71rem;color:var(--muted);background:none;border:1px solid var(--border);border-radius:6px;padding:.23rem .62rem;cursor:pointer;font-family:var(--sans);transition:all .15s;}
-.btn-logout:hover{color:var(--danger);border-color:rgba(248,113,113,.4);}
+.btn-logout{font-size:.71rem;color:var(--danger);background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.25);border-radius:6px;padding:.23rem .62rem;cursor:pointer;font-family:var(--sans);transition:all .15s;}
+.btn-logout:hover{background:rgba(248,113,113,.18);border-color:rgba(248,113,113,.5);}
 
 /* Nav */
 nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 1.5rem;overflow-x:auto;}
@@ -186,6 +186,13 @@ pre.cblock{background:var(--bg);border:1px solid var(--border);border-radius:6px
 .modal-body .warn-box{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:.75rem 1rem;margin-bottom:.8rem;color:var(--warn);}
 .modal-footer{display:flex;justify-content:flex-end;gap:.5rem;}
 
+/* Footer */
+footer{background:var(--surface);border-top:1px solid var(--border);padding:.65rem 1.5rem;display:flex;align-items:center;justify-content:center;gap:.4rem;font-size:.7rem;color:var(--muted);font-family:var(--sans);}
+footer .heart{color:#f87171;}
+footer .ai{color:var(--accent2);font-weight:600;}
+footer a{color:var(--muted);text-decoration:none;transition:color .15s;}
+footer a:hover{color:var(--accent2);}
+
 /* Nickname */
 .inst-nick{font-size:.68rem;color:var(--muted);font-family:var(--sans);font-style:italic;margin-top:.15rem;min-height:.9rem;}
 .nick-edit-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.72rem;padding:.05rem .22rem;border-radius:4px;opacity:.55;transition:opacity .15s;line-height:1;}
@@ -197,9 +204,16 @@ pre.cblock{background:var(--bg);border:1px solid var(--border);border-radius:6px
 <body>
 
 <header>
-  <div class="logo"><span class="logo-dot">⬡</span> FRP Manager</div>
+  <div class="logo">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
+      <path d="M13 2L23 7.5V18.5L13 24L3 18.5V7.5L13 2Z" stroke="#4ade80" stroke-width="1.5" stroke-linejoin="round" fill="rgba(74,222,128,.08)"/>
+      <path d="M7.5 11h11M16 8.5l2.5 2.5L16 13.5" stroke="#4ade80" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M18.5 15H7.5M10 12.5L7.5 15l2.5 2.5" stroke="#4ade80" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    FRP Manager
+  </div>
   <div style="display:flex;align-items:center;gap:.7rem;">
-    <span class="ver-badge" id="ver-badge">—</span>
+    <span class="ver-badge" id="ver-badge">v{{ panel_version }}</span>
     <button class="btn-logout" onclick="doLogout()">Déconnexion</button>
   </div>
 </header>
@@ -533,6 +547,17 @@ Redémarrage requis pour prendre effet.">?</span></label><input class="finput" i
 </main>
 <div id="toast"></div>
 
+<footer>
+  <span>Panel fait avec</span>
+  <span class="heart">♥</span>
+  <span>et</span>
+  <span class="ai">IA</span>
+  <span>grâce à</span>
+  <a href="https://claude.ai" target="_blank" rel="noopener">Claude</a>
+  <span style="color:var(--border);margin:0 .15rem;">·</span>
+  <a href="https://github.com/Gogowwww/frp-manager" target="_blank" rel="noopener">GitHub</a>
+</footer>
+
 <!-- ══ MODAL BIENVENUE ══ -->
 <div class="modal-backdrop" id="welcome-modal" style="display:none;">
   <div class="modal-box">
@@ -650,8 +675,6 @@ async function runDetect(){
   renderGrid(lastInst,true);
   const parts=Object.entries(lastInst).map(([id,i])=>i.binary_found?`${id} (${i.version||'?'})`:id+' ✗');
   document.getElementById('det-text').textContent='🔍 '+(parts.join('  ·  ')||'Aucun binaire détecté');
-  const iv=Object.values(lastInst).find(i=>i.version)?.version;
-  if(iv)document.getElementById('ver-badge').textContent=`v${iv}`;
 }
 
 async function refreshStatus(){
@@ -660,8 +683,6 @@ async function refreshStatus(){
   if(!d.ok)return;
   lastInst=d.instances||{};
   renderGrid(lastInst,false);
-  const iv=d.installed_version;
-  if(iv)document.getElementById('ver-badge').textContent=`v${iv}`;
 }
 
 function sIds(inst){return Object.keys(inst).sort((a,b)=>{const ta=inst[a].type,tb=inst[b].type;if(ta!==tb)return ta==='frps'?-1:1;return a.localeCompare(b);});}
@@ -951,7 +972,7 @@ function updPxType(sel,i){
 
 // ═══ Logs ════════════════════════════════════════════════════════════
 let liveEs=null;
-function populateLogSel(){const sel=document.getElementById('log-sel');if(!sel||sel.options.length>0)return;const ids=sIds(lastInst);sel.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');if(ids.length)loadLogs();}
+function populateLogSel(){const sel=document.getElementById('log-sel');if(!sel)return;if(sel.options.length===0){const ids=sIds(lastInst);sel.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');}if(sel.value)loadLogs();}
 async function loadLogs(){
   stopLive();
   const svc=gv('log-sel'),src=gv('log-src');if(!svc)return;

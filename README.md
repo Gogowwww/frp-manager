@@ -5,6 +5,7 @@
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
+[![Stars](https://img.shields.io/github/stars/Gogowwww/frp-manager?style=flat&color=yellow)](https://github.com/Gogowwww/frp-manager/stargazers)
 
 ---
 
@@ -54,6 +55,11 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 - **Accès sécurisé** : authentification par identifiant + mot de passe (hashé SHA-256)
 - Version du panel avec statut de mise à jour
 
+### Sécurité & confort
+- **HTTPS natif** : certificat auto-signé généré automatiquement au premier démarrage (RSA 2048-bit, 10 ans)
+- **Surnoms d'instances** : donnez un nom lisible à chaque frps/frpc (bouton ✏️ sur chaque carte)
+- **Avertissement sécurité** : rappel au premier accès pour protéger le panel si exposé en externe
+
 ---
 
 ## Prérequis
@@ -80,10 +86,10 @@ Le script installe automatiquement les dépendances Python dans un virtualenv is
 
 L'interface est ensuite accessible sur :
 ```
-http://VOTRE_IP:8765
+https://VOTRE_IP:8765
 ```
 
-> **Note** : Le port et l'IP d'écoute sont configurables dans l'onglet **Paramètres** de l'interface, ou directement dans `/etc/frp-manager/frp-manager.json`.
+> **Note** : Le panel démarre en **HTTPS** par défaut avec un certificat auto-signé. Votre navigateur affichera un avertissement de sécurité — c'est normal, acceptez l'exception. Le port et l'IP d'écoute sont configurables dans l'onglet **Paramètres**, ou directement dans `/etc/frp-manager/frp-manager.json`.
 
 ---
 
@@ -214,3 +220,9 @@ MIT — voir [LICENSE](LICENSE)
 
 - [fatedier/frp](https://github.com/fatedier/frp) — le projet frp sans lequel rien de tout ça n'aurait de sens
 - Communauté open source pour les retours et contributions
+
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Gogowwww/frp-manager&type=Date)](https://star-history.com/#Gogowwww/frp-manager&Date)

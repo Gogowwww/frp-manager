@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-PANEL_VERSION     = "0.0.1"
+PANEL_VERSION     = "0.0.3"
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -486,7 +486,7 @@ def install_from_archive(tmp_path, version, log_fn):
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", panel_version=PANEL_VERSION)
 
 @app.route("/api/detect")
 @login_required
