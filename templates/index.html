@@ -246,30 +246,19 @@ footer a:hover{color:var(--accent2);}
 
 <!-- ══ PORTS ══ -->
 <div class="section" id="tab-ports">
-  <div class="card" style="margin-bottom:.82rem;">
-    <div class="card-title">🔌 Ports utilisés par frp <span class="tip-i" data-tip="Ports détectés dans vos configs frp.
-Cliquez sur Ouvrir pour autoriser dans UFW.">?</span></div>
-    <div id="ports-list" style="margin-bottom:.72rem;">
-      <div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Chargement…</div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-secondary" onclick="loadPorts()">↻ Actualiser</button>
-    </div>
-  </div>
   <div class="card">
-    <div class="card-title">🛡 Ouvrir un port manuellement</div>
-    <div style="display:flex;gap:.62rem;align-items:flex-end;flex-wrap:wrap;">
-      <div>
-        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Port</div>
-        <input class="finput port-f" id="manual-port" type="number" min="1" max="65535" placeholder="ex: 7000" style="width:110px;">
+    <div class="card-title">🔌 Tunnels frpc <span class="tip-i" data-tip="Gérez les [[proxies]] de votre config frpc.&#10;Sélectionnez une instance, ajoutez/modifiez les tunnels, puis sauvegardez.">?</span></div>
+    <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin-bottom:.82rem;">
+      <select class="finput" id="ports-frpc-sel" onchange="onPortsFrpcSel()" style="width:auto;min-width:155px;"></select>
+      <div style="margin-left:auto;display:flex;gap:.38rem;">
+        <button class="btn btn-primary" onclick="savePortsTunnels()">💾 Sauvegarder</button>
+        <button class="btn btn-secondary" onclick="saveRestartPorts()">💾 + ↺ Restart</button>
+        <button class="btn btn-secondary" onclick="loadPortsTunnels()">↩ Recharger</button>
       </div>
-      <div>
-        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Protocole</div>
-        <select class="finput" id="manual-proto" style="width:90px;"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-      </div>
-      <button class="btn btn-primary" onclick="openManualPort()">🔓 Ouvrir dans UFW</button>
     </div>
-    <div id="ufw-status" style="margin-top:.72rem;font-size:.72rem;color:var(--muted);font-family:var(--mono);"></div>
+    <div id="pp-list"></div>
+    <div id="pp-empty" style="color:var(--muted);font-size:.76rem;font-family:var(--mono);padding:.35rem 0;">Aucun tunnel configuré.</div>
+    <button class="btn btn-info" onclick="addPortProxy()" style="margin-top:.55rem;">+ Ajouter un tunnel</button>
   </div>
 </div>
 
@@ -379,11 +368,6 @@ Cliquez sur Ouvrir pour autoriser dans UFW.">?</span></div>
             <div class="ffield"><label class="flabel">Token <span class="fkey">auth.token</span></label><div class="tok-wrap"><input class="finput" id="c-authtoken" type="password" placeholder="même token que frps"><button class="btn btn-secondary" onclick="toggleTok('c-authtoken')" style="padding:.37rem .52rem;">👁</button></div></div>
             <div class="ffield"><label class="flabel">Protocole <span class="fkey">transport.protocol</span></label><select class="finput" id="c-proto"><option value="tcp">tcp</option><option value="kcp">kcp</option><option value="quic">quic</option><option value="websocket">websocket</option><option value="wss">wss</option></select></div>
           </div>
-        </div>
-        <div class="fsect">
-          <div class="fsect-head">🔌 Tunnels (proxies)</div>
-          <div id="px-list"></div>
-          <button class="btn btn-info" onclick="addProxy()" style="margin-top:.35rem;">+ Ajouter un tunnel</button>
         </div>
         <div class="adv-btn" onclick="tgAdv('c-adv')"><span class="adv-arr" id="c-adv-arr">▶</span> Options avancées</div>
         <div class="adv-body" id="c-adv">
@@ -630,7 +614,7 @@ function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id==='tab-'+name));
   if(name==='logs')populateLogSel();
-  if(name==='ports')loadPorts();
+  if(name==='ports')loadPortsTunnels();
   if(name==='settings'){
     loadMgrCfg();
     const sel=document.getElementById('cfg-sel');
@@ -776,6 +760,18 @@ function updateSelects(ids,inst){
   }
   const ls=document.getElementById('log-sel');
   if(ls){const prev=ls.value;ls.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');if(ids.includes(prev))ls.value=prev;}
+  // Sélecteur frpc pour l'onglet Ports (instances frpc non-Docker uniquement)
+  const ps=document.getElementById('ports-frpc-sel');
+  if(ps){
+    const frpcIds=ids.filter(id=>inst[id].type==='frpc'&&inst[id].source!=='docker');
+    const prev=ps.value;
+    ps.innerHTML=frpcIds.length
+      ? frpcIds.map(id=>`<option value="${id}">${id}</option>`).join('')
+      : '<option value="">— aucune instance frpc —</option>';
+    if(frpcIds.includes(prev))ps.value=prev;
+    else ps.value=frpcIds[0]||'';
+    if(!portsFrpcTgt&&ps.value)portsFrpcTgt=ps.value;
+  }
 }
 
 async function svcAct(iid,action){
@@ -790,7 +786,7 @@ function goConfig(iid){switchTab('settings');const s=document.getElementById('cf
 function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
 
 // ═══ Config ═══════════════════════════════════════════════════════════
-let cfgTgt='',pxCount=0;
+let cfgTgt='',pxCount=0,portsFrpcTgt='';
 
 function onCfgSel(){cfgTgt=gv('cfg-sel');adaptForm(cfgTgt);loadConfig();}
 function adaptForm(iid){
@@ -886,8 +882,8 @@ async function loadConfig(){
     sv('c-ws-addr',cfg['webServer.addr']||'127.0.0.1');sv('c-ws-port',cfg['webServer.port']||'7400');sv('c-ws-user',cfg['webServer.user']||'admin');sv('c-ws-pass',cfg['webServer.password']||'');
     const tlsEn=!!cfg['transport.tls.certFile'];sv('c-tls-en',tlsEn);tg('c-tls-g',tlsEn);
     sv('c-tls-cert',cfg['transport.tls.certFile']||'');sv('c-tls-key',cfg['transport.tls.keyFile']||'');sv('c-tls-ca',cfg['transport.tls.trustedCaFile']||'');sv('c-tls-sn',cfg['transport.tls.serverName']||'');
-    document.getElementById('px-list').innerHTML='';pxCount=0;
-    for(const p of cfg._px)addPxFromData(p);
+    const pxListEl=document.getElementById('px-list');
+    if(pxListEl){pxListEl.innerHTML='';pxCount=0;for(const p of cfg._px)addPxFromData(p);}
   }
 }
 function sop(inputId,chkId,val){const en=!!val;sv(chkId,en);ti(inputId,en);if(en)sv(inputId,val);}
@@ -925,22 +921,25 @@ function genC(){
   if(proto!=='tcp'||purl||pool!==5||hbi!==30||gv('c-tls-en')){L.push('\n[transport]');if(proto!=='tcp')L.push(`protocol = "${proto}"`);if(purl)L.push(`proxyURL = "${purl}"`);if(pool!==5)L.push(`poolCount = ${pool}`);if(hbi!==30)L.push(`heartbeatInterval = ${hbi}`);}
   if(gv('c-tls-en')){L.push('\n[transport.tls]');L.push(`certFile = "${gv('c-tls-cert')}"`);L.push(`keyFile = "${gv('c-tls-key')}"`);if(gv('c-tls-ca'))L.push(`trustedCaFile = "${gv('c-tls-ca')}"`);if(gv('c-tls-sn'))L.push(`serverName = "${gv('c-tls-sn')}"`);  }
   if(gv('c-ws-en')){L.push('\n[webServer]');L.push(`addr = "${gv('c-ws-addr')}"`);L.push(`port = ${gv('c-ws-port')}`);if(gv('c-ws-user'))L.push(`user = "${gv('c-ws-user')}"`);if(gv('c-ws-pass'))L.push(`password = "${gv('c-ws-pass')}"`);}
-  document.querySelectorAll('.px-card').forEach(card=>{
-    const i=card.dataset.idx,t=gv(`p-type-${i}`);
-    L.push('\n[[proxies]]');L.push(`name = "${gv(`p-name-${i}`)}"`);L.push(`type = "${t}"`);
-    const li=gv(`p-lip-${i}`);if(li)L.push(`localIP = "${li}"`);
-    const lp=gv(`p-lport-${i}`);if(lp)L.push(`localPort = ${lp}`);
-    if(['tcp','udp','stcp','xtcp'].includes(t)){const rp=gv(`p-rport-${i}`);if(rp)L.push(`remotePort = ${rp}`);}
-    if(['http','https'].includes(t)){const cd=gv(`p-dom-${i}`);if(cd)L.push(`customDomains = ["${cd.split(',').map(s=>s.trim()).join('","')}"]`);}
-    if(gv(`p-cmp-${i}`))L.push('transport.useCompression = true');
-    if(gv(`p-enc-${i}`))L.push('transport.useEncryption = true');
-    const ppv=gv(`p-ppv-${i}`);if(ppv)L.push(`transport.proxyProtocolVersion = "${ppv}"`);
-  });
+  // Les [[proxies]] sont désormais gérés dans l'onglet Ports — on ne les écrase pas ici
   return L.join('\n');
 }
 
 async function saveConfig(){
-  const content=genToml();
+  let content=genToml();
+  // Pour frpc : préserver les [[proxies]] existants (gérés dans l'onglet Ports)
+  const inst=lastInst[cfgTgt];
+  const type=inst?inst.type:(cfgTgt&&cfgTgt.startsWith('frpc')?'frpc':'frps');
+  if(type==='frpc'){
+    try{
+      const cr=await fetch(`/api/config/${cfgTgt}`);
+      const cd=await cr.json();
+      if(cd.ok&&cd.content){
+        const existing=extractProxiesText(cd.content);
+        if(existing)content+='\n\n'+existing;
+      }
+    }catch(e){}
+  }
   const r=await fetch(`/api/config/${cfgTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
   const d=await r.json();toast(d.msg,d.ok?'ok':'err');
 }
@@ -1148,53 +1147,108 @@ async function pollPanelLog(repeat=false){
   }
 }
 
-// ═══ Ports ═══════════════════════════════════════════════════════════
-async function loadPorts(){
-  const list=document.getElementById('ports-list');
-  const ufwEl=document.getElementById('ufw-status');
-  if(list)list.innerHTML='<div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Chargement…</div>';
-  const r=await fetch('/api/ports');const d=await r.json();
-  if(!d.ok){if(list)list.innerHTML='<div style="color:var(--danger);font-size:.76rem;">Erreur lors de la récupération des ports</div>';return;}
-  const ports=d.ports||[];
-  if(!ports.length){
-    if(list)list.innerHTML='<div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Aucun port détecté — vérifiez que des configs frp existent.</div>';
-  } else {
-    const rows=ports.map(p=>{
-      const statusCls=p.ufw_allowed?'ok':'err';
-      const statusTxt=p.ufw_allowed?'✓ autorisé':'✗ non ouvert';
-      const btnHtml=d.ufw_available&&!p.ufw_allowed?`<button class="btn btn-primary" style="padding:.25rem .55rem;font-size:.68rem;" onclick="openPort(${p.port},'${p.proto}')">🔓 Ouvrir</button>`:'';
-      return`<div class="mrow" style="padding:.42rem 0;border-bottom:1px solid var(--border);">
-        <div style="display:flex;align-items:center;gap:.6rem;">
-          <span class="px-badge">${esc(p.proto.toUpperCase())}</span>
-          <span style="font-family:var(--mono);font-size:.82rem;font-weight:700;">${p.port}</span>
-          <span style="color:var(--muted);font-size:.72rem;">${esc(p.label)}</span>
-          <span style="font-family:var(--mono);font-size:.63rem;color:var(--muted);">${esc(p.iid)}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:.5rem;">
-          <span class="mval ${statusCls}">${statusTxt}</span>
-          ${btnHtml}
-        </div>
-      </div>`;
-    }).join('');
-    if(list)list.innerHTML=`<div style="padding:.2rem 0;">${rows}</div>`;
-  }
-  if(ufwEl){
-    if(!d.ufw_available)ufwEl.innerHTML='<span style="color:var(--warn);">⚠ UFW non disponible sur ce système</span>';
-    else ufwEl.innerHTML='<span style="color:var(--accent);">✓ UFW disponible</span>';
-  }
+// ═══ Tunnels frpc (onglet Ports) ══════════════════════════════════════
+let portsPxCount=0;
+
+function onPortsFrpcSel(){portsFrpcTgt=gv('ports-frpc-sel');loadPortsTunnels();}
+
+function updPortsEmpty(){
+  const lst=document.getElementById('pp-list');
+  const emp=document.getElementById('pp-empty');
+  if(lst&&emp)emp.style.display=lst.children.length?'none':'';
 }
-async function openPort(port,proto){
-  toast(`Ouverture ${port}/${proto}…`,'info');
-  const r=await fetch('/api/ports/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({port,proto})});
+
+async function loadPortsTunnels(){
+  const sel=document.getElementById('ports-frpc-sel');
+  if(!sel||!sel.value){
+    const emp=document.getElementById('pp-empty');
+    if(emp)emp.textContent='Aucune instance frpc (non-Docker) détectée.';
+    updPortsEmpty();return;
+  }
+  portsFrpcTgt=portsFrpcTgt||sel.value;
+  if(!portsFrpcTgt){updPortsEmpty();return;}
+  sel.value=portsFrpcTgt;
+  const r=await fetch(`/api/config/${portsFrpcTgt}`);
   const d=await r.json();
-  toast(d.msg,d.ok?'ok':'err');
-  if(d.ok)setTimeout(loadPorts,500);
+  const lst=document.getElementById('pp-list');
+  if(lst)lst.innerHTML='';
+  portsPxCount=0;
+  if(d.ok&&d.content){
+    const cfg=parseToml(d.content);
+    for(const p of cfg._px)addPortPxFromData(p);
+  }
+  const emp=document.getElementById('pp-empty');
+  if(emp)emp.textContent='Aucun tunnel configuré.';
+  updPortsEmpty();
 }
-async function openManualPort(){
-  const port=parseInt(gv('manual-port'));const proto=gv('manual-proto');
-  if(!port||port<1||port>65535){toast('Port invalide','err');return;}
-  await openPort(port,proto);
+
+function addPortProxy(){addPortPxFromData({});}
+function addPortPxFromData(data){
+  const i=++portsPxCount;const type=data.type||'tcp';
+  const nr=['tcp','udp','stcp','xtcp'].includes(type),nd=['http','https'].includes(type);
+  const el=document.createElement('div');el.className='px-card';el.dataset.idx=i;
+  el.innerHTML=`<div class="px-head">
+    <span class="px-badge" id="ppb-${i}">${type.toUpperCase()}</span>
+    <span class="px-namelbl" id="ppnl-${i}">${esc(data.name||'nouveau tunnel')}</span>
+    <button class="px-del" onclick="this.closest('.px-card').remove();updPortsEmpty()">✕</button>
+  </div>
+  <div class="fcols">
+    <div class="ffield"><label class="flabel">Nom <span class="fkey">name</span></label><input class="finput" id="pp-name-${i}" value="${esc(data.name||'')}" placeholder="ex: ssh" oninput="document.getElementById('ppnl-${i}').textContent=this.value||'tunnel'"></div>
+    <div class="ffield"><label class="flabel">Type <span class="fkey">type</span></label><select class="finput" id="pp-type-${i}" onchange="updPortPxType(this,${i})">${['tcp','udp','http','https','stcp','xtcp'].map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="ffield"><label class="flabel">IP locale <span class="fkey">localIP</span></label><input class="finput" id="pp-lip-${i}" value="${esc(data.localIP||'127.0.0.1')}"></div>
+    <div class="ffield port-f"><label class="flabel">Port local <span class="fkey">localPort</span> <span class="tip-i" data-tip="Port du service sur cette machine.">?</span></label><input class="finput" id="pp-lport-${i}" type="number" value="${esc(data.localPort||'')}" min="1" max="65535" placeholder="ex: 22"></div>
+    <div class="ffield port-f" id="pprf-${i}"${nr?'':' style="display:none"'}><label class="flabel">Port distant <span class="fkey">remotePort</span> <span class="tip-i" data-tip="Port exposé côté serveur frps.">?</span></label><input class="finput" id="pp-rport-${i}" type="number" value="${esc(data.remotePort||'')}" min="1" max="65535" placeholder="ex: 6022"></div>
+    <div class="ffield" id="ppdf-${i}"${nd?'':' style="display:none"'}><label class="flabel">Domaines <span class="fkey">customDomains</span></label><input class="finput" id="pp-dom-${i}" value="${esc((data.customDomains||'').replace(/["\[\]]/g,''))}" placeholder="mon.domaine.fr"></div>
+    <div class="ffield"><label class="flabel">Proxy Protocol <span class="tip-i" data-tip="Transmet l'IP réelle du client.&#10;v2 recommandé pour nginx/haproxy.">?</span></label><select class="finput" id="pp-ppv-${i}"><option value="">Désactivé</option><option value="v1"${data['transport.proxyProtocolVersion']==='v1'?' selected':''}>v1</option><option value="v2"${data['transport.proxyProtocolVersion']==='v2'?' selected':''}>v2 (recommandé)</option></select></div>
+    <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="pp-cmp-${i}"${data['transport.useCompression']==='true'?' checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Compression</span></label></div>
+    <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="pp-enc-${i}"${data['transport.useEncryption']==='true'?' checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Chiffrement</span></label></div>
+  </div>`;
+  document.getElementById('pp-list').appendChild(el);
+  updPortsEmpty();
 }
+function updPortPxType(sel,i){
+  const t=sel.value;
+  document.getElementById(`ppb-${i}`).textContent=t.toUpperCase();
+  document.getElementById(`pprf-${i}`).style.display=['tcp','udp','stcp','xtcp'].includes(t)?'':'none';
+  document.getElementById(`ppdf-${i}`).style.display=['http','https'].includes(t)?'':'none';
+}
+function stripProxies(toml){
+  const idx=toml.indexOf('\n[[proxies]]');
+  if(idx>=0)return toml.slice(0,idx).trimEnd();
+  if(toml.startsWith('[[proxies]]'))return '';
+  return toml.trimEnd();
+}
+function extractProxiesText(toml){
+  const idx=toml.indexOf('\n[[proxies]]');
+  if(idx>=0)return toml.slice(idx+1).trimStart();
+  if(toml.startsWith('[[proxies]]'))return toml;
+  return '';
+}
+function genPortsProxiesText(){
+  const L=[];
+  document.querySelectorAll('#pp-list .px-card').forEach(card=>{
+    const i=card.dataset.idx,t=gv(`pp-type-${i}`);
+    L.push('\n[[proxies]]');L.push(`name = "${gv(`pp-name-${i}`)}"`);L.push(`type = "${t}"`);
+    const li=gv(`pp-lip-${i}`);if(li)L.push(`localIP = "${li}"`);
+    const lp=gv(`pp-lport-${i}`);if(lp)L.push(`localPort = ${lp}`);
+    if(['tcp','udp','stcp','xtcp'].includes(t)){const rp=gv(`pp-rport-${i}`);if(rp)L.push(`remotePort = ${rp}`);}
+    if(['http','https'].includes(t)){const cd=gv(`pp-dom-${i}`);if(cd)L.push(`customDomains = ["${cd.split(',').map(s=>s.trim()).join('","')}"]`);}
+    if(gv(`pp-cmp-${i}`))L.push('transport.useCompression = true');
+    if(gv(`pp-enc-${i}`))L.push('transport.useEncryption = true');
+    const ppv=gv(`pp-ppv-${i}`);if(ppv)L.push(`transport.proxyProtocolVersion = "${ppv}"`);
+  });
+  return L.join('\n');
+}
+async function savePortsTunnels(){
+  if(!portsFrpcTgt){toast('Sélectionnez une instance frpc','err');return;}
+  // Charger le fichier actuel pour préserver la config de connexion
+  let base='';
+  try{const cr=await fetch(`/api/config/${portsFrpcTgt}`);const cd=await cr.json();if(cd.ok)base=cd.content||'';}catch(e){}
+  const content=stripProxies(base)+genPortsProxiesText();
+  const r=await fetch(`/api/config/${portsFrpcTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+  const d=await r.json();toast(d.msg,d.ok?'ok':'err');
+}
+async function saveRestartPorts(){await savePortsTunnels();await svcAct(portsFrpcTgt,'restart');}
 
 // ═══ Init ════════════════════════════════════════════════════════════
 (async()=>{
