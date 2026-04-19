@@ -1,9 +1,9 @@
 services:
   frp-manager:
-    # Image pré-buildée sur GitHub Container Registry (recommandé pour Portainer)
-    image: ghcr.io/gogowwww/frp-manager:latest
-    # Pour construire localement depuis les sources, commentez la ligne image et décommentez :
-    # build: .
+    # Construction depuis les sources (recommandé — fonctionne avec Portainer → Repository)
+    build: .
+    # Alternative : image pré-buildée sur GitHub Container Registry (quand disponible)
+    # image: ghcr.io/gogowwww/frp-manager:latest
     container_name: frp-manager
     restart: unless-stopped
 

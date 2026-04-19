@@ -102,22 +102,28 @@ Le script installe automatiquement les dépendances Python dans un virtualenv is
 
 ### Méthode 2 — Docker / Portainer
 
-L'image est publiée automatiquement sur GitHub Container Registry à chaque release.
-
-**Avec Docker Compose :**
+**Avec Docker Compose (CLI) :**
 ```bash
-curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/docker-compose.yml
+git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
 docker compose up -d
 ```
 
-**Avec Portainer :** Stacks → Add Stack → Upload → sélectionner `docker-compose.yml` depuis la release.
+**Avec Portainer — méthode recommandée :**
+1. Stacks → **Add Stack**
+2. Choisir **Repository**
+3. URL : `https://github.com/Gogowwww/frp-manager`
+4. Compose path : `docker-compose.yml`
+5. Activer **"Re-pull image and redeploy"** si souhaité
+6. **Deploy the stack**
 
-> **Comment ça fonctionne** : le container utilise `nsenter` avec `pid: host` pour atteindre le systemd de l'hôte sans avoir à installer systemd dans l'image. Il peut ainsi contrôler les services frps/frpc exactement comme une installation classique. Les binaires frp sont lus/écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
+Portainer clone le repo et build l'image directement — aucun fichier à télécharger manuellement.
 
-**Mode démo :**
+> **Comment ça fonctionne** : le container utilise `nsenter` avec `pid: host` pour atteindre le systemd de l'hôte sans installer systemd dans l'image. Il contrôle les services frps/frpc exactement comme une installation classique. Les binaires frp sont lus/écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
+
+**Mode démo (fausses instances, aucune action réelle) :**
 ```yaml
 environment:
-  - DEMO_MODE=true   # Fausses instances, aucune action réelle
+  - DEMO_MODE=true
 ```
 
 L'interface est ensuite accessible sur :
