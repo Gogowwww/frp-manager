@@ -970,10 +970,13 @@ def api_panel_update():
                 import zipfile
                 with zipfile.ZipFile(tmp_path, "r") as zf:
                     members = zf.namelist()
-                    # Détecter le préfixe du zip (ex: frp-manager-1.0.0/)
+                    # Détecter le préfixe en cherchant app.py dans la liste
+                    # (ne pas se fier à members[0] : l'ordre varie selon l'outil de zip)
                     prefix = ""
-                    if members and "/" in members[0]:
-                        prefix = members[0].split("/")[0] + "/"
+                    for m in members:
+                        if m == "app.py" or m.endswith("/app.py"):
+                            prefix = m[: m.rfind("/") + 1] if "/" in m else ""
+                            break
 
                     with tempfile.TemporaryDirectory() as tmpdir:
                         zf.extractall(tmpdir)
