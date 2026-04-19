@@ -118,6 +118,14 @@ BINARY_SEARCH_PATHS = [
     Path("/usr/local/bin"), Path("/usr/bin"), Path("/usr/sbin"),
     Path("/opt/frp"), Path("/opt/frp/bin"), Path("/root/frp"), Path("/srv/frp"),
 ]
+
+# Support Docker : /host/usr/local/bin est le /usr/local/bin de l'hôte monté
+# via docker-compose. Si présent, on l'utilise en priorité pour lire ET écrire
+# les binaires frp sur le système hôte (et non dans le container).
+_DOCKER_HOST_BIN = Path("/host/usr/local/bin")
+if _DOCKER_HOST_BIN.exists():
+    FRP_BIN_DIR = _DOCKER_HOST_BIN
+    BINARY_SEARCH_PATHS = [_DOCKER_HOST_BIN] + BINARY_SEARCH_PATHS
 CONFIG_SEARCH_PATHS = [
     Path("/etc/frp"), Path("/usr/local/etc/frp"), Path("/opt/frp"), Path("/root/frp"),
 ]

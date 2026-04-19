@@ -1,0 +1,40 @@
+services:
+  frp-manager:
+    build: .
+    image: frp-manager
+    container_name: frp-manager
+    restart: unless-stopped
+
+    # Réseau hôte — le panel écoute directement sur les ports de la machine
+    network_mode: host
+
+    # Nécessaire pour que systemctl puisse communiquer avec le systemd de l'hôte
+    privileged: true
+
+    volumes:
+      # ── Données persistantes du panel ──────────────────────────────────
+      - /etc/frp-manager:/etc/frp-manager        # Config panel + SSL certs
+      - /etc/frp:/etc/frp                          # Configs frps/frpc (TOML)
+      - /var/log/frp:/var/log/frp                  # Logs frp
+      - /var/lib/frp-manager:/var/lib/frp-manager  # État (versions installées)
+
+      # ── Systemd de l'hôte ──────────────────────────────────────────────
+      # Permet à systemctl dans le container de contrôler les services frp sur l'hôte
+      - /run/systemd:/run/systemd
+      - /run/dbus:/run/dbus
+
+      # ── Journaux de l'hôte ─────────────────────────────────────────────
+      # Nécessaire pour que journalctl affiche les logs des services hôte
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+
+      # ── Binaires frp de l'hôte ─────────────────────────────────────────
+      # Monté sur /host/usr/local/bin — frp-manager l'utilise automatiquement
+      # pour détecter et installer frps/frpc sur le système hôte
+      - /usr/local/bin:/host/usr/local/bin
+
+    environment:
+      - FRP_MANAGER_PORT=8765
+      # Décommentez pour désactiver HTTPS :
+      # - FRP_MANAGER_SSL=false

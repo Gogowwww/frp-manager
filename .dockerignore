@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.md
+venv/
+__pycache__/
+*.pyc
+*.pyo
+frp-manager.zip
+.claude/
+install.sh

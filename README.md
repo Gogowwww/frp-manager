@@ -75,6 +75,8 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 
 ## Installation
 
+### Méthode 1 — Script d'installation (recommandée)
+
 ```bash
 # 1. Télécharger la dernière release
 curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
@@ -85,6 +87,19 @@ sudo bash install.sh
 ```
 
 Le script installe automatiquement les dépendances Python dans un virtualenv isolé, crée le service systemd `frp-manager`, et démarre le panel.
+
+### Méthode 2 — Docker
+
+```bash
+# 1. Télécharger la dernière release
+curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
+unzip frp-manager.zip && cd frp-manager
+
+# 2. Lancer avec Docker Compose
+docker compose up -d
+```
+
+> **Docker — comment ça fonctionne** : le container se monte sur le systemd de l'hôte (`/run/systemd`, `/run/dbus`) avec `privileged: true` et `network_mode: host`. Cela lui permet de contrôler les services frps/frpc de la machine hôte exactement comme le ferait une installation classique. Les binaires frp sont lus et écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
 
 L'interface est ensuite accessible sur :
 ```
@@ -98,13 +113,21 @@ https://VOTRE_IP:8765
 ## Structure des fichiers
 
 ```
-/opt/frp-manager/          # Code du panel
+# Repo (sources)
+  Dockerfile               # Image Docker
+  docker-compose.yml       # Orchestration Docker
+  requirements.txt         # Dépendances Python
   app.py                   # Serveur Flask
   frp-autoupdate.py        # Script d'auto-update frp (cron)
-  venv/                    # Environnement Python isolé
   templates/
     index.html             # Interface web
     login.html             # Page de connexion
+
+/opt/frp-manager/          # Code installé (méthode script)
+  app.py
+  frp-autoupdate.py
+  venv/                    # Environnement Python isolé
+  templates/
 
 /etc/frp-manager/
   frp-manager.json         # Configuration du panel
