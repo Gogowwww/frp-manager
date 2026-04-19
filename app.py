@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FRP Manager — backend Flask multi-instances"""
 
-import os, re, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib
+import os, re, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, ssl
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -18,6 +18,10 @@ PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/
 MGR_CONF_FILE = Path("/etc/frp-manager/frp-manager.json")
 MGR_CONF_DIR  = MGR_CONF_FILE.parent
 
+SSL_CERT_DIR  = MGR_CONF_DIR / "ssl"
+SSL_CERT_FILE = SSL_CERT_DIR / "cert.pem"
+SSL_KEY_FILE  = SSL_CERT_DIR / "key.pem"
+
 def _default_manager_config():
     return {
         "bind_host":       "0.0.0.0",
@@ -26,6 +30,8 @@ def _default_manager_config():
         "password_hash":   "",
         "secret_key":      secrets.token_hex(32),
         "session_timeout": 3600,
+        "ssl_enabled":     True,
+        "nicknames":       {},
     }
 
 def load_manager_config():
@@ -42,6 +48,61 @@ def save_manager_config(cfg):
     MGR_CONF_FILE.write_text(json.dumps(cfg, indent=2))
 
 MGR_CFG = load_manager_config()
+
+# ── SSL auto-signé ────────────────────────────────────────────────────────────
+def generate_self_signed_cert():
+    SSL_CERT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.backends import default_backend
+        import datetime as dt, ipaddress
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+        SSL_KEY_FILE.write_bytes(key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption()))
+        subj = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, u"frp-manager")])
+        cert = (x509.CertificateBuilder()
+            .subject_name(subj).issuer_name(subj)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(dt.datetime.utcnow())
+            .not_valid_after(dt.datetime.utcnow() + dt.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName([
+                x509.DNSName(u"localhost"),
+                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+            ]), critical=False)
+            .sign(key, hashes.SHA256(), default_backend()))
+        SSL_CERT_FILE.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+        return True
+    except ImportError:
+        pass
+    try:
+        r = subprocess.run([
+            "openssl", "req", "-x509", "-nodes", "-newkey", "rsa:2048",
+            "-keyout", str(SSL_KEY_FILE), "-out", str(SSL_CERT_FILE),
+            "-days", "3650", "-subj", "/CN=frp-manager/O=FRP Manager",
+        ], capture_output=True, timeout=30)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def get_ssl_context():
+    if not MGR_CFG.get("ssl_enabled", True):
+        return None
+    if not SSL_CERT_FILE.exists() or not SSL_KEY_FILE.exists():
+        if not generate_self_signed_cert():
+            print("[WARN] Impossible de générer le certificat SSL — démarrage en HTTP")
+            return None
+    try:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(str(SSL_CERT_FILE), str(SSL_KEY_FILE))
+        return ctx
+    except Exception as e:
+        print(f"[WARN] SSL context invalide ({e}) — démarrage en HTTP")
+        return None
 
 # ── Flask ─────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -525,11 +586,34 @@ def api_manager_config_set():
         if k in data: cfg[k] = str(data[k]).strip()
     for k in ("bind_port", "session_timeout"):
         if k in data: cfg[k] = int(data[k])
+    if "ssl_enabled" in data: cfg["ssl_enabled"] = bool(data["ssl_enabled"])
     if data.get("new_password"):
         cfg["password_hash"] = hash_password(data["new_password"])
     save_manager_config(cfg)
     MGR_CFG = cfg
     return jsonify({"ok": True, "msg": "Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port."})
+
+@app.route("/api/nicknames", methods=["GET"])
+@login_required
+def api_nicknames_get():
+    return jsonify({"ok": True, "nicknames": MGR_CFG.get("nicknames", {})})
+
+@app.route("/api/nickname/<iid>", methods=["POST"])
+@login_required
+def api_nickname_set(iid):
+    global MGR_CFG
+    data = request.get_json() or {}
+    nick = str(data.get("nickname", "")).strip()[:64]
+    cfg  = dict(MGR_CFG)
+    nicks = dict(cfg.get("nicknames", {}))
+    if nick:
+        nicks[iid] = nick
+    else:
+        nicks.pop(iid, None)
+    cfg["nicknames"] = nicks
+    save_manager_config(cfg)
+    MGR_CFG = cfg
+    return jsonify({"ok": True, "msg": "Surnom mis à jour"})
 
 @app.route("/api/panel/version")
 @login_required
@@ -757,4 +841,7 @@ def api_update_log():
 if __name__ == "__main__":
     host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))
     port = MGR_CFG.get("bind_port", int(os.environ.get("FRP_MANAGER_PORT", 8765)))
-    app.run(host=host, port=port, debug=False)
+    ssl_ctx = get_ssl_context()
+    proto = "https" if ssl_ctx else "http"
+    print(f"[INFO] FRP Manager démarré sur {proto}://{host}:{port}")
+    app.run(host=host, port=port, debug=False, ssl_context=ssl_ctx)

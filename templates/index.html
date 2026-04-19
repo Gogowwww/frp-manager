@@ -175,6 +175,23 @@ input[type=file]{font-family:var(--mono);font-size:.7rem;color:var(--muted);back
 input[type=file]:hover{border-color:var(--accent2);}
 code{font-family:var(--mono);font-size:.76rem;color:var(--accent2);background:rgba(56,189,248,.07);padding:.09rem .33rem;border-radius:4px;}
 pre.cblock{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.62rem .82rem;font-family:var(--mono);font-size:.7rem;color:var(--text);line-height:1.6;overflow-x:auto;margin:.35rem 0;}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:flex;align-items:center;justify-content:center;padding:1rem;}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.6rem 1.8rem;max-width:520px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.5);}
+.modal-title{font-size:1rem;font-weight:700;margin-bottom:.9rem;display:flex;align-items:center;gap:.5rem;}
+.modal-body{font-size:.8rem;color:var(--text);line-height:1.7;margin-bottom:1.1rem;}
+.modal-body ul{padding-left:1.2rem;margin-top:.5rem;}
+.modal-body li{margin-bottom:.3rem;}
+.modal-body .warn-box{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25);border-radius:8px;padding:.75rem 1rem;margin-bottom:.8rem;color:var(--warn);}
+.modal-footer{display:flex;justify-content:flex-end;gap:.5rem;}
+
+/* Nickname */
+.inst-nick{font-size:.68rem;color:var(--muted);font-family:var(--sans);font-style:italic;margin-top:.15rem;min-height:.9rem;}
+.nick-edit-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.72rem;padding:.05rem .22rem;border-radius:4px;opacity:.55;transition:opacity .15s;line-height:1;}
+.nick-edit-btn:hover{opacity:1;color:var(--accent2);}
+.nick-input-row{display:flex;gap:.35rem;align-items:center;margin-top:.25rem;}
+.nick-input-row .finput{flex:1;font-size:.72rem;padding:.28rem .5rem;}
 </style>
 </head>
 <body>
@@ -516,12 +533,92 @@ Redémarrage requis pour prendre effet.">?</span></label><input class="finput" i
 </main>
 <div id="toast"></div>
 
+<!-- ══ MODAL BIENVENUE ══ -->
+<div class="modal-backdrop" id="welcome-modal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-title"><span style="font-size:1.3rem;">🔒</span> Sécurité — à lire avant tout</div>
+    <div class="modal-body">
+      <div class="warn-box">
+        ⚠️ <strong>Si ce panel est accessible depuis Internet, sécurisez-le immédiatement.</strong>
+      </div>
+      <p>Un panel exposé sans protection donne un accès complet à vos services frp. Actions recommandées :</p>
+      <ul>
+        <li>Définissez un <strong>mot de passe fort</strong> dans l'onglet <em>Paramètres</em>.</li>
+        <li>Restreignez l'accès par <strong>IP</strong> dans votre firewall ou reverse proxy.</li>
+        <li>Placez le panel derrière un <strong>reverse proxy HTTPS</strong> (nginx, Caddy…) avec authentification supplémentaire si possible.</li>
+        <li>N'exposez jamais ce panel sur un port public sans authentification.</li>
+      </ul>
+      <p style="margin-top:.7rem;font-size:.74rem;color:var(--muted);">Ce message n'apparaîtra plus après avoir cliqué sur "J'ai compris".</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="dismissWelcome(true)">Me le rappeler plus tard</button>
+      <button class="btn btn-primary" onclick="dismissWelcome(false)">J'ai compris</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL RENOMMER ══ -->
+<div class="modal-backdrop" id="rename-modal" style="display:none;">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">✏️ Renommer l'instance</div>
+    <div class="modal-body" style="margin-bottom:.7rem;">
+      <div class="ffield">
+        <label class="flabel">Surnom <span style="color:var(--muted);font-size:.67rem;">(laisser vide pour supprimer)</span></label>
+        <input class="finput" id="rename-input" type="text" placeholder="ex: Serveur principal, Tunnel bureau…" maxlength="64">
+      </div>
+      <div style="font-size:.68rem;color:var(--muted);margin-top:.45rem;" id="rename-iid-label"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeRenameModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmRename()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══ Utils ════════════════════════════════════════════════════════════
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 let _tt;
 function toast(msg,type='info'){const el=document.getElementById('toast');el.textContent=msg;el.className=`show ${type}`;clearTimeout(_tt);_tt=setTimeout(()=>el.classList.remove('show'),3100);}
 function gv(id){const e=document.getElementById(id);if(!e)return'';return e.type==='checkbox'?e.checked:e.value.trim();}
+
+// ═══ Modal bienvenue ══════════════════════════════════════════════════
+function checkWelcome(){
+  if(!localStorage.getItem('frpMgrWelcomeSeen')){
+    document.getElementById('welcome-modal').style.display='flex';
+  }
+}
+function dismissWelcome(later){
+  document.getElementById('welcome-modal').style.display='none';
+  if(!later) localStorage.setItem('frpMgrWelcomeSeen','1');
+}
+
+// ═══ Nicknames ════════════════════════════════════════════════════════
+let nicknames={};
+async function loadNicknames(){
+  try{const r=await fetch('/api/nicknames');const d=await r.json();if(d.ok)nicknames=d.nicknames||{};}catch(e){}
+}
+function getNick(iid){return nicknames[iid]||'';}
+
+let _renameTarget='';
+function openRenameModal(iid){
+  _renameTarget=iid;
+  document.getElementById('rename-input').value=getNick(iid);
+  document.getElementById('rename-iid-label').textContent=`Instance : ${iid}`;
+  document.getElementById('rename-modal').style.display='flex';
+  setTimeout(()=>document.getElementById('rename-input').focus(),50);
+}
+function closeRenameModal(){document.getElementById('rename-modal').style.display='none';_renameTarget='';}
+async function confirmRename(){
+  const nick=document.getElementById('rename-input').value.trim();
+  const r=await fetch(`/api/nickname/${encodeURIComponent(_renameTarget)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nickname:nick})});
+  const d=await r.json();
+  if(d.ok){nicknames[_renameTarget]=nick||undefined;if(!nick)delete nicknames[_renameTarget];renderGrid(lastInst,true);}
+  toast(d.msg,d.ok?'ok':'err');
+  closeRenameModal();
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeRenameModal();dismissWelcome(true);}});
+document.getElementById('rename-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')confirmRename();});
 function sv(id,val){const e=document.getElementById(id);if(!e)return;if(e.type==='checkbox')e.checked=!!val;else e.value=val??'';}
 function tg(id,on){const el=document.getElementById(id);if(!el)return;el.style.opacity=on?'1':'.33';el.style.pointerEvents=on?'':'none';}
 function ti(id,on){const el=document.getElementById(id);if(!el)return;el.disabled=!on;}
@@ -593,9 +690,14 @@ function mkCard(iid,inst){
   const nm=`frp<span class="tl">${type.slice(-1)}</span>${esc(sfx)}`;
   const cfgok=inst.config_exists;
   const cfgtxt=inst.config_path?(cfgok?'✓ ':'✗ ')+inst.config_path.replace('/etc/frp/',''):'✗ non trouvée';
+  const nick=getNick(iid);
+  const nickHtml=`<div class="inst-nick" id="nick-${esc(iid)}">${nick?esc(nick):''}</div>`;
   return `<div class="inst-card ${sc}" data-iid="${esc(iid)}">
   <div class="inst-header">
-    <div class="inst-name${srv?' srv':''}">${nm}</div>
+    <div>
+      <div class="inst-name${srv?' srv':''}">${nm}<button class="nick-edit-btn" onclick="openRenameModal('${esc(iid)}')" title="Renommer">✏️</button></div>
+      ${nickHtml}
+    </div>
     <div class="pill ${pc}" id="pill-${esc(iid)}"><span class="pdot${pulse}"></span><span>${esc(pt)}</span></div>
   </div>
   <div class="inst-meta">
@@ -1018,7 +1120,11 @@ async function pollPanelLog(repeat=false){
 }
 
 // ═══ Init ════════════════════════════════════════════════════════════
-runDetect();
+(async()=>{
+  await loadNicknames();
+  runDetect();
+  checkWelcome();
+})();
 setInterval(refreshStatus,12000);
 </script>
 </body>
