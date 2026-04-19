@@ -1,6 +1,6 @@
 # FRP Manager
 
-> Interface web de gestion pour [frp](https://github.com/fatedier/frp) — multi-instances, configuration interactive, logs en direct, auto-update.
+> Interface web de gestion pour [frp](https://github.com/fatedier/frp) — multi-instances, HTTPS natif, configuration interactive, logs en direct, auto-update.
 
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
@@ -11,7 +11,7 @@
 
 ## Présentation
 
-FRP Manager est un panel web auto-hébergé pour gérer vos instances **frps** (serveur) et **frpc** (client) sans toucher à la ligne de commande. Il détecte automatiquement vos services systemd existants et s'adapte à votre configuration, qu'il s'agisse d'une instance unique ou de plusieurs serveurs frp tournant en parallèle.
+FRP Manager est un panel web auto-hébergé pour gérer vos instances **frps** (serveur) et **frpc** (client) sans toucher à la ligne de commande. Il détecte automatiquement vos services systemd existants, démarre en **HTTPS** avec un certificat auto-signé généré automatiquement, et s'adapte à votre configuration, qu'il s'agisse d'une instance unique ou de plusieurs serveurs frp tournant en parallèle.
 
 **Pourquoi FRP Manager ?**
 
@@ -22,8 +22,9 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 ## Fonctionnalités
 
 ### Vue d'ensemble
-- **Détection automatique** de tous les services frps/frpc existants sur la machine (scan des units systemd, binaires, configs)
+- **Détection automatique** de tous les services frps/frpc existants (scan des units systemd, binaires, configs)
 - **Cartes d'état** par instance : statut actif/inactif, version, chemin du binaire et de la config, unit systemd
+- **Surnoms d'instances** : donnez un nom lisible à chaque frps/frpc (bouton ✏️ sur chaque carte — ex: "Serveur principal", "Tunnel bureau")
 - **Contrôle des services** : Start, Stop, Restart, Reload, Enable, Disable — directement depuis l'interface
 - **Raccourcis** vers la config et les logs de chaque instance
 
@@ -36,7 +37,7 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 - **Sauvegarde + Reload** en un clic
 
 ### Logs
-- Lecture via `journalctl` ou fichier log
+- Lecture via `journalctl` ou fichier log, pour toutes les instances
 - **Streaming live** (SSE) avec coloration syntaxique (erreurs, warnings, succès)
 
 ### Mise à jour de frp
@@ -53,12 +54,12 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 ### Paramètres
 - Configuration du panel : IP/port d'écoute, timeout de session
 - **Accès sécurisé** : authentification par identifiant + mot de passe (hashé SHA-256)
-- Version du panel avec statut de mise à jour
+- Version du panel affichée dans le header avec statut de mise à jour
 
-### Sécurité & confort
-- **HTTPS natif** : certificat auto-signé généré automatiquement au premier démarrage (RSA 2048-bit, 10 ans)
-- **Surnoms d'instances** : donnez un nom lisible à chaque frps/frpc (bouton ✏️ sur chaque carte)
-- **Avertissement sécurité** : rappel au premier accès pour protéger le panel si exposé en externe
+### Sécurité
+- **HTTPS natif** : certificat RSA 2048-bit auto-signé généré automatiquement au premier démarrage, stocké dans `/etc/frp-manager/ssl/`. Valide 10 ans. Désactivable via `ssl_enabled: false`.
+- **Avertissement au premier accès** : modale rappelant de protéger le panel si exposé en externe
+- **Authentification** par identifiant + mot de passe configurable depuis l'interface
 
 ---
 
@@ -66,8 +67,9 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 
 - Linux avec **systemd**
 - **Python 3.8+**
-- **frp** installé (frps et/ou frpc) — [télécharger ici](https://github.com/fatedier/frp/releases)
 - Architectures supportées : `amd64`, `arm64`, `arm`
+
+> frp (frps/frpc) n'est pas obligatoire pour installer le panel — il peut être téléchargé directement depuis l'onglet **Mise à jour** de l'interface.
 
 ---
 
@@ -75,7 +77,7 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 
 ```bash
 # 1. Télécharger la dernière release
-wget https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
+curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
 unzip frp-manager.zip && cd frp-manager
 
 # 2. Lancer l'installation (root requis)
@@ -89,7 +91,7 @@ L'interface est ensuite accessible sur :
 https://VOTRE_IP:8765
 ```
 
-> **Note** : Le panel démarre en **HTTPS** par défaut avec un certificat auto-signé. Votre navigateur affichera un avertissement de sécurité — c'est normal, acceptez l'exception. Le port et l'IP d'écoute sont configurables dans l'onglet **Paramètres**, ou directement dans `/etc/frp-manager/frp-manager.json`.
+> **Note** : Le panel démarre en **HTTPS** avec un certificat auto-signé. Votre navigateur affichera un avertissement de sécurité — c'est normal, acceptez l'exception. Pour un certificat valide, placez le panel derrière un reverse proxy (nginx, Caddy).
 
 ---
 
@@ -106,6 +108,9 @@ https://VOTRE_IP:8765
 
 /etc/frp-manager/
   frp-manager.json         # Configuration du panel
+  ssl/
+    cert.pem               # Certificat auto-signé (généré au démarrage)
+    key.pem                # Clé privée SSL
 
 /etc/frp/                  # Configurations frp
   frps.toml
@@ -134,7 +139,9 @@ Le fichier de configuration se trouve dans `/etc/frp-manager/frp-manager.json` :
   "bind_port": 8765,
   "username": "admin",
   "password_hash": "",
-  "session_timeout": 3600
+  "session_timeout": 3600,
+  "ssl_enabled": true,
+  "nicknames": {}
 }
 ```
 
@@ -145,8 +152,10 @@ Le fichier de configuration se trouve dans `/etc/frp-manager/frp-manager.json` :
 | `username` | Identifiant de connexion | `admin` |
 | `password_hash` | SHA-256 du mot de passe (géré via l'UI) | `""` (pas de mot de passe) |
 | `session_timeout` | Durée de session en secondes | `3600` |
+| `ssl_enabled` | Activer HTTPS avec certificat auto-signé | `true` |
+| `nicknames` | Surnoms des instances (géré via l'UI) | `{}` |
 
-> Un redémarrage de `frp-manager` est nécessaire pour appliquer les changements de `bind_host` et `bind_port`.
+> Un redémarrage de `frp-manager` est nécessaire pour appliquer les changements de `bind_host`, `bind_port` et `ssl_enabled`.
 
 ---
 
@@ -174,12 +183,12 @@ Le panel télécharge automatiquement la release, remplace les fichiers et redé
 
 ## Sécurité
 
-Il est **fortement recommandé** de configurer un mot de passe depuis l'onglet **Paramètres → Accès sécurisé** avant d'exposer le panel sur internet.
+Le panel inclut HTTPS natif dès l'installation. Pour renforcer davantage :
 
-Pour une sécurité maximale :
-- Placez le panel derrière un reverse proxy (nginx, NPM) avec HTTPS
-- Restreignez l'accès par IP si possible
-- Utilisez un token frp fort et unique pour chaque instance
+- **Configurez un mot de passe** depuis l'onglet **Paramètres → Accès sécurisé**
+- **Restreignez l'accès par IP** dans votre firewall
+- Pour un **certificat TLS valide** (sans avertissement navigateur), placez le panel derrière un reverse proxy (nginx, Caddy) avec Let's Encrypt
+- Utilisez un **token frp fort et unique** pour chaque instance
 
 ---
 
