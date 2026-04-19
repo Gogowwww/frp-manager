@@ -257,4 +257,4 @@ MIT — voir [LICENSE](LICENSE)
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Gogowwww/frp-manager&type=Date)](https://star-history.com/#Gogowwww/frp-manager&Date)
+[![Star History Chart](https://api.star-history.com/chart?repos=Gogowwww/frp-manager&type=date&legend=bottom-right)](https://www.star-history.com/?repos=Gogowwww%2Ffrp-manager&type=date&legend=bottom-right)
