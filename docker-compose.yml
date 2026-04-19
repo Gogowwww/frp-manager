@@ -36,6 +36,11 @@ services:
       # pour lire et installer frps/frpc sur le système hôte
       - /usr/local/bin:/host/usr/local/bin
 
+      # ── Socket Docker (détection et contrôle des containers frpc/frps) ──────
+      # Permet à frp-manager de voir et gérer les containers frpc/frps
+      # tournant dans d'autres stacks Portainer (start/stop/restart + logs)
+      - /var/run/docker.sock:/var/run/docker.sock
+
     environment:
       - FRP_MANAGER_PORT=8765
       # Mode démo (fausses instances, aucune action réelle) :

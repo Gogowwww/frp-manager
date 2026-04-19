@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FRP Manager</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cpath d='M13 2L23 7.5V18.5L13 24L3 18.5V7.5L13 2Z' stroke='%234ade80' stroke-width='1.5' stroke-linejoin='round' fill='%230b0d12'/%3E%3Cpath d='M7.5 11h11M16 8.5l2.5 2.5L16 13.5' stroke='%234ade80' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M18.5 15H7.5M10 12.5L7.5 15l2.5 2.5' stroke='%234ade80' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
 :root {
@@ -220,9 +221,8 @@ footer a:hover{color:var(--accent2);}
 
 <nav>
   <div class="tab active" data-tab="overview">Vue d'ensemble</div>
-  <div class="tab" data-tab="config">Configuration</div>
+  <div class="tab" data-tab="ports">Ports</div>
   <div class="tab" data-tab="logs">Logs</div>
-  <div class="tab" data-tab="update">Mise à jour</div>
   <div class="tab" data-tab="settings">Paramètres</div>
 </nav>
 
@@ -244,18 +244,43 @@ footer a:hover{color:var(--accent2);}
   </div>
 </div>
 
-<!-- ══ CONFIG ══ -->
-<div class="section" id="tab-config">
+<!-- ══ PORTS ══ -->
+<div class="section" id="tab-ports">
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">🔌 Ports utilisés par frp <span class="tip-i" data-tip="Ports détectés dans vos configs frp.
+Cliquez sur Ouvrir pour autoriser dans UFW.">?</span></div>
+    <div id="ports-list" style="margin-bottom:.72rem;">
+      <div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Chargement…</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="loadPorts()">↻ Actualiser</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">🛡 Ouvrir un port manuellement</div>
+    <div style="display:flex;gap:.62rem;align-items:flex-end;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Port</div>
+        <input class="finput port-f" id="manual-port" type="number" min="1" max="65535" placeholder="ex: 7000" style="width:110px;">
+      </div>
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Protocole</div>
+        <select class="finput" id="manual-proto" style="width:90px;"><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+      </div>
+      <button class="btn btn-primary" onclick="openManualPort()">🔓 Ouvrir dans UFW</button>
+    </div>
+    <div id="ufw-status" style="margin-top:.72rem;font-size:.72rem;color:var(--muted);font-family:var(--mono);"></div>
+  </div>
+</div>
+
+<!-- ══ CONFIG (inclus dans Paramètres) ══ -->
+<div style="display:none;" id="tab-config">
   <div class="card" style="padding:.72rem 1.1rem;margin-bottom:.75rem;">
     <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;">
       <select class="finput" id="cfg-sel" onchange="onCfgSel()" style="width:auto;min-width:155px;"></select>
-      <div class="mode-bar">
-        <button class="mbtn active" id="mb-form" onclick="setMode('form')">⊞ Formulaire</button>
-        <button class="mbtn" id="mb-raw" onclick="setMode('raw')">⌨ TOML brut</button>
-      </div>
       <div style="margin-left:auto;display:flex;gap:.38rem;">
         <button class="btn btn-primary" onclick="saveConfig()">💾 Sauvegarder</button>
-        <button class="btn btn-secondary" onclick="saveReload()">💾 + ⟳</button>
+        <button class="btn btn-secondary" onclick="saveReload()">💾 + ↺ Restart</button>
         <button class="btn btn-secondary" onclick="loadConfig()">↩</button>
       </div>
     </div>
@@ -421,14 +446,7 @@ Ex: SSH local port 22 → serveur port 6022.">?</span></div>
     </div><!-- /frpc -->
 
   </div><!-- /cfg-form -->
-
-  <div id="cfg-raw" style="display:none;">
-    <div class="card">
-      <div class="card-title">TOML brut <span class="tip">édité directement — formulaire non synchronisé</span></div>
-      <textarea class="finput" id="raw-area" spellcheck="false" style="min-height:460px;resize:vertical;line-height:1.6;"></textarea>
-    </div>
-  </div>
-</div>
+</div><!-- /tab-config caché -->
 
 <!-- ══ LOGS ══ -->
 <div class="section" id="tab-logs">
@@ -448,67 +466,224 @@ Ex: SSH local port 22 → serveur port 6022.">?</span></div>
   <div class="card" style="padding:.75rem;"><div class="log-area" id="log-area">Sélectionnez un service…</div></div>
 </div>
 
-<!-- ══ UPDATE ══ -->
-<div class="section" id="tab-update">
-  <div class="g2" style="margin-bottom:.82rem;">
-    <div class="card">
-      <div class="card-title">Versions <span class="tip-i" data-tip="Vérifie la dernière version disponible sur GitHub ou via le relay ProDesk.">?</span></div>
-      <div class="irow"><span class="ilabel">Installée</span><span class="ival" id="u-inst">—</span></div>
-      <div class="irow"><span class="ilabel">Disponible</span><span class="ival" id="u-latest">—</span></div>
-      <div class="irow"><span class="ilabel">Source</span><span class="ival" id="u-src">—</span></div>
-      <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="u-status">—</span></div>
-      <br>
-      <div class="btn-row">
-        <button class="btn btn-secondary" onclick="checkUpdate()">🔍 Vérifier</button>
-        <button class="btn btn-warn" onclick="installUpdate()">⬆ Installer</button>
+<!-- ══ SETTINGS (Configuration + Mise à jour + Paramètres panel) ══ -->
+<div class="section" id="tab-settings">
+
+  <!-- ── Configuration frp ── -->
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">⚙️ Configuration frp</div>
+    <div style="display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin-bottom:.82rem;">
+      <select class="finput" id="cfg-sel" onchange="onCfgSel()" style="width:auto;min-width:155px;"></select>
+      <div style="margin-left:auto;display:flex;gap:.38rem;">
+        <button class="btn btn-primary" onclick="saveConfig()">💾 Sauvegarder</button>
+        <button class="btn btn-secondary" onclick="saveReload()">💾 + ↺ Restart</button>
+        <button class="btn btn-secondary" onclick="loadConfig()">↩ Recharger</button>
       </div>
     </div>
-    <div class="card">
-      <div class="card-title">Log d'installation</div>
-      <div class="upd-log" id="upd-log">En attente…</div>
-      <br><div class="btn-row"><button class="btn btn-secondary" onclick="pollLog()">↻ Rafraîchir</button></div>
+    <div id="cfg-docker-warn" style="display:none;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.2);border-radius:8px;padding:.72rem 1rem;font-size:.76rem;color:var(--accent2);margin-bottom:.72rem;">
+      🐳 Container Docker — modifiez la config via le fichier monté dans le container.
+    </div>
+    <div id="cfg-form">
+      <div id="frps-form" style="display:none;">
+        <div class="fsect">
+          <div class="fsect-head">🌐 Ports & authentification</div>
+          <div class="fcols">
+            <div class="ffield port-f"><label class="flabel">Port principal <span class="fkey">bindPort</span></label><input class="finput" id="s-bindPort" type="number" value="7000" min="1" max="65535"></div>
+            <div class="ffield"><label class="flabel">Adresse <span class="fkey">bindAddr</span></label><input class="finput" id="s-bindAddr" type="text" value="0.0.0.0"></div>
+            <div class="ffield"><label class="flabel">Auth <span class="fkey">auth.method</span></label><select class="finput" id="s-authmethod"><option value="token">token</option><option value="oidc">oidc</option></select></div>
+            <div class="ffield"><label class="flabel">Token secret <span class="fkey">auth.token</span></label><div class="tok-wrap"><input class="finput" id="s-authtoken" type="password" placeholder="votre-token-secret"><button class="btn btn-secondary" onclick="toggleTok('s-authtoken')" style="padding:.37rem .52rem;">👁</button></div></div>
+          </div>
+        </div>
+        <div class="fsect">
+          <div class="fsect-head">📊 Dashboard web</div>
+          <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="s-ws-en" onchange="tg('s-ws-g',this.checked)"><span class="sldr"></span></div>Activer</label></div>
+          <div id="s-ws-g" class="fcols" style="opacity:.33;pointer-events:none;">
+            <div class="ffield port-f"><label class="flabel">Port <span class="fkey">webServer.port</span></label><input class="finput" id="s-ws-port" type="number" value="7500"></div>
+            <div class="ffield"><label class="flabel">Adresse</label><input class="finput" id="s-ws-addr" type="text" value="0.0.0.0"></div>
+            <div class="ffield"><label class="flabel">Utilisateur</label><input class="finput" id="s-ws-user" type="text" value="admin"></div>
+            <div class="ffield"><label class="flabel">Mot de passe</label><input class="finput" id="s-ws-pass" type="password" placeholder="changeme"></div>
+          </div>
+        </div>
+        <div class="adv-btn" onclick="tgAdv('s-adv')"><span class="adv-arr" id="s-adv-arr">▶</span> Options avancées <span style="font-size:.67rem;color:var(--muted);font-style:italic;">TLS, ports optionnels, performance, logs</span></div>
+        <div class="adv-body" id="s-adv">
+          <div class="fsect">
+            <div class="fsect-head">🔒 TLS</div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="s-tls-en" onchange="tg('s-tls-g',this.checked)"><span class="sldr"></span></div>Activer TLS</label></div>
+            <div id="s-tls-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield"><label class="flabel">Cert <span class="fkey">transport.tls.certFile</span></label><input class="finput" id="s-tls-cert" type="text" placeholder="/etc/frp/server.crt"></div>
+              <div class="ffield"><label class="flabel">Clé <span class="fkey">transport.tls.keyFile</span></label><input class="finput" id="s-tls-key" type="text" placeholder="/etc/frp/server.key"></div>
+              <div class="ffield"><label class="flabel">CA <span class="fkey">transport.tls.trustedCaFile</span></label><input class="finput" id="s-tls-ca" type="text" placeholder="/etc/frp/ca.crt"></div>
+              <div class="ffield"><label class="tog-row" style="padding-top:.75rem;"><div class="tog"><input type="checkbox" id="s-tls-force"><span class="sldr"></span></div><span style="font-size:.73rem;">Forcer TLS</span></label></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚡ Ports optionnels</div>
+            <div class="fcols">
+              <div class="ffield port-f"><label class="flabel">KCP <span class="fkey">kcpBindPort</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-kcp-en" onchange="ti('s-kcp',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-kcp" type="number" value="7000" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">QUIC <span class="fkey">quicBindPort</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-quic-en" onchange="ti('s-quic',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-quic" type="number" value="7002" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">vhost HTTP <span class="fkey">vhostHTTPPort</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-vh-en" onchange="ti('s-vh',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-vh" type="number" value="80" min="1" max="65535" disabled></div></div>
+              <div class="ffield port-f"><label class="flabel">vhost HTTPS <span class="fkey">vhostHTTPSPort</span></label><div style="display:flex;gap:.35rem;"><label class="tog" style="margin-top:.4rem;"><input type="checkbox" id="s-vhs-en" onchange="ti('s-vhs',this.checked)"><span class="sldr"></span></label><input class="finput" id="s-vhs" type="number" value="443" min="1" max="65535" disabled></div></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚙️ Limites & performance</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Max ports/client <span class="fkey">maxPortsPerClient</span></label><input class="finput" id="s-maxports" type="number" value="0" min="0"></div>
+              <div class="ffield"><label class="flabel">Pool <span class="fkey">transport.maxPoolCount</span></label><input class="finput" id="s-pool" type="number" value="5" min="0"></div>
+              <div class="ffield"><label class="flabel">Heartbeat timeout <span class="fkey">transport.heartbeatTimeout</span></label><input class="finput" id="s-hbt" type="number" value="90" min="1"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📝 Logs</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Fichier <span class="fkey">log.to</span></label><input class="finput" id="s-logto" type="text" value="/var/log/frp/frps.log"></div>
+              <div class="ffield"><label class="flabel">Niveau <span class="fkey">log.level</span></label><select class="finput" id="s-loglvl"><option>trace</option><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></div>
+              <div class="ffield"><label class="flabel">Rétention jours <span class="fkey">log.maxDays</span></label><input class="finput" id="s-logdays" type="number" value="3" min="1"></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /frps -->
+
+      <div id="frpc-form" style="display:none;">
+        <div class="fsect">
+          <div class="fsect-head">🌐 Connexion au serveur</div>
+          <div class="fcols">
+            <div class="ffield"><label class="flabel">Adresse serveur <span class="fkey">serverAddr</span></label><input class="finput" id="c-addr" type="text" placeholder="IP ou domaine du VPS"></div>
+            <div class="ffield port-f"><label class="flabel">Port serveur <span class="fkey">serverPort</span></label><input class="finput" id="c-port" type="number" value="7000" min="1" max="65535"></div>
+            <div class="ffield"><label class="flabel">Auth <span class="fkey">auth.method</span></label><select class="finput" id="c-authmethod"><option value="token">token</option><option value="oidc">oidc</option></select></div>
+            <div class="ffield"><label class="flabel">Token <span class="fkey">auth.token</span></label><div class="tok-wrap"><input class="finput" id="c-authtoken" type="password" placeholder="même token que frps"><button class="btn btn-secondary" onclick="toggleTok('c-authtoken')" style="padding:.37rem .52rem;">👁</button></div></div>
+            <div class="ffield"><label class="flabel">Protocole <span class="fkey">transport.protocol</span></label><select class="finput" id="c-proto"><option value="tcp">tcp</option><option value="kcp">kcp</option><option value="quic">quic</option><option value="websocket">websocket</option><option value="wss">wss</option></select></div>
+          </div>
+        </div>
+        <div class="fsect">
+          <div class="fsect-head">🔌 Tunnels (proxies)</div>
+          <div id="px-list"></div>
+          <button class="btn btn-info" onclick="addProxy()" style="margin-top:.35rem;">+ Ajouter un tunnel</button>
+        </div>
+        <div class="adv-btn" onclick="tgAdv('c-adv')"><span class="adv-arr" id="c-adv-arr">▶</span> Options avancées</div>
+        <div class="adv-body" id="c-adv">
+          <div class="fsect">
+            <div class="fsect-head">🔒 TLS</div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="c-tls-en" onchange="tg('c-tls-g',this.checked)"><span class="sldr"></span></div>Activer TLS</label></div>
+            <div id="c-tls-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield"><label class="flabel">Cert</label><input class="finput" id="c-tls-cert" type="text" placeholder="/etc/frp/client.crt"></div>
+              <div class="ffield"><label class="flabel">Clé</label><input class="finput" id="c-tls-key" type="text" placeholder="/etc/frp/client.key"></div>
+              <div class="ffield"><label class="flabel">CA</label><input class="finput" id="c-tls-ca" type="text" placeholder="/etc/frp/ca.crt"></div>
+              <div class="ffield"><label class="flabel">Server name</label><input class="finput" id="c-tls-sn" type="text" placeholder="mon-vps.example.com"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📊 Dashboard local</div>
+            <div style="margin-bottom:.6rem;"><label class="tog-row"><div class="tog"><input type="checkbox" id="c-ws-en" onchange="tg('c-ws-g',this.checked)"><span class="sldr"></span></div>Activer</label></div>
+            <div id="c-ws-g" class="fcols" style="opacity:.33;pointer-events:none;">
+              <div class="ffield port-f"><label class="flabel">Port <span class="fkey">webServer.port</span></label><input class="finput" id="c-ws-port" type="number" value="7400"></div>
+              <div class="ffield"><label class="flabel">Adresse</label><input class="finput" id="c-ws-addr" type="text" value="127.0.0.1"></div>
+              <div class="ffield"><label class="flabel">User</label><input class="finput" id="c-ws-user" type="text" value="admin"></div>
+              <div class="ffield"><label class="flabel">Pass</label><input class="finput" id="c-ws-pass" type="password"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">⚙️ Performance</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Pool <span class="fkey">transport.poolCount</span></label><input class="finput" id="c-pool" type="number" value="5" min="0"></div>
+              <div class="ffield"><label class="flabel">Heartbeat interval</label><input class="finput" id="c-hbi" type="number" value="30" min="1"></div>
+              <div class="ffield"><label class="flabel">DNS <span class="fkey">dnsServer</span></label><input class="finput" id="c-dns" type="text" placeholder="8.8.8.8"></div>
+              <div class="ffield"><label class="flabel">Proxy URL <span class="fkey">transport.proxyURL</span></label><input class="finput" id="c-purl" type="text" placeholder="http://proxy:8080"></div>
+            </div>
+          </div>
+          <div class="fsect">
+            <div class="fsect-head">📝 Logs</div>
+            <div class="fcols">
+              <div class="ffield"><label class="flabel">Fichier</label><input class="finput" id="c-logto" type="text" value="/var/log/frp/frpc.log"></div>
+              <div class="ffield"><label class="flabel">Niveau</label><select class="finput" id="c-loglvl"><option>trace</option><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></div>
+              <div class="ffield"><label class="flabel">Rétention</label><input class="finput" id="c-logdays" type="number" value="3" min="1"></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /frpc -->
+    </div><!-- /cfg-form -->
+  </div>
+
+  <!-- ── Mise à jour frp ── -->
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">⬆ Mise à jour de frp</div>
+    <div class="g2">
+      <div>
+        <div class="irow"><span class="ilabel">Installée</span><span class="ival" id="u-inst">—</span></div>
+        <div class="irow"><span class="ilabel">Disponible</span><span class="ival" id="u-latest">—</span></div>
+        <div class="irow"><span class="ilabel">Source</span><span class="ival" id="u-src">—</span></div>
+        <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="u-status">—</span></div>
+        <br>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="checkUpdate()">🔍 Vérifier</button>
+          <button class="btn btn-warn" onclick="installUpdate()">⬆ Installer</button>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.4rem;">Log d'installation</div>
+        <div class="upd-log" id="upd-log">En attente…</div>
+        <div class="btn-row" style="margin-top:.38rem;"><button class="btn btn-secondary" onclick="pollLog()">↻</button></div>
+      </div>
     </div>
   </div>
 
   <div class="card" style="margin-bottom:.82rem;">
-    <div class="card-title">📦 Installation manuelle <span class="tip">si GitHub et tous les miroirs sont inaccessibles</span></div>
-    <p style="font-size:.73rem;color:var(--muted);margin-bottom:.82rem;line-height:1.7;">Téléchargez <code>frp_X.X.X_linux_amd64.tar.gz</code> depuis <strong style="color:var(--text)">github.com/fatedier/frp/releases</strong> sur votre machine locale, puis uploadez-le ci-dessous.</p>
+    <div class="card-title">📦 Installation manuelle frp <span class="tip">si GitHub est inaccessible</span></div>
+    <p style="font-size:.73rem;color:var(--muted);margin-bottom:.82rem;line-height:1.7;">Téléchargez <code>frp_X.X.X_linux_amd64.tar.gz</code> depuis <strong style="color:var(--text)">github.com/fatedier/frp/releases</strong> sur votre machine, puis uploadez-le.</p>
     <div style="display:flex;gap:.62rem;align-items:flex-end;flex-wrap:wrap;">
-      <div><div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Version (ex: 0.68.1)</div><input class="finput" id="u-ver" type="text" placeholder="0.68.1" style="width:125px;"></div>
+      <div><div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Version</div><input class="finput" id="u-ver" type="text" placeholder="0.68.1" style="width:125px;"></div>
       <div style="flex:1;min-width:190px;"><div style="font-size:.7rem;color:var(--muted);margin-bottom:.28rem;">Archive .tar.gz</div><input type="file" id="u-file" accept=".tar.gz,.gz"></div>
       <button class="btn btn-primary" onclick="uploadInstall()">⬆ Installer</button>
     </div>
   </div>
 
-
-  <div class="card">
-    <div class="card-title">🌐 Connectivité — sources</div>
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">🌐 Connectivité</div>
     <div id="conn-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:.62rem;margin-bottom:.72rem;"><div style="color:var(--muted);font-size:.76rem;">Cliquez sur Tester…</div></div>
     <button class="btn btn-secondary" onclick="testConn()">🔌 Tester</button>
   </div>
-</div>
 
-<!-- ══ SETTINGS ══ -->
-<div class="section" id="tab-settings">
+  <!-- ── Panel ── -->
+  <div class="card" style="margin-bottom:.82rem;">
+    <div class="card-title">🔄 Version du panel</div>
+    <div class="g2">
+      <div>
+        <div class="irow"><span class="ilabel">Installée</span><span class="ival" id="panel-current">—</span></div>
+        <div class="irow"><span class="ilabel">Disponible</span><span class="ival" id="panel-latest">—</span></div>
+        <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="panel-status">—</span></div>
+        <br>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="checkPanelVersion()">🔍 Vérifier</button>
+          <button class="btn btn-warn" id="btn-panel-update" onclick="updatePanel()" style="display:none;">⬆ Mettre à jour</button>
+          <a id="panel-release-link" href="#" target="_blank" style="display:none;"><button class="btn btn-secondary">📋 Release</button></a>
+        </div>
+        <div style="margin-top:.6rem;font-size:.68rem;font-family:var(--mono);color:var(--muted);" id="panel-repo-info">—</div>
+      </div>
+      <div>
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.4rem;">Log</div>
+        <div class="upd-log" id="panel-upd-log" style="height:130px;">—</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-top:.5rem;line-height:1.6;">Repo : <code id="panel-repo-display">—</code></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Paramètres panel ── -->
   <div class="g2">
     <div class="card">
-      <div class="card-title">⚙️ Paramètres généraux <span class="tip-i" data-tip="Nécessite un redémarrage de frp-manager pour bind_host/bind_port.">?</span></div>
+      <div class="card-title">⚙️ Paramètres du panel <span class="tip-i" data-tip="Redémarrage requis pour bind_host/bind_port.">?</span></div>
       <div class="fcols" style="margin-bottom:.85rem;">
-        <div class="ffield port-f"><label class="flabel">Port interface <span class="fkey">bind_port</span> <span class="tip-i" data-tip="Port de cette interface web.
-Redémarrage requis pour prendre effet.">?</span></label><input class="finput" id="m-port" type="number" value="8765" min="1" max="65535"></div>
-        <div class="ffield"><label class="flabel">IP d'écoute <span class="fkey">bind_host</span> <span class="tip-i" data-tip="0.0.0.0 = toutes les IPs.
-127.0.0.1 = local uniquement.">?</span></label><input class="finput" id="m-host" type="text" value="0.0.0.0"></div>
-        <div class="ffield"><label class="flabel">Timeout session (sec) <span class="fkey">session_timeout</span></label><input class="finput" id="m-timeout" type="number" value="3600" min="300"></div>
+        <div class="ffield port-f"><label class="flabel">Port <span class="fkey">bind_port</span></label><input class="finput" id="m-port" type="number" value="8765" min="1" max="65535"></div>
+        <div class="ffield"><label class="flabel">IP d'écoute <span class="fkey">bind_host</span></label><input class="finput" id="m-host" type="text" value="0.0.0.0"></div>
+        <div class="ffield"><label class="flabel">Timeout session (sec)</label><input class="finput" id="m-timeout" type="number" value="3600" min="300"></div>
       </div>
       <div class="btn-row"><button class="btn btn-primary" onclick="saveMgr()">💾 Sauvegarder</button></div>
       <p style="font-size:.68rem;color:var(--muted);margin-top:.6rem;">⚠ bind_host/bind_port : redémarrez frp-manager pour appliquer.</p>
     </div>
-
     <div class="card">
-      <div class="card-title">🔐 Accès sécurisé <span class="tip-i" data-tip="Sans mot de passe configuré, l'interface est accessible sans authentification.">?</span></div>
+      <div class="card-title">🔐 Accès sécurisé</div>
       <div id="auth-state" style="font-size:.71rem;color:var(--muted);margin-bottom:.72rem;">—</div>
       <div class="fcols" style="margin-bottom:.82rem;">
-        <div class="ffield"><label class="flabel">Identifiant <span class="fkey">username</span></label><input class="finput" id="m-user" type="text" value="admin"></div>
+        <div class="ffield"><label class="flabel">Identifiant</label><input class="finput" id="m-user" type="text" value="admin"></div>
         <div class="ffield"><label class="flabel">Nouveau mot de passe</label><div class="tok-wrap"><input class="finput" id="m-pass" type="password" placeholder="Laisser vide = inchangé"><button class="btn btn-secondary" onclick="toggleTok('m-pass')" style="padding:.37rem .52rem;">👁</button></div></div>
         <div class="ffield"><label class="flabel">Confirmation</label><input class="finput" id="m-pass2" type="password" placeholder="Confirmation"></div>
       </div>
@@ -516,32 +691,6 @@ Redémarrage requis pour prendre effet.">?</span></label><input class="finput" i
     </div>
   </div>
 
-  <!-- Panel version -->
-  <div class="card" style="margin-top:.82rem;">
-    <div class="card-title">🔄 Version du panel FRP Manager</div>
-    <div class="g2">
-      <div>
-        <div class="irow"><span class="ilabel">Version installée</span><span class="ival" id="panel-current">—</span></div>
-        <div class="irow"><span class="ilabel">Dernière dispo</span><span class="ival" id="panel-latest">—</span></div>
-        <div class="irow"><span class="ilabel">Statut</span><span class="ival" id="panel-status">—</span></div>
-        <br>
-        <div class="btn-row">
-          <button class="btn btn-secondary" onclick="checkPanelVersion()">🔍 Vérifier</button>
-          <button class="btn btn-warn" id="btn-panel-update" onclick="updatePanel()" style="display:none;">⬆ Mettre à jour le panel</button>
-          <a id="panel-release-link" href="#" target="_blank" style="display:none;"><button class="btn btn-secondary">📋 Voir la release</button></a>
-        </div>
-        <div style="margin-top:.6rem;font-size:.68rem;font-family:var(--mono);color:var(--muted);" id="panel-repo-info">—</div>
-      </div>
-      <div>
-        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.4rem;">Log de mise à jour</div>
-        <div class="upd-log" id="panel-upd-log" style="height:130px;">—</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-top:.5rem;line-height:1.6;">
-          La mise à jour télécharge le zip depuis GitHub, remplace <code>app.py</code> et <code>templates/</code>, puis redémarre <code>frp-manager</code> automatiquement.<br>
-          Repo : <code id="panel-repo-display">VOTRE_USER/frp-manager</code>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 </main>
@@ -655,10 +804,9 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>swit
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
   document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id==='tab-'+name));
-  if(name==='config'){if(!gv('cfg-sel'))return;adaptForm(gv('cfg-sel'));loadConfig();}
   if(name==='logs')populateLogSel();
-  if(name==='update'){checkUpdate();}
-  if(name==='settings')loadMgrCfg();
+  if(name==='ports')loadPorts();
+  if(name==='settings'){loadMgrCfg();if(gv('cfg-sel'))adaptForm(gv('cfg-sel'));}
 }
 
 // ═══ Auth ═════════════════════════════════════════════════════════════
@@ -703,31 +851,46 @@ function renderGrid(inst,full){
 
 function mkCard(iid,inst){
   const type=inst.type,srv=type==='frps';
+  const isDocker=inst.source==='docker';
   const sc=!inst.binary_found?'unknown':inst.status.running?'running':'stopped';
   const pc=!inst.binary_found?'unknown':inst.status.running?'active':'inactive';
   const pt=!inst.binary_found?'non détecté':(inst.status.active||'inactive');
   const pulse=inst.status.running?' pulse':'';
-  const sfx=iid.replace(type,'');
-  const nm=`frp<span class="tl">${type.slice(-1)}</span>${esc(sfx)}`;
-  const cfgok=inst.config_exists;
-  const cfgtxt=inst.config_path?(cfgok?'✓ ':'✗ ')+inst.config_path.replace('/etc/frp/',''):'✗ non trouvée';
   const nick=getNick(iid);
   const nickHtml=`<div class="inst-nick" id="nick-${esc(iid)}">${nick?esc(nick):''}</div>`;
-  return `<div class="inst-card ${sc}" data-iid="${esc(iid)}">
-  <div class="inst-header">
-    <div>
-      <div class="inst-name${srv?' srv':''}">${nm}<button class="nick-edit-btn" onclick="openRenameModal('${esc(iid)}')" title="Renommer">✏️</button></div>
-      ${nickHtml}
-    </div>
-    <div class="pill ${pc}" id="pill-${esc(iid)}"><span class="pdot${pulse}"></span><span>${esc(pt)}</span></div>
+
+  // ── Nom affiché ──────────────────────────────────────────────────────────
+  let nm, metaRows, actionRows;
+  if(isDocker){
+    const cname=esc(inst.container_name||iid);
+    const imgShort=esc((inst.image||'').split('/').pop()||inst.image||'');
+    nm=`<span class="tl">🐳</span> ${cname}`;
+    metaRows=`
+    <div class="mrow"><span class="mkey">Source</span><span class="mval ok">Docker container</span></div>
+    <div class="mrow"><span class="mkey">Image</span><span class="mval" title="${esc(inst.image||'')}">${imgShort}</span></div>
+    <div class="mrow"><span class="mkey">Container</span><span class="mval">${cname}</span></div>
+    <div class="mrow"><span class="mkey">Type</span><span class="mval">${esc(type)}</span></div>`;
+    actionRows=`
+  <div class="btn-row" style="margin-bottom:.38rem;">
+    <button class="btn btn-primary" onclick="svcAct('${esc(iid)}','start')">▶ Start</button>
+    <button class="btn btn-danger" onclick="svcAct('${esc(iid)}','stop')">■ Stop</button>
+    <button class="btn btn-secondary" onclick="svcAct('${esc(iid)}','restart')">↺ Restart</button>
   </div>
-  <div class="inst-meta">
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="goLogs('${esc(iid)}')">📋 Logs</button>
+  </div>`;
+  } else {
+    const sfx=iid.replace(type,'');
+    nm=`frp<span class="tl">${type.slice(-1)}</span>${esc(sfx)}`;
+    const cfgok=inst.config_exists;
+    const cfgtxt=inst.config_path?(cfgok?'✓ ':'✗ ')+inst.config_path.replace('/etc/frp/',''):'✗ non trouvée';
+    metaRows=`
     <div class="mrow"><span class="mkey">Statut</span><span class="mval ${inst.binary_found?(inst.status.enabled?'ok':''):'err'}" id="men-${esc(iid)}">${inst.binary_found?(inst.status.enabled?'✓ enabled':'✗ disabled'):'—'}</span></div>
     <div class="mrow"><span class="mkey">Binaire</span><span class="mval ${inst.binary_found?'ok':'err'}" title="${esc(inst.binary_path||'')}">${inst.binary_found?'✓ '+esc((inst.binary_path||'').split('/').pop()):'✗ non trouvé'}</span></div>
     <div class="mrow"><span class="mkey">Version</span><span class="mval ver">${esc(inst.version||'—')}</span></div>
     <div class="mrow"><span class="mkey">Config</span><span class="mval ${cfgok?'ok':'err'}" title="${esc(inst.config_path||'')}">${esc(cfgtxt)}</span></div>
-    <div class="mrow"><span class="mkey">Unit</span><span class="mval">${esc(inst.service)}</span></div>
-  </div>
+    <div class="mrow"><span class="mkey">Unit</span><span class="mval">${esc(inst.service)}</span></div>`;
+    actionRows=`
   <div class="btn-row" style="margin-bottom:.38rem;">
     <button class="btn btn-primary" onclick="svcAct('${esc(iid)}','start')">▶ Start</button>
     <button class="btn btn-danger" onclick="svcAct('${esc(iid)}','stop')">■ Stop</button>
@@ -739,7 +902,20 @@ function mkCard(iid,inst){
     <button class="btn btn-secondary" onclick="svcAct('${esc(iid)}','disable')">Disable</button>
     <button class="btn btn-secondary" onclick="goConfig('${esc(iid)}')">⚙ Config</button>
     <button class="btn btn-secondary" onclick="goLogs('${esc(iid)}')">📋 Logs</button>
+  </div>`;
+  }
+
+  return `<div class="inst-card ${sc}" data-iid="${esc(iid)}">
+  <div class="inst-header">
+    <div>
+      <div class="inst-name${srv?' srv':''}">${nm}<button class="nick-edit-btn" onclick="openRenameModal('${esc(iid)}')" title="Renommer">✏️</button></div>
+      ${nickHtml}
+    </div>
+    <div class="pill ${pc}" id="pill-${esc(iid)}"><span class="pdot${pulse}"></span><span>${esc(pt)}</span></div>
   </div>
+  <div class="inst-meta">${metaRows}
+  </div>
+  ${actionRows}
 </div>`;
 }
 
@@ -773,27 +949,22 @@ async function svcAct(iid,action){
   setTimeout(refreshStatus,700);
 }
 
-function goConfig(iid){switchTab('config');const s=document.getElementById('cfg-sel');if(s)s.value=iid;adaptForm(iid);loadConfig();}
+function goConfig(iid){switchTab('settings');const s=document.getElementById('cfg-sel');if(s){s.value=iid;adaptForm(iid);loadConfig();}}
 function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
 
 // ═══ Config ═══════════════════════════════════════════════════════════
-let cfgMode='form',cfgTgt='',pxCount=0;
+let cfgTgt='',pxCount=0;
 
 function onCfgSel(){cfgTgt=gv('cfg-sel');adaptForm(cfgTgt);loadConfig();}
 function adaptForm(iid){
   cfgTgt=iid;
   const inst=lastInst[iid];
-  const type=inst?inst.type:(iid.startsWith('frpc')?'frpc':'frps');
-  document.getElementById('frps-form').style.display=type==='frps'?'':'none';
-  document.getElementById('frpc-form').style.display=type==='frpc'?'':'none';
-}
-function setMode(m){
-  cfgMode=m;
-  document.getElementById('cfg-form').style.display=m==='form'?'':'none';
-  document.getElementById('cfg-raw').style.display=m==='raw'?'':'none';
-  document.getElementById('mb-form').classList.toggle('active',m==='form');
-  document.getElementById('mb-raw').classList.toggle('active',m==='raw');
-  if(m==='raw')document.getElementById('raw-area').value=genToml();
+  const isDocker=inst&&inst.source==='docker';
+  const type=inst?inst.type:(iid&&iid.startsWith('frpc')?'frpc':'frps');
+  document.getElementById('frps-form').style.display=(!isDocker&&type==='frps')?'':'none';
+  document.getElementById('frpc-form').style.display=(!isDocker&&type==='frpc')?'':'none';
+  const dw=document.getElementById('cfg-docker-warn');
+  if(dw)dw.style.display=isDocker?'':'none';
 }
 
 // TOML parser
@@ -851,8 +1022,8 @@ async function loadConfig(){
   if(!cfgTgt)return;
   const r=await fetch(`/api/config/${cfgTgt}`);
   const d=await r.json();
+  if(!d.ok&&d.docker){return;}// Container Docker — rien à charger
   const toml=d.content||'';
-  if(cfgMode==='raw'){sv('raw-area',toml);return;}
   const cfg=parseToml(toml);
   const inst=lastInst[cfgTgt];
   const type=inst?inst.type:(cfgTgt.startsWith('frpc')?'frpc':'frps');
@@ -932,11 +1103,11 @@ function genC(){
 }
 
 async function saveConfig(){
-  const content=cfgMode==='raw'?gv('raw-area'):genToml();
+  const content=genToml();
   const r=await fetch(`/api/config/${cfgTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
   const d=await r.json();toast(d.msg,d.ok?'ok':'err');
 }
-async function saveReload(){await saveConfig();await svcAct(cfgTgt,'reload');}
+async function saveReload(){await saveConfig();await svcAct(cfgTgt,'restart');}
 
 // Proxies
 function addProxy(){addPxFromData({});}
@@ -1138,6 +1309,54 @@ async function pollPanelLog(repeat=false){
       _panelPollTimer=setTimeout(()=>pollPanelLog(true),1000);
     }
   }
+}
+
+// ═══ Ports ═══════════════════════════════════════════════════════════
+async function loadPorts(){
+  const list=document.getElementById('ports-list');
+  const ufwEl=document.getElementById('ufw-status');
+  if(list)list.innerHTML='<div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Chargement…</div>';
+  const r=await fetch('/api/ports');const d=await r.json();
+  if(!d.ok){if(list)list.innerHTML='<div style="color:var(--danger);font-size:.76rem;">Erreur lors de la récupération des ports</div>';return;}
+  const ports=d.ports||[];
+  if(!ports.length){
+    if(list)list.innerHTML='<div style="color:var(--muted);font-size:.76rem;font-family:var(--mono);">Aucun port détecté — vérifiez que des configs frp existent.</div>';
+  } else {
+    const rows=ports.map(p=>{
+      const statusCls=p.ufw_allowed?'ok':'err';
+      const statusTxt=p.ufw_allowed?'✓ autorisé':'✗ non ouvert';
+      const btnHtml=d.ufw_available&&!p.ufw_allowed?`<button class="btn btn-primary" style="padding:.25rem .55rem;font-size:.68rem;" onclick="openPort(${p.port},'${p.proto}')">🔓 Ouvrir</button>`:'';
+      return`<div class="mrow" style="padding:.42rem 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:.6rem;">
+          <span class="px-badge">${esc(p.proto.toUpperCase())}</span>
+          <span style="font-family:var(--mono);font-size:.82rem;font-weight:700;">${p.port}</span>
+          <span style="color:var(--muted);font-size:.72rem;">${esc(p.label)}</span>
+          <span style="font-family:var(--mono);font-size:.63rem;color:var(--muted);">${esc(p.iid)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+          <span class="mval ${statusCls}">${statusTxt}</span>
+          ${btnHtml}
+        </div>
+      </div>`;
+    }).join('');
+    if(list)list.innerHTML=`<div style="padding:.2rem 0;">${rows}</div>`;
+  }
+  if(ufwEl){
+    if(!d.ufw_available)ufwEl.innerHTML='<span style="color:var(--warn);">⚠ UFW non disponible sur ce système</span>';
+    else ufwEl.innerHTML='<span style="color:var(--accent);">✓ UFW disponible</span>';
+  }
+}
+async function openPort(port,proto){
+  toast(`Ouverture ${port}/${proto}…`,'info');
+  const r=await fetch('/api/ports/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({port,proto})});
+  const d=await r.json();
+  toast(d.msg,d.ok?'ok':'err');
+  if(d.ok)setTimeout(loadPorts,500);
+}
+async function openManualPort(){
+  const port=parseInt(gv('manual-port'));const proto=gv('manual-proto');
+  if(!port||port<1||port>65535){toast('Port invalide','err');return;}
+  await openPort(port,proto);
 }
 
 // ═══ Init ════════════════════════════════════════════════════════════

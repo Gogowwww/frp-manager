@@ -2,6 +2,7 @@
 """FRP Manager — backend Flask multi-instances"""
 
 import os, re, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, ssl
+import socket as _socket, http.client as _http_client
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -255,8 +256,8 @@ _DEMO_LOG = """\
 # ── Helpers système ───────────────────────────────────────────────────────────
 def run_cmd(cmd, timeout=15):
     actual = list(cmd)
-    # Dans Docker, on utilise nsenter pour atteindre le systemd/journalctl de l'hôte
-    if _IN_DOCKER and actual and actual[0] in ("systemctl", "journalctl"):
+    # Dans Docker, on utilise nsenter pour atteindre le systemd/journalctl/ufw de l'hôte
+    if _IN_DOCKER and actual and actual[0] in ("systemctl", "journalctl", "ufw", "iptables", "ip6tables"):
         actual = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + actual
     try:
         r = subprocess.run(actual, capture_output=True, text=True, timeout=timeout)
@@ -279,6 +280,151 @@ def service_status(name):
 def service_action(name, action):
     ok, out, err = run_cmd(["systemctl", action, name])
     return ok, err or out
+
+# ── Docker socket (gestion des containers frpc/frps) ─────────────────────────
+_DOCKER_SOCK = Path("/var/run/docker.sock")
+
+class _UnixHTTPConn(_http_client.HTTPConnection):
+    """HTTPConnection sur un socket Unix Domain."""
+    def __init__(self, path):
+        super().__init__("localhost")
+        self._path = path
+    def connect(self):
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.connect(self._path)
+        self.sock = s
+
+def _docker_api(method, url_path, body=None, timeout=10):
+    """Requête REST vers le socket Docker. Retourne (http_status, data)."""
+    if not _DOCKER_SOCK.exists():
+        return 0, None
+    try:
+        conn = _UnixHTTPConn(str(_DOCKER_SOCK))
+        conn.timeout = timeout
+        hdrs, payload = {}, None
+        if body is not None:
+            payload = json.dumps(body).encode()
+            hdrs["Content-Type"] = "application/json"
+        conn.request(method, f"/v1.41{url_path}", body=payload, headers=hdrs)
+        resp = conn.getresponse()
+        raw  = resp.read()
+        try:    data = json.loads(raw)
+        except: data = raw.decode(errors="replace")
+        return resp.status, data
+    except Exception as e:
+        return 0, str(e)
+
+def _docker_logs_raw(container_name, tail=200):
+    """200 dernières lignes de logs d'un container Docker, décodées."""
+    if not _DOCKER_SOCK.exists():
+        return ""
+    try:
+        conn = _UnixHTTPConn(str(_DOCKER_SOCK))
+        conn.timeout = 15
+        conn.request("GET",
+            f"/v1.41/containers/{container_name}/logs?stdout=1&stderr=1&tail={tail}")
+        resp = conn.getresponse()
+        if resp.status != 200:
+            return ""
+        raw = resp.read()
+        # Stream multiplexé Docker : header 8 octets (type[1] + padding[3] + size[4]) + payload
+        out, i = [], 0
+        while i + 8 <= len(raw):
+            size = int.from_bytes(raw[i+4:i+8], "big")
+            i   += 8
+            out.append(raw[i:i+size].decode("utf-8", errors="replace"))
+            i   += size
+        return "".join(out)
+    except Exception:
+        return ""
+
+def _docker_logs_stream_gen(container_name):
+    """Générateur SSE qui streame les logs d'un container Docker (follow mode)."""
+    if not _DOCKER_SOCK.exists():
+        return
+    sock = None
+    try:
+        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        sock.connect(str(_DOCKER_SOCK))
+        sock.settimeout(5)
+        req = (
+            f"GET /v1.41/containers/{container_name}/logs"
+            f"?stdout=1&stderr=1&follow=1&tail=50 HTTP/1.1\r\n"
+            f"Host: localhost\r\nConnection: close\r\n\r\n"
+        )
+        sock.sendall(req.encode())
+        # Sauter les headers HTTP
+        hbuf = b""
+        while b"\r\n\r\n" not in hbuf:
+            try:
+                chunk = sock.recv(1)
+                if not chunk: return
+                hbuf += chunk
+            except _socket.timeout:
+                continue
+        buf = b""
+        while True:
+            try:
+                chunk = sock.recv(4096)
+                if not chunk: break
+                buf += chunk
+            except _socket.timeout:
+                continue
+            # Traiter les frames complètes
+            while len(buf) >= 8:
+                size = int.from_bytes(buf[4:8], "big")
+                if len(buf) < 8 + size: break
+                payload = buf[8:8+size].decode("utf-8", errors="replace")
+                buf = buf[8+size:]
+                for line in payload.splitlines():
+                    yield f"data: {line}\n\n"
+    except GeneratorExit:
+        pass
+    except Exception:
+        pass
+    finally:
+        if sock:
+            try: sock.close()
+            except: pass
+
+def _detect_docker_frp_containers():
+    """Détecte les containers frpc/frps via le socket Docker."""
+    if not _DOCKER_SOCK.exists():
+        return {}
+    status, containers = _docker_api("GET", "/containers/json?all=true")
+    if status != 200 or not isinstance(containers, list):
+        return {}
+    instances = {}
+    for c in containers:
+        names = c.get("Names") or []
+        name  = names[0].lstrip("/") if names else (c.get("Id") or "")[:12]
+        image = c.get("Image", "")
+        state = c.get("State", "")
+        # Ignorer frp-manager lui-même
+        if "frp-manager" in name.lower() or "frp-manager" in image.lower():
+            continue
+        # Détecter frpc ou frps dans le nom ou l'image
+        bin_type = None
+        for bt in ("frps", "frpc"):
+            if bt in name.lower() or bt in image.lower():
+                bin_type = bt; break
+        if not bin_type:
+            continue
+        running = state.lower() == "running"
+        iid = f"docker_{name}"
+        instances[iid] = {
+            "type":           bin_type,
+            "source":         "docker",
+            "container_name": name,
+            "image":          image,
+            "binary":         Path(f"/docker/{name}"),
+            "version":        None,
+            "config":         None,
+            "service":        name,
+            "log":            None,
+            "_running":       running,
+        }
+    return instances
 
 # ── Détection multi-instances ─────────────────────────────────────────────────
 INSTANCES          = {}
@@ -378,6 +524,10 @@ def _build_instances():
         else:
             # Rien trouvé → pas de stub, ni frps ni frpc
             pass
+    # Ajouter les containers Docker (sans doublon avec les instances systemd)
+    for iid, inst in _detect_docker_frp_containers().items():
+        if iid not in instances:
+            instances[iid] = inst
     return instances
 
 def detect_frp(force=False):
@@ -397,6 +547,29 @@ def detect_frp(force=False):
         INSTANCES = dict(instances)
         result = {}
         for iid, inst in instances.items():
+            # ── Container Docker ──────────────────────────────────────────────
+            if inst.get("source") == "docker":
+                running = inst.get("_running", False)
+                result[iid] = {
+                    "id": iid, "type": inst["type"],
+                    "source": "docker",
+                    "container_name": inst["container_name"],
+                    "image": inst["image"],
+                    "binary_path": f"docker:{inst['container_name']}",
+                    "binary_found": True,
+                    "version": None,
+                    "config_path": None,
+                    "config_exists": False,
+                    "service": inst["service"],
+                    "status": {
+                        "active": "active" if running else "inactive",
+                        "enabled": False,
+                        "running": running,
+                    },
+                    "log_path": None,
+                }
+                continue
+            # ── Instance systemd ──────────────────────────────────────────────
             binary = Path(inst["binary"])
             exists = binary.exists() and os.access(binary, os.X_OK)
             st = service_status(inst["service"]) if exists else {
@@ -404,6 +577,7 @@ def detect_frp(force=False):
             cfg = Path(inst["config"]) if inst["config"] else None
             result[iid] = {
                 "id": iid, "type": inst["type"],
+                "source": "systemd",
                 "binary_path": str(binary), "binary_found": exists,
                 "version": inst["version"],
                 "config_path": str(cfg) if cfg else None,
@@ -569,9 +743,21 @@ def api_service_action(iid, action):
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+    inst = INSTANCES[iid]
+    # ── Container Docker ──────────────────────────────────────────────────────
+    if inst.get("source") == "docker":
+        if action not in ("start", "stop", "restart"):
+            return jsonify({"ok": False,
+                "msg": f"Action '{action}' non supportée pour les containers Docker (start/stop/restart uniquement)"}), 400
+        container = inst["container_name"]
+        status, _ = _docker_api("POST", f"/containers/{container}/{action}")
+        ok = status in (200, 204, 304)
+        _invalidate_cache()
+        return jsonify({"ok": ok, "msg": "OK" if ok else f"Erreur Docker (HTTP {status})"})
+    # ── Instance systemd ──────────────────────────────────────────────────────
     if action not in ("start","stop","restart","reload","enable","disable"):
         return jsonify({"ok": False, "msg": "Action invalide"}), 400
-    ok, msg = service_action(INSTANCES[iid]["service"], action)
+    ok, msg = service_action(inst["service"], action)
     _invalidate_cache()
     return jsonify({"ok": ok, "msg": msg or f"{action} {'OK' if ok else 'FAILED'}"})
 
@@ -584,9 +770,13 @@ def api_config_get(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
-    cfg = Path(INSTANCES[iid]["config"])
+    inst = INSTANCES[iid]
+    if inst.get("source") == "docker":
+        return jsonify({"ok": False, "docker": True,
+            "msg": f"Container Docker « {inst['container_name']} » — modifiez la config via le fichier monté dans le container (volume /etc/frp)."})
+    cfg = Path(inst["config"])
     if not cfg.exists():
-        return jsonify({"ok": True, "content": DEFAULT_CONFIGS.get(INSTANCES[iid]["type"], ""), "exists": False})
+        return jsonify({"ok": True, "content": DEFAULT_CONFIGS.get(inst["type"], ""), "exists": False})
     return jsonify({"ok": True, "content": cfg.read_text(), "exists": True})
 
 @app.route("/api/config/<iid>", methods=["POST"])
@@ -609,10 +799,16 @@ def api_logs(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False}), 404
+    inst = INSTANCES[iid]
+    # ── Container Docker ──────────────────────────────────────────────────────
+    if inst.get("source") == "docker":
+        content = _docker_logs_raw(inst["container_name"], tail=200)
+        return jsonify({"ok": True, "content": content})
+    # ── Instance systemd ──────────────────────────────────────────────────────
     if request.args.get("source") == "file":
-        ok, out, _ = run_cmd(["tail", "-n200", str(INSTANCES[iid]["log"])])
+        ok, out, _ = run_cmd(["tail", "-n200", str(inst["log"])])
         return jsonify({"ok": True, "content": out})
-    ok, out, err = run_cmd(["journalctl", "-u", INSTANCES[iid]["service"],
+    ok, out, err = run_cmd(["journalctl", "-u", inst["service"],
                              "-n200", "--no-pager", "-o", "short-iso"])
     return jsonify({"ok": True, "content": out if ok else err})
 
@@ -620,7 +816,14 @@ def api_logs(iid):
 @login_required
 def api_logs_stream(iid):
     detect_frp(force=False)
-    svc = INSTANCES.get(iid, {}).get("service", iid)
+    inst = INSTANCES.get(iid, {})
+    # ── Container Docker ──────────────────────────────────────────────────────
+    if inst.get("source") == "docker":
+        return Response(_docker_logs_stream_gen(inst["container_name"]),
+                        mimetype="text/event-stream",
+                        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+    # ── Instance systemd ──────────────────────────────────────────────────────
+    svc = inst.get("service", iid)
     def generate():
         proc = subprocess.Popen(
             ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"],
@@ -901,6 +1104,98 @@ def api_update_upload():
 @login_required
 def api_update_log():
     return jsonify({"ok": True, "lines": update_log_buf})
+
+# ── Ports ────────────────────────────────────────────────────────────────────
+def _extract_ports_from_config(content, bin_type):
+    """Extrait les numéros de port d'une config frp TOML."""
+    ports = []
+    # Patterns top-level (frps & frpc)
+    patterns = []
+    if bin_type == "frps":
+        patterns = [
+            (r'^bindPort\s*=\s*(\d+)', "tcp", "Connexion frpc"),
+            (r'^kcpBindPort\s*=\s*(\d+)', "udp", "KCP"),
+            (r'^quicBindPort\s*=\s*(\d+)', "udp", "QUIC"),
+            (r'^vhostHTTPPort\s*=\s*(\d+)', "tcp", "vhost HTTP"),
+            (r'^vhostHTTPSPort\s*=\s*(\d+)', "tcp", "vhost HTTPS"),
+        ]
+    elif bin_type == "frpc":
+        patterns = [
+            (r'^serverPort\s*=\s*(\d+)', "tcp", "Connexion serveur"),
+        ]
+    for pat, proto, label in patterns:
+        m = re.search(pat, content, re.MULTILINE | re.IGNORECASE)
+        if m:
+            ports.append({"port": int(m.group(1)), "proto": proto, "label": label})
+    # Port du webServer (dans la section [webServer])
+    in_ws = False
+    for line in content.splitlines():
+        s = line.strip()
+        if s == "[webServer]":
+            in_ws = True
+        elif s.startswith("["):
+            in_ws = False
+        elif in_ws:
+            m = re.match(r'port\s*=\s*(\d+)', s)
+            if m:
+                ports.append({"port": int(m.group(1)), "proto": "tcp", "label": "Dashboard web"})
+    return ports
+
+def _ufw_allowed_ports():
+    """Retourne (ufw_disponible, ensemble_des_ports_autorisés)."""
+    ok, out, err = run_cmd(["ufw", "status"])
+    if not ok or any(x in (err + out).lower() for x in ("not found", "command not found", "no such")):
+        return False, set()
+    allowed = set()
+    if "inactive" in out.lower():
+        return True, allowed  # UFW dispo mais inactif
+    for line in out.splitlines():
+        m = re.match(r'\s*(\d+)(?:/(\w+))?\s+ALLOW', line, re.IGNORECASE)
+        if m:
+            port, proto = int(m.group(1)), (m.group(2) or "tcp").lower()
+            allowed.add((port, proto))
+            allowed.add((port, "any"))
+    return True, allowed
+
+@app.route("/api/ports")
+@login_required
+def api_ports():
+    instances = detect_frp(force=False)
+    ports = []
+    for iid, inst in instances.items():
+        if inst.get("source") == "docker":
+            continue
+        cfg_path = inst.get("config_path")
+        if not cfg_path or not inst.get("config_exists"):
+            continue
+        try:
+            content = Path(cfg_path).read_text()
+            for p in _extract_ports_from_config(content, inst["type"]):
+                p.update({"iid": iid, "type": inst["type"], "service": inst["service"]})
+                ports.append(p)
+        except Exception:
+            pass
+    ufw_ok, allowed = _ufw_allowed_ports()
+    for p in ports:
+        p["ufw_allowed"] = (p["port"], p["proto"]) in allowed or (p["port"], "any") in allowed
+    return jsonify({"ok": True, "ports": ports, "ufw_available": ufw_ok})
+
+@app.route("/api/ports/open", methods=["POST"])
+@login_required
+def api_ports_open():
+    data = request.get_json() or {}
+    try:
+        port = int(data.get("port", 0))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "msg": "Port invalide"}), 400
+    if not (1 <= port <= 65535):
+        return jsonify({"ok": False, "msg": "Port invalide"}), 400
+    proto = data.get("proto", "tcp").lower()
+    if proto not in ("tcp", "udp"):
+        proto = "tcp"
+    ok, out, err = run_cmd(["ufw", "allow", f"{port}/{proto}"])
+    msg = (out or err or "").strip()
+    return jsonify({"ok": ok, "msg": msg or f"Port {port}/{proto} {'ouvert' if ok else 'erreur'}"})
 
 if __name__ == "__main__":
     host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))
