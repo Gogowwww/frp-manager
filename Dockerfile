@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    systemd \
-    openssl \
+# openssl : génération du certificat TLS auto-signé
+# util-linux : fournit nsenter (nécessaire pour contrôler systemd de l'hôte depuis Docker)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openssl \
+        util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/frp-manager

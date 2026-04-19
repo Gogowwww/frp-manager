@@ -211,10 +211,55 @@ def build_version_sources():
 def build_download_mirrors(tag, filename):
     return [tpl.format(tag=tag, filename=filename) for tpl in FALLBACK_DOWNLOAD_MIRRORS]
 
+# ── Docker / Demo ─────────────────────────────────────────────────────────────
+# Détection Docker : /.dockerenv est créé par Docker dans chaque container
+_IN_DOCKER = Path("/.dockerenv").exists()
+# Mode démo : DEMO_MODE=true → fausses instances, aucune action réelle
+DEMO_MODE   = os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes")
+
+_DEMO_INSTANCES = {
+    "frps": {
+        "id": "frps", "type": "frps",
+        "binary_path": "/usr/local/bin/frps", "binary_found": True,
+        "version": "0.61.0",
+        "config_path": "/etc/frp/frps.toml", "config_exists": True,
+        "service": "frps",
+        "status": {"active": "active", "enabled": True, "running": True},
+        "log_path": "/var/log/frp/frps.log",
+    },
+    "frpc": {
+        "id": "frpc", "type": "frpc",
+        "binary_path": "/usr/local/bin/frpc", "binary_found": True,
+        "version": "0.61.0",
+        "config_path": "/etc/frp/frpc.toml", "config_exists": True,
+        "service": "frpc",
+        "status": {"active": "inactive", "enabled": False, "running": False},
+        "log_path": "/var/log/frp/frpc.log",
+    },
+}
+_DEMO_CONFIGS = {
+    "frps": 'bindAddr = "0.0.0.0"\nbindPort = 7000\n\n[auth]\nmethod = "token"\ntoken = "demo-secret-token"\n\n[log]\nto = "/var/log/frp/frps.log"\nlevel = "info"\nmaxDays = 3\n',
+    "frpc": 'serverAddr = "demo.example.com"\nserverPort = 7000\n\n[auth]\nmethod = "token"\ntoken = "demo-secret-token"\n\n[log]\nto = "/var/log/frp/frpc.log"\nlevel = "info"\nmaxDays = 3\n\n[[proxies]]\nname = "ssh"\ntype = "tcp"\nlocalIP = "127.0.0.1"\nlocalPort = 22\nremotePort = 6022\n\n[[proxies]]\nname = "web"\ntype = "http"\nlocalIP = "127.0.0.1"\nlocalPort = 80\ncustomDomains = ["web.demo.example.com"]\n',
+}
+_DEMO_LOG = """\
+2025-04-19 10:01:12.441 [I] [root.go:215] frps started successfully
+2025-04-19 10:01:12.442 [I] [service.go:200] frps tcp listener on 0.0.0.0:7000
+2025-04-19 10:02:33.118 [I] [control.go:446] [demo-client] new proxy [ssh] success
+2025-04-19 10:02:33.119 [I] [control.go:446] [demo-client] new proxy [web] success
+2025-04-19 10:15:00.000 [I] [proxy.go:112] [ssh] get a user connection [203.0.113.42:54321]
+2025-04-19 10:30:00.000 [W] [control.go:311] [demo-client] heartbeat timeout — reconnecting
+2025-04-19 10:30:02.500 [I] [control.go:446] [demo-client] new proxy [ssh] success
+2025-04-19 10:30:02.501 [I] [control.go:446] [demo-client] new proxy [web] success
+"""
+
 # ── Helpers système ───────────────────────────────────────────────────────────
 def run_cmd(cmd, timeout=15):
+    actual = list(cmd)
+    # Dans Docker, on utilise nsenter pour atteindre le systemd/journalctl de l'hôte
+    if _IN_DOCKER and actual and actual[0] in ("systemctl", "journalctl"):
+        actual = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + actual
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(actual, capture_output=True, text=True, timeout=timeout)
         return r.returncode == 0, r.stdout.strip(), r.stderr.strip()
     except subprocess.TimeoutExpired:
         return False, "", "timeout"
@@ -499,11 +544,15 @@ def index():
 @app.route("/api/detect")
 @login_required
 def api_detect():
+    if DEMO_MODE:
+        return jsonify({"ok": True, "instances": _DEMO_INSTANCES})
     return jsonify({"ok": True, "instances": detect_frp(force=True)})
 
 @app.route("/api/status")
 @login_required
 def api_status():
+    if DEMO_MODE:
+        return jsonify({"ok": True, "instances": _DEMO_INSTANCES, "installed_version": "0.61.0"})
     instances = detect_frp(force=False)
     state     = load_state()
     return jsonify({
@@ -515,6 +564,8 @@ def api_status():
 @app.route("/api/service/<iid>/<action>", methods=["POST"])
 @login_required
 def api_service_action(iid, action):
+    if DEMO_MODE:
+        return jsonify({"ok": True, "msg": "⚠️ Mode démo — actions désactivées"})
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
@@ -527,6 +578,9 @@ def api_service_action(iid, action):
 @app.route("/api/config/<iid>", methods=["GET"])
 @login_required
 def api_config_get(iid):
+    if DEMO_MODE:
+        t = "frps" if iid.startswith("frps") else "frpc"
+        return jsonify({"ok": True, "content": _DEMO_CONFIGS.get(t, ""), "exists": True})
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
@@ -550,6 +604,8 @@ def api_config_save(iid):
 @app.route("/api/logs/<iid>")
 @login_required
 def api_logs(iid):
+    if DEMO_MODE:
+        return jsonify({"ok": True, "content": _DEMO_LOG})
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False}), 404

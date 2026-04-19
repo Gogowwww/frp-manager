@@ -5,7 +5,19 @@
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 [![Stars](https://img.shields.io/github/stars/Gogowwww/frp-manager?style=flat&color=yellow)](https://github.com/Gogowwww/frp-manager/stargazers)
+[![Built with Claude](https://img.shields.io/badge/Vibecoded%20with-Claude%20Sonnet%204.6-D97706?logo=anthropic&logoColor=white)](https://claude.ai)
+
+---
+
+## 🖥️ Aperçu
+
+> 💡 **Démo en ligne** : [demo.example.com](https://demo.example.com) *(lien à mettre à jour)*
+
+![Vue d'ensemble](docs/screenshots/overview.png)
+![Configuration](docs/screenshots/config.png)
+![Logs en direct](docs/screenshots/logs.png)
 
 ---
 
@@ -88,18 +100,25 @@ sudo bash install.sh
 
 Le script installe automatiquement les dépendances Python dans un virtualenv isolé, crée le service systemd `frp-manager`, et démarre le panel.
 
-### Méthode 2 — Docker
+### Méthode 2 — Docker / Portainer
 
+L'image est publiée automatiquement sur GitHub Container Registry à chaque release.
+
+**Avec Docker Compose :**
 ```bash
-# 1. Télécharger la dernière release
-curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
-unzip frp-manager.zip && cd frp-manager
-
-# 2. Lancer avec Docker Compose
+curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/docker-compose.yml
 docker compose up -d
 ```
 
-> **Docker — comment ça fonctionne** : le container se monte sur le systemd de l'hôte (`/run/systemd`, `/run/dbus`) avec `privileged: true` et `network_mode: host`. Cela lui permet de contrôler les services frps/frpc de la machine hôte exactement comme le ferait une installation classique. Les binaires frp sont lus et écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
+**Avec Portainer :** Stacks → Add Stack → Upload → sélectionner `docker-compose.yml` depuis la release.
+
+> **Comment ça fonctionne** : le container utilise `nsenter` avec `pid: host` pour atteindre le systemd de l'hôte sans avoir à installer systemd dans l'image. Il peut ainsi contrôler les services frps/frpc exactement comme une installation classique. Les binaires frp sont lus/écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
+
+**Mode démo :**
+```yaml
+environment:
+  - DEMO_MODE=true   # Fausses instances, aucune action réelle
+```
 
 L'interface est ensuite accessible sur :
 ```
@@ -252,6 +271,20 @@ MIT — voir [LICENSE](LICENSE)
 
 - [fatedier/frp](https://github.com/fatedier/frp) — le projet frp sans lequel rien de tout ça n'aurait de sens
 - Communauté open source pour les retours et contributions
+
+---
+
+## ✨ Vibecoding
+
+<div align="center">
+
+*Ce projet a été entièrement conçu, développé et itéré en **vibecoding** avec l'IA.*
+
+[![Built with Claude Sonnet 4.6](https://img.shields.io/badge/Vibecoded%20with-Claude%20Sonnet%204.6-D97706?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai)
+
+> *"Vibe, iterate, ship."*
+
+</div>
 
 ---
 

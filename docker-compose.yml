@@ -1,14 +1,18 @@
 services:
   frp-manager:
-    build: .
-    image: frp-manager
+    # Image pré-buildée sur GitHub Container Registry (recommandé pour Portainer)
+    image: ghcr.io/gogowwww/frp-manager:latest
+    # Pour construire localement depuis les sources, commentez la ligne image et décommentez :
+    # build: .
     container_name: frp-manager
     restart: unless-stopped
 
     # Réseau hôte — le panel écoute directement sur les ports de la machine
     network_mode: host
 
-    # Nécessaire pour que systemctl puisse communiquer avec le systemd de l'hôte
+    # pid: host + privileged permettent à nsenter d'accéder au systemd de l'hôte
+    # sans avoir à installer systemd dans le container
+    pid: host
     privileged: true
 
     volumes:
@@ -18,23 +22,21 @@ services:
       - /var/log/frp:/var/log/frp                  # Logs frp
       - /var/lib/frp-manager:/var/lib/frp-manager  # État (versions installées)
 
-      # ── Systemd de l'hôte ──────────────────────────────────────────────
-      # Permet à systemctl dans le container de contrôler les services frp sur l'hôte
+      # ── Systemd de l'hôte (via nsenter) ────────────────────────────────
       - /run/systemd:/run/systemd
       - /run/dbus:/run/dbus
 
       # ── Journaux de l'hôte ─────────────────────────────────────────────
-      # Nécessaire pour que journalctl affiche les logs des services hôte
       - /var/log/journal:/var/log/journal:ro
       - /run/log/journal:/run/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
 
       # ── Binaires frp de l'hôte ─────────────────────────────────────────
-      # Monté sur /host/usr/local/bin — frp-manager l'utilise automatiquement
-      # pour détecter et installer frps/frpc sur le système hôte
+      # frp-manager détecte /host/usr/local/bin automatiquement et l'utilise
+      # pour lire et installer frps/frpc sur le système hôte
       - /usr/local/bin:/host/usr/local/bin
 
     environment:
       - FRP_MANAGER_PORT=8765
-      # Décommentez pour désactiver HTTPS :
-      # - FRP_MANAGER_SSL=false
+      # Mode démo (fausses instances, aucune action réelle) :
+      # - DEMO_MODE=true
