@@ -13,8 +13,6 @@
 
 ## 🖥️ Aperçu
 
-> 💡 **Démo en ligne** : [demo.example.com](https://demo.example.com) *(lien à mettre à jour)*
-
 ![Vue d'ensemble](docs/screenshots/overview.png)
 ![Configuration](docs/screenshots/config.png)
 ![Logs en direct](docs/screenshots/logs.png)
