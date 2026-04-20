@@ -1,7 +1,5 @@
 FROM debian:bookworm-slim
 
-# On utilise apt-get uniquement (pas pip) pour éviter les problèmes de proxy PyPI
-# python3-flask et python3-requests sont dans les dépôts Debian officiels
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 \
@@ -16,6 +14,10 @@ WORKDIR /opt/frp-manager
 COPY app.py .
 COPY frp-autoupdate.py .
 COPY templates/ templates/
+
+# Injecter la version du panel dans l'image via ARG/ENV
+ARG PANEL_VERSION=unknown
+ENV PANEL_DOCKER_VERSION=${PANEL_VERSION}
 
 EXPOSE 8765
 
