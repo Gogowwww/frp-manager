@@ -6,7 +6,6 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
-# Permissions au niveau global du workflow (évite les blocages repo)
 permissions:
   contents: read
   packages: write
@@ -18,13 +17,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extraire la version depuis le tag
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          else
+            echo "version=dev" >> $GITHUB_OUTPUT
+          fi
+
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image
-        run: docker build -t ghcr.io/gogowwww/frp-manager:latest -t ghcr.io/gogowwww/frp-manager:${{ github.sha }} .
+        run: |
+          docker build \
+            --build-arg PANEL_VERSION=${{ steps.version.outputs.version }} \
+            -t ghcr.io/gogowwww/frp-manager:latest \
+            -t ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }} \
+            -t ghcr.io/gogowwww/frp-manager:${{ github.sha }} \
+            .
 
       - name: Push image
         run: |
           docker push ghcr.io/gogowwww/frp-manager:latest
+          docker push ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }}
           docker push ghcr.io/gogowwww/frp-manager:${{ github.sha }}
