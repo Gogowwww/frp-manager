@@ -16,7 +16,17 @@ PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
 def _load_panel_version():
-    """Lit la version du panel depuis state.json (mise à jour par auto-update)."""
+    """
+    Priorité :
+    1. Variable d'env PANEL_DOCKER_VERSION (injectée au build Docker via ARG)
+    2. state.json panel_version (mis à jour par auto-update hors Docker)
+    3. Fallback hardcodé
+    """
+    # 1. Version injectée dans l'image Docker au build
+    docker_ver = os.environ.get("PANEL_DOCKER_VERSION", "").strip()
+    if docker_ver and docker_ver != "unknown":
+        return docker_ver
+    # 2. Version sauvegardée dans state.json (auto-update hors Docker)
     try:
         p = Path("/var/lib/frp-manager/state.json")
         if p.exists():
@@ -29,6 +39,10 @@ def _load_panel_version():
     return _PANEL_VERSION_FALLBACK
 
 PANEL_VERSION = _load_panel_version()
+
+# Détecter si le panel tourne dans un container Docker
+# (présence de /.dockerenv ou variable d'env DOCKER_MODE)
+IN_DOCKER = Path("/.dockerenv").exists() or os.environ.get("DOCKER_MODE", "") == "true"
 
 # ── Config fichier manager ────────────────────────────────────────────────────
 MGR_CONF_FILE = Path("/etc/frp-manager/frp-manager.json")
@@ -538,7 +552,10 @@ def _build_instances():
                 }
         else:
             # Rien trouvé → pas de stub, ni frps ni frpc
-            pass
+            # En mode Docker, ne pas créer d'instances depuis les binaires hôte
+            # sans service systemd associé — ça crée des fantômes non gérables
+            if not IN_DOCKER and bin_type == "frps":
+                pass  # on ne crée pas de stub non plus
     # Ajouter les containers Docker (sans doublon avec les instances systemd)
     for iid, inst in _detect_docker_frp_containers().items():
         if iid not in instances:
@@ -918,6 +935,7 @@ def api_panel_version():
         "update_available": update_available,
         "repo":             PANEL_GITHUB_REPO,
         "repo_configured":  repo_configured,
+        "in_docker":        IN_DOCKER,
     })
 
 panel_update_log = []
@@ -1225,24 +1243,75 @@ def _ufw_allowed_ports():
             allowed.add((port, "any"))
     return True, allowed
 
+def _get_docker_frpc_config(container_name):
+    """
+    Trouve et lit la config TOML d'un container frpc via docker inspect.
+    Cherche dans les montages (Mounts) un fichier frpc*.toml.
+    Retourne le contenu du fichier ou None.
+    """
+    status, data = _docker_api("GET", f"/containers/{container_name}/json")
+    if status != 200 or not isinstance(data, dict):
+        return None
+    mounts = data.get("Mounts", [])
+    for mount in mounts:
+        src = mount.get("Source", "")
+        dst = mount.get("Destination", "")
+        # Chercher un fichier toml monté (Source sur l hote)
+        for candidate in [src, dst]:
+            p = Path(candidate)
+            if p.suffix in (".toml", ".ini") and "frpc" in p.name.lower():
+                try:
+                    return p.read_text()
+                except Exception:
+                    pass
+            # Si c est un dossier, chercher frpc*.toml dedans
+            if p.is_dir():
+                for f in p.glob("frpc*.toml"):
+                    try:
+                        return f.read_text()
+                    except Exception:
+                        pass
+    # Fallback : chercher dans les variables d env du container (-c /path/to/frpc.toml)
+    env_vars = data.get("Config", {}).get("Env", [])
+    cmd = data.get("Config", {}).get("Cmd") or []
+    args = data.get("Args") or []
+    for lst in (cmd, args):
+        for i, arg in enumerate(lst):
+            if arg in ("-c", "--config") and i + 1 < len(lst):
+                p = Path(lst[i + 1])
+                try:
+                    return p.read_text()
+                except Exception:
+                    pass
+    return None
+
 @app.route("/api/ports")
 @login_required
 def api_ports():
     instances = detect_frp(force=False)
     ports = []
     for iid, inst in instances.items():
-        if inst.get("source") == "docker":
-            continue
-        cfg_path = inst.get("config_path")
-        if not cfg_path or not inst.get("config_exists"):
-            continue
-        try:
-            content = Path(cfg_path).read_text()
-            for p in _extract_ports_from_config(content, inst["type"]):
-                p.update({"iid": iid, "type": inst["type"], "service": inst["service"]})
-                ports.append(p)
-        except Exception:
-            pass
+        # ── Instance systemd / binaire classique ──────────────────────────
+        if inst.get("source") != "docker":
+            cfg_path = inst.get("config_path")
+            if not cfg_path or not inst.get("config_exists"):
+                continue
+            try:
+                cfg_content = Path(cfg_path).read_text()
+                for p in _extract_ports_from_config(cfg_content, inst["type"]):
+                    p.update({"iid": iid, "type": inst["type"], "service": inst["service"]})
+                    ports.append(p)
+            except Exception:
+                pass
+        # ── Container Docker frpc ─────────────────────────────────────────
+        elif inst.get("type") == "frpc":
+            container_name = inst.get("container_name", iid)
+            cfg_content = _get_docker_frpc_config(container_name)
+            if cfg_content:
+                for p in _extract_ports_from_config(cfg_content, "frpc"):
+                    p.update({"iid": iid, "type": "frpc", "service": container_name,
+                               "source": "docker"})
+                    ports.append(p)
     ufw_ok, allowed = _ufw_allowed_ports()
     for p in ports:
         p["ufw_allowed"] = (p["port"], p["proto"]) in allowed or (p["port"], "any") in allowed
