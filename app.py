@@ -754,6 +754,32 @@ def api_detect():
         return jsonify({"ok": True, "instances": _DEMO_INSTANCES})
     return jsonify({"ok": True, "instances": detect_frp(force=True)})
 
+def _get_frp_installed_version():
+    """
+    Retourne la version de frp installée.
+    Priorité : state.json → binaire frps → binaire frpc → None
+    """
+    state = load_state()
+    v = state.get("installed_version")
+    if v:
+        return v
+    # Lire depuis le binaire directement
+    for bin_name in ("frps", "frpc"):
+        for d in BINARY_SEARCH_PATHS:
+            b = d / bin_name
+            if b.exists() and os.access(b, os.X_OK):
+                ok, out, _ = run_cmd([str(b), "--version"])
+                if ok and out.strip():
+                    # Extraire juste le numéro de version (ex: "frps version 0.61.1")
+                    m = re.search(r'(\d+\.\d+\.\d+)', out)
+                    if m:
+                        ver = m.group(1)
+                        # Sauvegarder pour éviter de relire le binaire à chaque fois
+                        state["installed_version"] = ver
+                        save_state(state)
+                        return ver
+    return None
+
 @app.route("/api/status")
 @login_required
 def api_status():
@@ -763,7 +789,7 @@ def api_status():
     state     = load_state()
     return jsonify({
         "ok": True, "instances": instances,
-        "installed_version": state.get("installed_version"),
+        "installed_version": _get_frp_installed_version(),
         "last_update_check": state.get("last_update_check"),
     })
 
@@ -834,8 +860,16 @@ def api_logs(iid):
     inst = INSTANCES[iid]
     # ── Container Docker ──────────────────────────────────────────────────────
     if inst.get("source") == "docker":
-        content = _docker_logs_raw(inst["container_name"], tail=200)
-        return jsonify({"ok": True, "content": content})
+        container = inst["container_name"]
+        # Essayer d'abord via le socket Docker (toujours dispo)
+        content = _docker_logs_raw(container, tail=200)
+        if not content:
+            # Fallback : chercher l'id du container et réessayer
+            status, data = _docker_api("GET", f"/containers/{container}/json")
+            if status == 200 and isinstance(data, dict):
+                cid = data.get("Id", "")[:12]
+                content = _docker_logs_raw(cid, tail=200)
+        return jsonify({"ok": True, "content": content or "(aucun log disponible)"})
     # ── Instance systemd ──────────────────────────────────────────────────────
     if request.args.get("source") == "file":
         ok, out, _ = run_cmd(["tail", "-n200", str(inst["log"])])
@@ -851,7 +885,19 @@ def api_logs_stream(iid):
     inst = INSTANCES.get(iid, {})
     # ── Container Docker ──────────────────────────────────────────────────────
     if inst.get("source") == "docker":
-        return Response(_docker_logs_stream_gen(inst["container_name"]),
+        container = inst["container_name"]
+        # Vérifier que le container existe avant de streamer
+        status, _ = _docker_api("GET", f"/containers/{container}/json")
+        if status != 200:
+            # Essayer avec l'id court
+            s2, data2 = _docker_api("GET", f"/containers/json?all=true")
+            if s2 == 200 and isinstance(data2, list):
+                for c in data2:
+                    names = [n.lstrip("/") for n in (c.get("Names") or [])]
+                    if container in names:
+                        container = (c.get("Id") or container)[:12]
+                        break
+        return Response(_docker_logs_stream_gen(container),
                         mimetype="text/event-stream",
                         headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
     # ── Instance systemd ──────────────────────────────────────────────────────
@@ -1245,35 +1291,52 @@ def _ufw_allowed_ports():
 
 def _get_docker_frpc_config(container_name):
     """
-    Trouve et lit la config TOML d'un container frpc via docker inspect.
-    Cherche dans les montages (Mounts) un fichier frpc*.toml.
-    Retourne le contenu du fichier ou None.
+    Trouve et lit la config TOML d un container frpc.
+    Stratégies par ordre de priorité :
+    1. Mounts du container : cherche frpc*.toml dans les sources montées
+    2. Dossiers standards (/etc/frp, /etc/frp-manager) accessibles depuis le panel
+    3. Args du container (-c /path)
     """
     status, data = _docker_api("GET", f"/containers/{container_name}/json")
     if status != 200 or not isinstance(data, dict):
-        return None
+        # Essayer avec le nom sans préfixe docker_
+        alt = container_name.replace("docker_", "")
+        status, data = _docker_api("GET", f"/containers/{alt}/json")
+        if status != 200 or not isinstance(data, dict):
+            return None
+
+    # 1. Chercher dans les Mounts (chemins hôte directement lisibles)
     mounts = data.get("Mounts", [])
     for mount in mounts:
         src = mount.get("Source", "")
-        dst = mount.get("Destination", "")
-        # Chercher un fichier toml monté (Source sur l hote)
-        for candidate in [src, dst]:
-            p = Path(candidate)
-            if p.suffix in (".toml", ".ini") and "frpc" in p.name.lower():
+        if not src:
+            continue
+        p = Path(src)
+        # Fichier toml direct
+        if p.suffix in (".toml", ".ini") and "frpc" in p.name.lower():
+            try:
+                return p.read_text()
+            except Exception:
+                pass
+        # Dossier : scanner les frpc*.toml
+        if p.is_dir():
+            for f in sorted(p.glob("frpc*.toml")):
                 try:
-                    return p.read_text()
+                    return f.read_text()
                 except Exception:
                     pass
-            # Si c est un dossier, chercher frpc*.toml dedans
-            if p.is_dir():
-                for f in p.glob("frpc*.toml"):
-                    try:
-                        return f.read_text()
-                    except Exception:
-                        pass
-    # Fallback : chercher dans les variables d env du container (-c /path/to/frpc.toml)
-    env_vars = data.get("Config", {}).get("Env", [])
-    cmd = data.get("Config", {}).get("Cmd") or []
+
+    # 2. Chercher dans les dossiers standards (accessibles via volumes partagés)
+    for search_dir in CONFIG_SEARCH_PATHS:
+        if search_dir.is_dir():
+            for f in sorted(search_dir.glob("frpc*.toml")):
+                try:
+                    return f.read_text()
+                except Exception:
+                    pass
+
+    # 3. Chercher dans les args du container (-c /path/frpc.toml)
+    cmd  = data.get("Config", {}).get("Cmd") or []
     args = data.get("Args") or []
     for lst in (cmd, args):
         for i, arg in enumerate(lst):
@@ -1283,6 +1346,7 @@ def _get_docker_frpc_config(container_name):
                     return p.read_text()
                 except Exception:
                     pass
+
     return None
 
 @app.route("/api/ports")
