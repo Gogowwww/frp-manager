@@ -751,8 +751,8 @@ def index():
 @login_required
 def api_detect():
     if DEMO_MODE:
-        return jsonify({"ok": True, "instances": _DEMO_INSTANCES})
-    return jsonify({"ok": True, "instances": detect_frp(force=True)})
+        return jsonify({"ok": True, "instances": _DEMO_INSTANCES, "in_docker": False})
+    return jsonify({"ok": True, "instances": detect_frp(force=True), "in_docker": IN_DOCKER})
 
 def _get_frp_installed_version():
     """
