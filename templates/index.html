@@ -765,13 +765,13 @@ function updateSelects(ids,inst){
   }
   const ls=document.getElementById('log-sel');
   if(ls){const prev=ls.value;ls.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');if(ids.includes(prev))ls.value=prev;}
-  // Sélecteur frpc pour l'onglet Ports (instances frpc non-Docker uniquement)
+  // Sélecteur frpc pour l'onglet Ports (toutes instances frpc, Docker inclus)
   const ps=document.getElementById('ports-frpc-sel');
   if(ps){
-    const frpcIds=ids.filter(id=>inst[id].type==='frpc'&&inst[id].source!=='docker');
+    const frpcIds=ids.filter(id=>inst[id].type==='frpc');
     const prev=ps.value;
     ps.innerHTML=frpcIds.length
-      ? frpcIds.map(id=>`<option value="${id}">${id}</option>`).join('')
+      ? frpcIds.map(id=>`<option value="${id}">${id}${inst[id].source==='docker'?' 🐳':''}</option>`).join('')
       : '<option value="">— aucune instance frpc —</option>';
     if(frpcIds.includes(prev))ps.value=prev;
     else ps.value=frpcIds[0]||'';
@@ -1177,7 +1177,7 @@ async function loadPortsTunnels(){
   const sel=document.getElementById('ports-frpc-sel');
   if(!sel||!sel.value){
     const emp=document.getElementById('pp-empty');
-    if(emp)emp.textContent='Aucune instance frpc (non-Docker) détectée.';
+    if(emp)emp.textContent='Aucune instance frpc détectée.';
     updPortsEmpty();return;
   }
   portsFrpcTgt=portsFrpcTgt||sel.value;
