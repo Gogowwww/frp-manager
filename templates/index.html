@@ -230,16 +230,27 @@ footer a:hover{color:var(--accent2);}
 
 <!-- ══ OVERVIEW ══ -->
 <div class="section active" id="tab-overview">
+  <!-- Bannière Docker — visible uniquement en mode Docker -->
+  <div id="docker-banner" style="display:none;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:.85rem 1.1rem;margin-bottom:.85rem;font-size:.78rem;color:var(--accent2);line-height:1.7;">
+    🐳 <strong>Mode Docker</strong> — FRP Manager tourne dans un container.<br>
+    Pour ajouter un <strong>frps</strong> ou <strong>frpc</strong>, créez un nouveau container depuis Portainer
+    avec l'image <code>fatedier/frps</code> ou <code>fatedier/frpc</code> et montez votre config dans <code>/etc/frp/</code>.
+  </div>
   <div class="det-banner" id="det-banner">
     <span class="det-text" id="det-text">🔍 Détection en cours…</span>
     <button class="btn btn-secondary" onclick="runDetect()">↺ Relancer</button>
   </div>
   <div class="inst-grid" id="inst-grid"></div>
-  <div class="card">
+  <div id="no-instance-banner" style="display:none;" class="card">
+    <div style="color:var(--muted);font-size:.78rem;text-align:center;padding:.5rem 0;">
+      Aucune instance frp détectée sur cette machine.
+    </div>
+  </div>
+  <div class="card" id="global-actions-card">
     <div class="card-title">Actions globales</div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="refreshStatus()">↻ Actualiser</button>
-      <button class="btn btn-warn" onclick="switchTab('update')">⬆ Mises à jour</button>
+      <button class="btn btn-warn" id="btn-updates-tab" onclick="switchTab('update')">⬆ Mises à jour frp</button>
     </div>
   </div>
 </div>
@@ -640,6 +651,7 @@ async function runDetect(){
   const d=await r.json();
   lastInst=d.instances||{};
   renderGrid(lastInst,true);
+  applyDockerMode(d.in_docker||false);
   const parts=Object.entries(lastInst).map(([id,i])=>i.binary_found?`${id} (${i.version||'?'})`:id+' ✗');
   document.getElementById('det-text').textContent='🔍 '+(parts.join('  ·  ')||'Aucun binaire détecté');
 }
@@ -1264,6 +1276,37 @@ async function savePortsTunnels(){
   const d=await r.json();toast(d.msg,d.ok?'ok':'err');
 }
 async function saveRestartPorts(){await savePortsTunnels();await svcAct(portsFrpcTgt,'restart');}
+
+// ═══ Mode Docker ═════════════════════════════════════════════════════
+let _inDocker = false;
+function applyDockerMode(inDocker){
+  _inDocker = inDocker;
+
+  // Bannière Docker dans Vue d'ensemble
+  const dockerBanner = document.getElementById('docker-banner');
+  if(dockerBanner) dockerBanner.style.display = inDocker ? '' : 'none';
+
+  // Masquer "Mises à jour frp" en Docker (pas pertinent)
+  const btnUpd = document.getElementById('btn-updates-tab');
+  if(btnUpd) btnUpd.style.display = inDocker ? 'none' : '';
+
+  // Masquer/afficher tabs selon le mode
+  document.querySelectorAll('.tab').forEach(t => {
+    const tab = t.dataset.tab;
+    if(inDocker){
+      // En Docker : masquer "Mise à jour" (frp), garder tout le reste
+      if(tab === 'update') t.style.display = 'none';
+      else t.style.display = '';
+    } else {
+      t.style.display = '';
+    }
+  });
+
+  // Bannière "aucune instance" dans Vue d'ensemble
+  const ids = Object.keys(lastInst);
+  const noInst = document.getElementById('no-instance-banner');
+  if(noInst) noInst.style.display = ids.length === 0 ? '' : 'none';
+}
 
 // ═══ Init ════════════════════════════════════════════════════════════
 (async()=>{
