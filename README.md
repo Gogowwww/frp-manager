@@ -13,9 +13,10 @@
 
 ## 🖥️ Aperçu
 
-![Vue d'ensemble](docs/screenshots/overview.png)
-![Configuration](docs/screenshots/config.png)
-![Logs en direct](docs/screenshots/logs.png)
+![Vue d'ensemble](panel/home.png)
+![Gestion des ports](panel/ports.png)
+![Logs en direct](panel/logs.png)
+![Paramètres](panel/settings.png)
 
 ---
 
