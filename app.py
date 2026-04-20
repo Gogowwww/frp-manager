@@ -829,9 +829,16 @@ def api_config_get(iid):
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
     inst = INSTANCES[iid]
+    # ── Container Docker : lire la config depuis les volumes montés ───────────
     if inst.get("source") == "docker":
-        return jsonify({"ok": False, "docker": True,
-            "msg": f"Container Docker « {inst['container_name']} » — modifiez la config via le fichier monté dans le container (volume /etc/frp)."})
+        cfg_content = _get_docker_frpc_config(inst["container_name"])
+        if cfg_content:
+            return jsonify({"ok": True, "content": cfg_content, "exists": True, "docker": True})
+        # Pas de config trouvée → retourner un template vide
+        return jsonify({"ok": True, "content": DEFAULT_CONFIGS.get(inst["type"], ""),
+                        "exists": False, "docker": True,
+                        "msg": "Config non trouvée — assurez-vous que le volume /etc/frp est monté."})
+    # ── Instance systemd / binaire ────────────────────────────────────────────
     cfg = Path(inst["config"])
     if not cfg.exists():
         return jsonify({"ok": True, "content": DEFAULT_CONFIGS.get(inst["type"], ""), "exists": False})
