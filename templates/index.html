@@ -464,6 +464,11 @@ footer a:hover{color:var(--accent2);}
         <div class="btn-row">
           <button class="btn btn-secondary" onclick="checkPanelVersion()">🔍 Vérifier</button>
           <button class="btn btn-warn" id="btn-panel-update" onclick="updatePanel()" style="display:none;">⬆ Mettre à jour</button>
+          <div id="panel-docker-note" style="display:none;font-size:.72rem;color:var(--accent2);font-family:var(--mono);margin-top:.5rem;">
+            🐳 Mode Docker — pour mettre à jour :<br>
+            <code style="font-size:.68rem;">docker pull ghcr.io/gogowwww/frp-manager:latest</code><br>
+            puis redémarrez le container depuis Portainer.
+          </div>
           <a id="panel-release-link" href="#" target="_blank" style="display:none;"><button class="btn btn-secondary">📋 Release</button></a>
         </div>
         <div style="margin-top:.6rem;font-size:.68rem;font-family:var(--mono);color:var(--muted);" id="panel-repo-info">—</div>
@@ -1097,12 +1102,22 @@ async function checkPanelVersion(){
     return;
   }
   if(rep)rep.textContent=`github.com/${d.repo}`;
+  // Zone docker
+  const dockerNote=document.getElementById('panel-docker-note');
+  if(d.in_docker){
+    // En Docker : pas de bouton update auto, afficher une note
+    if(btn)btn.style.display='none';
+    if(dockerNote)dockerNote.style.display='';
+  } else {
+    if(dockerNote)dockerNote.style.display='none';
+  }
   if(d.latest){
     lat.textContent=`v${d.latest}`;
     if(d.update_available){
       sta.textContent='⬆ Mise à jour disponible';sta.style.color='var(--warn)';
       if(lnk){lnk.href=d.release_url||`https://github.com/${d.repo}/releases`;lnk.style.display='';}
-      if(btn)btn.style.display='';
+      // Bouton update seulement hors Docker
+      if(btn&&!d.in_docker)btn.style.display='';
     } else {
       sta.textContent='✓ À jour';sta.style.color='var(--accent)';
       if(lnk)lnk.style.display='none';
