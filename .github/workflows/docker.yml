@@ -2,11 +2,9 @@ name: Build & Push Docker Image
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  workflow_dispatch:
+    tags: ['v*']       # Sur release taguée
+  workflow_dispatch:   # Ou manuellement (récupère la dernière release auto)
 
-# Permissions au niveau global du workflow (évite les blocages repo)
 permissions:
   contents: read
   packages: write
@@ -18,13 +16,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Récupérer la version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Déclenché par un tag → utiliser ce tag
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            # Déclenché manuellement → récupérer la dernière release GitHub
+            VERSION=$(curl -s https://api.github.com/repos/Gogowwww/frp-manager/releases/latest \
+              | grep '"tag_name"' | head -1 | sed 's/.*"v\([^"]*\)".*/\1/')
+            if [[ -z "$VERSION" ]]; then
+              echo "Aucune release trouvée, abandon."
+              exit 1
+            fi
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version : ${VERSION}"
+
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image
-        run: docker build -t ghcr.io/gogowwww/frp-manager:latest -t ghcr.io/gogowwww/frp-manager:${{ github.sha }} .
+        run: |
+          docker build \
+            --build-arg PANEL_VERSION=${{ steps.version.outputs.version }} \
+            -t ghcr.io/gogowwww/frp-manager:latest \
+            -t ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }} \
+            .
 
       - name: Push image
         run: |
           docker push ghcr.io/gogowwww/frp-manager:latest
-          docker push ghcr.io/gogowwww/frp-manager:${{ github.sha }}
+          docker push ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }}
