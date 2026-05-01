@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-PANEL_VERSION_FALLBACK = "0.0.12"   # Version hardcodée — écrasée par state.json
+_PANEL_VERSION_FALLBACK = "0.0.12"   # Version hardcodée — écrasée par state.json
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
