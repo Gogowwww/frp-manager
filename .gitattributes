@@ -1,0 +1,23 @@
+# Force LF line endings for shell scripts (sinon bash plante sur "set -euo pipefail\r")
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+
+# Python — LF aussi
+*.py        text eol=lf
+
+# Configs serveur — LF (consommées par des outils Linux)
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+
+# Web : LF aussi (par cohérence)
+*.html      text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+
+# Binaires
+*.png       binary
+*.zip       binary
+*.tar.gz    binary

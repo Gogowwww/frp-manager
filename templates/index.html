@@ -303,7 +303,8 @@ footer a:hover{color:var(--accent2);}
           <div class="fsect-head">🌐 Ports & authentification</div>
           <div class="fcols">
             <div class="ffield port-f"><label class="flabel">Port principal <span class="fkey">bindPort</span></label><input class="finput" id="s-bindPort" type="number" value="7000" min="1" max="65535"></div>
-            <div class="ffield"><label class="flabel">Adresse <span class="fkey">bindAddr</span></label><input class="finput" id="s-bindAddr" type="text" value="0.0.0.0"></div>
+            <div class="ffield"><label class="flabel">Adresse d'écoute <span class="fkey">bindAddr</span> <span class="tip-i" data-tip="Adresse sur laquelle frps écoute.&#10;IPv4 (0.0.0.0), IPv6 (::, 2a04:ecc0:...) ou IP spécifique.">?</span></label><input class="finput" id="s-bindAddr" type="text" value="0.0.0.0" placeholder="0.0.0.0 · :: · 2a04:ecc0:8:a8:0:41d:0:1"></div>
+            <div class="ffield"><label class="flabel">IPv4 sortante <span class="fkey">proxyBindAddr</span> <span class="tip-i" data-tip="IPv4 publique utilisée pour les connexions sortantes des proxies.&#10;Utile quand bindAddr est en IPv6 mais que les clients arrivent en IPv4.&#10;Laisser vide si non nécessaire.">?</span></label><input class="finput" id="s-proxyBindAddr" type="text" placeholder="ex: 45.145.167.179"></div>
             <div class="ffield"><label class="flabel">Auth <span class="fkey">auth.method</span></label><select class="finput" id="s-authmethod"><option value="token">token</option><option value="oidc">oidc</option></select></div>
             <div class="ffield"><label class="flabel">Token secret <span class="fkey">auth.token</span></label><div class="tok-wrap"><input class="finput" id="s-authtoken" type="password" placeholder="votre-token-secret"><button class="btn btn-secondary" onclick="toggleTok('s-authtoken')" style="padding:.37rem .52rem;">👁</button></div></div>
           </div>
@@ -862,6 +863,7 @@ async function loadConfig(){
   const type=inst?inst.type:(cfgTgt.startsWith('frpc')?'frpc':'frps');
   if(type==='frps'){
     sv('s-bindAddr',cfg['bindAddr']||'0.0.0.0');sv('s-bindPort',cfg['bindPort']||'7000');
+    sv('s-proxyBindAddr',cfg['proxyBindAddr']||'');
     sv('s-authmethod',cfg['auth.method']||'token');sv('s-authtoken',cfg['auth.token']||'');
     sv('s-logto',cfg['log.to']||'/var/log/frp/frps.log');sv('s-loglvl',cfg['log.level']||'info');sv('s-logdays',cfg['log.maxDays']||'3');
     sv('s-maxports',cfg['maxPortsPerClient']||'0');sv('s-pool',cfg['transport.maxPoolCount']||'5');sv('s-hbt',cfg['transport.heartbeatTimeout']||'90');
@@ -898,6 +900,7 @@ function genS(){
   const L=[];
   L.push(`# ${cfgTgt}.toml — généré par FRP Manager\n`);
   L.push(`bindAddr = "${gv('s-bindAddr')}"`);L.push(`bindPort = ${gv('s-bindPort')}`);
+  if(gv('s-proxyBindAddr'))L.push(`proxyBindAddr = "${gv('s-proxyBindAddr')}"`);
   if(gv('s-kcp-en'))L.push(`kcpBindPort = ${gv('s-kcp')}`);
   if(gv('s-quic-en'))L.push(`quicBindPort = ${gv('s-quic')}`);
   if(gv('s-vh-en'))L.push(`vhostHTTPPort = ${gv('s-vh')}`);
