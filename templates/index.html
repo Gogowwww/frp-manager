@@ -653,6 +653,7 @@ async function runDetect(){
   const r=await fetch('/api/detect');
   const d=await r.json();
   lastInst=d.instances||{};
+  try{localStorage.setItem('frpm_last_inst', JSON.stringify(lastInst));}catch(e){}
   renderGrid(lastInst,true);
   applyDockerMode(d.in_docker||false);
   const parts=Object.entries(lastInst).map(([id,i])=>i.binary_found?`${id} (${i.version||'?'})`:id+' ✗');
@@ -1369,6 +1370,14 @@ function applyDockerMode(inDocker){
 
 // ═══ Init ════════════════════════════════════════════════════════════
 (async()=>{
+  // Appliquer immédiatement le dernier état connu (évite le flash de l'onglet Ports)
+  try{
+    const cached = localStorage.getItem('frpm_last_inst');
+    if(cached){
+      lastInst = JSON.parse(cached);
+      updatePortsTabVisibility(lastInst);
+    }
+  }catch(e){}
   await loadNicknames();
   runDetect();
   checkWelcome();
