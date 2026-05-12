@@ -1282,11 +1282,7 @@ async function savePortsTunnels(){
 }
 async function saveRestartPorts(){
   await savePortsTunnels();
-  toast('Redémarrage en cours…','info');
-  const r=await fetch(`/api/service/${portsFrpcTgt}/restart`,{method:'POST'});
-  const d=await r.json();
-  toast(d.msg,d.ok?'ok':'err');
-  setTimeout(refreshStatus,700);
+  await svcAct(portsFrpcTgt,'restart');
 }
 
 // ═══ Mode Docker ═════════════════════════════════════════════════════
