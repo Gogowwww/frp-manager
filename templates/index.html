@@ -201,6 +201,20 @@ footer a:hover{color:var(--accent2);}
 .nick-input-row{display:flex;gap:.35rem;align-items:center;margin-top:.25rem;}
 .nick-input-row .finput{flex:1;font-size:.72rem;padding:.28rem .5rem;}
 </style>
+<script>
+// Exécuté immédiatement avant le rendu — masque l'onglet Ports si pas de frpc connu
+(function(){
+  try{
+    if(localStorage.getItem('frpm_has_frpc')!=='1'){
+      document.addEventListener('DOMContentLoaded',function(){
+        document.querySelectorAll('.tab').forEach(function(t){
+          if(t.dataset&&t.dataset.tab==='ports')t.style.display='none';
+        });
+      });
+    }
+  }catch(e){}
+})();
+</script>
 </head>
 <body>
 
