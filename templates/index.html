@@ -1282,7 +1282,28 @@ async function savePortsTunnels(){
 }
 async function saveRestartPorts(){
   await savePortsTunnels();
-  await svcAct(portsFrpcTgt,'restart');
+  toast(`Redémarrage de ${portsFrpcTgt}…`,'info');
+  // Fire and forget — on ignore la réponse car le restart coupe la connexion SSL
+  fetch(`/api/service/${portsFrpcTgt}/restart`,{method:'POST'}).catch(()=>{});
+  // Poller le statut jusqu'à ce que le container soit de nouveau running (max 15s)
+  let attempts=0;
+  const check=async()=>{
+    attempts++;
+    try{
+      const r=await fetch('/api/status');
+      const d=await r.json();
+      const inst=d.instances?.[portsFrpcTgt];
+      if(inst?.status?.running){
+        lastInst=d.instances;
+        renderGrid(lastInst,false);
+        toast(`${portsFrpcTgt} redémarré et actif ✓`,'ok');
+        return;
+      }
+    }catch(e){}
+    if(attempts<15) setTimeout(check,1000);
+    else toast('Redémarrage lancé — vérifiez le statut manuellement','warn');
+  };
+  setTimeout(check,1500);
 }
 
 // ═══ Mode Docker ═════════════════════════════════════════════════════
