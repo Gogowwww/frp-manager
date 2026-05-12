@@ -680,6 +680,7 @@ function renderGrid(inst,full){
     ids.forEach(id=>patchCard(id,inst[id]));
   }
   updateSelects(ids,inst);
+  updatePortsTabVisibility();
 }
 
 function mkCard(iid,inst){
@@ -1279,10 +1280,29 @@ async function savePortsTunnels(){
   const r=await fetch(`/api/config/${portsFrpcTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
   const d=await r.json();toast(d.msg,d.ok?'ok':'err');
 }
-async function saveRestartPorts(){await savePortsTunnels();await svcAct(portsFrpcTgt,'restart');}
+async function saveRestartPorts(){
+  await savePortsTunnels();
+  toast('Redémarrage en cours…','info');
+  const r=await fetch(`/api/service/${portsFrpcTgt}/restart`,{method:'POST'});
+  const d=await r.json();
+  toast(d.msg,d.ok?'ok':'err');
+  setTimeout(refreshStatus,700);
+}
 
 // ═══ Mode Docker ═════════════════════════════════════════════════════
 let _inDocker = false;
+function updatePortsTabVisibility(){
+  // Masquer l'onglet Ports s'il n'y a aucun frpc dans les instances
+  const hasFrpc = Object.values(lastInst).some(i => i.type === 'frpc');
+  document.querySelectorAll('.tab').forEach(t => {
+    if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
+  });
+  // Si on est sur l'onglet Ports et qu'il disparaît, aller sur Vue d'ensemble
+  if(!hasFrpc && document.getElementById('tab-ports')?.classList.contains('active')){
+    switchTab('overview');
+  }
+}
+
 function applyDockerMode(inDocker){
   _inDocker = inDocker;
 
