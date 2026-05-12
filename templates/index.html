@@ -221,7 +221,7 @@ footer a:hover{color:var(--accent2);}
 
 <nav>
   <div class="tab active" data-tab="overview">Vue d'ensemble</div>
-  <div class="tab" data-tab="ports">Ports</div>
+  <div class="tab" data-tab="ports" style="display:none;">Ports</div>
   <div class="tab" data-tab="logs">Logs</div>
   <div class="tab" data-tab="settings">Paramètres</div>
 </nav>
@@ -681,7 +681,7 @@ function renderGrid(inst,full){
     ids.forEach(id=>patchCard(id,inst[id]));
   }
   updateSelects(ids,inst);
-  updatePortsTabVisibility();
+  updatePortsTabVisibility(inst);
 }
 
 function mkCard(iid,inst){
@@ -1325,9 +1325,10 @@ async function saveRestartPorts(){
 
 // ═══ Mode Docker ═════════════════════════════════════════════════════
 let _inDocker = false;
-function updatePortsTabVisibility(){
+function updatePortsTabVisibility(inst){
   // Masquer l'onglet Ports s'il n'y a aucun frpc dans les instances
-  const hasFrpc = Object.values(lastInst).some(i => i.type === 'frpc');
+  const src = inst || lastInst;
+  const hasFrpc = Object.values(src).some(i => i.type === 'frpc');
   document.querySelectorAll('.tab').forEach(t => {
     if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
   });
