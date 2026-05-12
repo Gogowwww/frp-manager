@@ -653,7 +653,6 @@ async function runDetect(){
   const r=await fetch('/api/detect');
   const d=await r.json();
   lastInst=d.instances||{};
-  try{localStorage.setItem('frpm_last_inst', JSON.stringify(lastInst));}catch(e){}
   renderGrid(lastInst,true);
   applyDockerMode(d.in_docker||false);
   const parts=Object.entries(lastInst).map(([id,i])=>i.binary_found?`${id} (${i.version||'?'})`:id+' ✗');
@@ -1327,13 +1326,13 @@ async function saveRestartPorts(){
 // ═══ Mode Docker ═════════════════════════════════════════════════════
 let _inDocker = false;
 function updatePortsTabVisibility(inst){
-  // Masquer l'onglet Ports s'il n'y a aucun frpc dans les instances
   const src = inst || lastInst;
   const hasFrpc = Object.values(src).some(i => i.type === 'frpc');
+  // Mettre à jour le cache localStorage immédiatement
+  try{localStorage.setItem('frpm_has_frpc', hasFrpc ? '1' : '0');}catch(e){}
   document.querySelectorAll('.tab').forEach(t => {
     if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
   });
-  // Si on est sur l'onglet Ports et qu'il disparaît, aller sur Vue d'ensemble
   if(!hasFrpc && document.getElementById('tab-ports')?.classList.contains('active')){
     switchTab('overview');
   }
@@ -1372,11 +1371,10 @@ function applyDockerMode(inDocker){
 (async()=>{
   // Appliquer immédiatement le dernier état connu (évite le flash de l'onglet Ports)
   try{
-    const cached = localStorage.getItem('frpm_last_inst');
-    if(cached){
-      lastInst = JSON.parse(cached);
-      updatePortsTabVisibility(lastInst);
-    }
+    const hasFrpc = localStorage.getItem('frpm_has_frpc') === '1';
+    document.querySelectorAll('.tab').forEach(t => {
+      if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
+    });
   }catch(e){}
   await loadNicknames();
   runDetect();
