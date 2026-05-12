@@ -283,6 +283,7 @@ footer a:hover{color:var(--accent2);}
         <option value="journal">journalctl</option>
         <option value="file">Fichier log</option>
       </select>
+      <span id="log-docker-note" style="display:none;font-size:.7rem;color:var(--accent2);font-family:var(--mono);">🐳 Docker</span>
       <button class="btn btn-secondary" onclick="loadLogs()">↻</button>
       <button class="btn btn-info" id="btn-live" onclick="toggleLive()">● Live</button>
       <button class="btn btn-secondary" onclick="document.getElementById('log-area').scrollTop=9999">⬇</button>
@@ -803,7 +804,7 @@ async function svcAct(iid,action){
 }
 
 function goConfig(iid){switchTab('settings');const s=document.getElementById('cfg-sel');if(s){s.value=iid;adaptForm(iid);loadConfig();}}
-function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
+function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;adaptLogSrcSelector();loadLogs();}
 
 // ═══ Config ═══════════════════════════════════════════════════════════
 let cfgTgt='',pxCount=0,portsFrpcTgt='';
@@ -1001,8 +1002,24 @@ function updPxType(sel,i){
 
 // ═══ Logs ════════════════════════════════════════════════════════════
 let liveEs=null;
-function populateLogSel(){const sel=document.getElementById('log-sel');if(!sel)return;if(sel.options.length===0){const ids=sIds(lastInst);sel.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');}if(sel.value)loadLogs();}
+function populateLogSel(){const sel=document.getElementById('log-sel');if(!sel)return;if(sel.options.length===0){const ids=sIds(lastInst);sel.innerHTML=ids.map(id=>`<option value="${id}">${id}</option>`).join('');}adaptLogSrcSelector();if(sel.value)loadLogs();}
+function adaptLogSrcSelector(){
+  const svc=gv('log-sel');
+  if(!svc||!lastInst[svc])return;
+  const isDocker=lastInst[svc].source==='docker';
+  const srcSel=document.getElementById('log-src');
+  const dockerNote=document.getElementById('log-docker-note');
+  if(srcSel){
+    srcSel.style.display=isDocker?'none':'';
+    // Forcer "file" pour Docker (les logs Docker se lisent via le socket, pas journalctl)
+    if(isDocker)srcSel.value='docker';
+    else if(srcSel.value==='docker')srcSel.value='journal';
+  }
+  if(dockerNote)dockerNote.style.display=isDocker?'':'none';
+}
+
 async function loadLogs(){
+  adaptLogSrcSelector();
   stopLive();
   const svc=gv('log-sel'),src=gv('log-src');if(!svc)return;
   const area=document.getElementById('log-area');area.textContent='Chargement…';
@@ -1018,7 +1035,7 @@ function startLive(){
   document.getElementById('live-ind').style.display='';document.getElementById('btn-live').textContent='■ Stop';
 }
 function stopLive(){if(liveEs){liveEs.close();liveEs=null;}document.getElementById('live-ind').style.display='none';document.getElementById('btn-live').textContent='● Live';}
-function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;loadLogs();}
+function goLogs(iid){switchTab('logs');const s=document.getElementById('log-sel');if(s)s.value=iid;adaptLogSrcSelector();loadLogs();}
 
 // ═══ Update ══════════════════════════════════════════════════════════
 async function checkUpdate(){
