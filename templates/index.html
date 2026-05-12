@@ -201,20 +201,6 @@ footer a:hover{color:var(--accent2);}
 .nick-input-row{display:flex;gap:.35rem;align-items:center;margin-top:.25rem;}
 .nick-input-row .finput{flex:1;font-size:.72rem;padding:.28rem .5rem;}
 </style>
-<script>
-// Exécuté immédiatement avant le rendu — masque l'onglet Ports si pas de frpc connu
-(function(){
-  try{
-    if(localStorage.getItem('frpm_has_frpc')!=='1'){
-      document.addEventListener('DOMContentLoaded',function(){
-        document.querySelectorAll('.tab').forEach(function(t){
-          if(t.dataset&&t.dataset.tab==='ports')t.style.display='none';
-        });
-      });
-    }
-  }catch(e){}
-})();
-</script>
 </head>
 <body>
 
@@ -235,7 +221,7 @@ footer a:hover{color:var(--accent2);}
 
 <nav>
   <div class="tab active" data-tab="overview">Vue d'ensemble</div>
-  <div class="tab" data-tab="ports" style="display:none;">Ports</div>
+  <!-- Onglet Ports injecté dynamiquement si frpc détecté -->
   <div class="tab" data-tab="logs">Logs</div>
   <div class="tab" data-tab="settings">Paramètres</div>
 </nav>
@@ -1342,13 +1328,27 @@ let _inDocker = false;
 function updatePortsTabVisibility(inst){
   const src = inst || lastInst;
   const hasFrpc = Object.values(src).some(i => i.type === 'frpc');
-  // Mettre à jour le cache localStorage immédiatement
   try{localStorage.setItem('frpm_has_frpc', hasFrpc ? '1' : '0');}catch(e){}
-  document.querySelectorAll('.tab').forEach(t => {
-    if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
-  });
-  if(!hasFrpc && document.getElementById('tab-ports')?.classList.contains('active')){
-    switchTab('overview');
+
+  const nav = document.querySelector('nav');
+  let tab = nav ? nav.querySelector('[data-tab="ports"]') : null;
+
+  if(hasFrpc){
+    if(!tab){
+      // Injecter l'onglet avant Logs
+      const logsTab = nav.querySelector('[data-tab="logs"]');
+      tab = document.createElement('div');
+      tab.className = 'tab';
+      tab.dataset.tab = 'ports';
+      tab.textContent = 'Ports';
+      tab.addEventListener('click', () => switchTab('ports'));
+      nav.insertBefore(tab, logsTab);
+    }
+  } else {
+    if(tab) tab.remove();
+    if(document.getElementById('tab-ports')?.classList.contains('active')){
+      switchTab('overview');
+    }
   }
 }
 
@@ -1383,13 +1383,7 @@ function applyDockerMode(inDocker){
 
 // ═══ Init ════════════════════════════════════════════════════════════
 (async()=>{
-  // Appliquer immédiatement le dernier état connu (évite le flash de l'onglet Ports)
-  try{
-    const hasFrpc = localStorage.getItem('frpm_has_frpc') === '1';
-    document.querySelectorAll('.tab').forEach(t => {
-      if(t.dataset.tab === 'ports') t.style.display = hasFrpc ? '' : 'none';
-    });
-  }catch(e){}
+  // Onglet Ports injecté dynamiquement par updatePortsTabVisibility
   await loadNicknames();
   runDetect();
   checkWelcome();
