@@ -43,5 +43,3 @@ services:
 
     environment:
       - FRP_MANAGER_PORT=8765
-      # Mode démo (fausses instances, aucune action réelle) :
-      # - DEMO_MODE=true
