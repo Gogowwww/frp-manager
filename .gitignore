@@ -1,0 +1,38 @@
+# ── Données sensibles frp / panel (ne JAMAIS committer) ───────────────────────
+# Configs réelles (tokens, IP, domaines)
+*.toml
+*.ini
+frp-manager.json
+*.local.*
+
+# Certificats / clés
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+
+# Logs et état runtime
+*.log
+state.json
+/var/
+
+# Secrets divers
+.env
+.env.*
+secrets*
+*.secret
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+
+# ── OS / éditeurs ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
