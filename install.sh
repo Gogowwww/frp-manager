@@ -99,6 +99,96 @@ EOF
 
 ok "Service frp-manager créé."
 
+title "Téléchargement des binaires frp (frps / frpc)"
+
+if [[ -x /usr/local/bin/frps && -x /usr/local/bin/frpc ]]; then
+    ok "Binaires frps/frpc déjà présents dans /usr/local/bin."
+else
+    info "Récupération de la dernière version de frp depuis GitHub…"
+    if "$VENV_DIR/bin/python3" "$INSTALL_DIR/frp-autoupdate.py" >> "$LOG_DIR/autoupdate.log" 2>&1; then
+        ok "Binaires frps/frpc installés dans /usr/local/bin."
+    else
+        warn "Téléchargement des binaires échoué (réseau ?) — voir $LOG_DIR/autoupdate.log."
+        warn "Le panel relancera la tentative à son démarrage."
+    fi
+fi
+
+title "Configs frp par défaut (/etc/frp)"
+
+mkdir -p "$FRP_CONF_DIR"
+
+if [[ -f "$FRP_CONF_DIR/frps.toml" ]]; then
+    ok "frps.toml existe déjà — conservé."
+else
+    cat > "$FRP_CONF_DIR/frps.toml" <<'EOF'
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+auth.method = "token"
+auth.token = "changeme"
+
+log.to = "/var/log/frp/frps.log"
+log.level = "info"
+log.maxDays = 3
+EOF
+    ok "Config par défaut créée : $FRP_CONF_DIR/frps.toml"
+fi
+
+if [[ -f "$FRP_CONF_DIR/frpc.toml" ]]; then
+    ok "frpc.toml existe déjà — conservé."
+else
+    cat > "$FRP_CONF_DIR/frpc.toml" <<'EOF'
+serverAddr = ""
+serverPort = 7000
+
+auth.method = "token"
+auth.token = "changeme"
+
+log.to = "/var/log/frp/frpc.log"
+log.level = "info"
+log.maxDays = 3
+EOF
+    ok "Config par défaut créée : $FRP_CONF_DIR/frpc.toml"
+fi
+
+title "Services systemd : frps & frpc"
+
+cat > /etc/systemd/system/frps.service <<EOF
+[Unit]
+Description=frp server (frps)
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/local/bin/frps -c ${FRP_CONF_DIR}/frps.toml
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ok "Service frps.service créé."
+
+cat > /etc/systemd/system/frpc.service <<EOF
+[Unit]
+Description=frp client (frpc)
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/local/bin/frpc -c ${FRP_CONF_DIR}/frpc.toml
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+ok "Service frpc.service créé."
+
+warn "frps/frpc installés mais NON activés/démarrés — gérez-les depuis le panel."
+
 title "Cron job auto-update frp (quotidien 03h00)"
 
 cat > /etc/cron.d/frp-autoupdate <<EOF
@@ -144,6 +234,8 @@ echo ""
 echo -e "  Config panel  : ${CYAN}/etc/frp-manager/frp-manager.json${RESET}"
 echo -e "  Logs          : ${CYAN}${LOG_DIR}/${RESET}"
 echo -e "  Auto-update   : ${CYAN}/etc/cron.d/frp-autoupdate${RESET} (03h00)"
+echo -e "  Services frp  : ${CYAN}frps.service${RESET} + ${CYAN}frpc.service${RESET} créés (non démarrés)"
+echo -e "                  → configurez-les puis démarrez depuis le panel."
 echo ""
 echo -e "  Commandes utiles :"
 echo -e "    ${YELLOW}systemctl status frp-manager${RESET}"
