@@ -1,6 +1,6 @@
 # FRP Manager
 
-> Interface web de gestion pour [frp](https://github.com/fatedier/frp) — multi-instances, HTTPS natif, configuration interactive, logs en direct, auto-update.
+> Panneau web Flask pour piloter [frp](https://github.com/fatedier/frp) (frps & frpc) — multi-instances, services systemd auto-installés, HTTPS natif, éditeur TOML, logs temps réel & auto-update.
 
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
@@ -80,7 +80,7 @@ frp est un outil puissant mais sa gestion reste entièrement manuelle : édition
 - **Python 3.8+**
 - Architectures supportées : `amd64`, `arm64`, `arm`
 
-> frp (frps/frpc) n'est pas obligatoire pour installer le panel — il peut être téléchargé directement depuis l'onglet **Mise à jour** de l'interface.
+> Pas besoin d'installer frp au préalable : le script `install.sh` télécharge les binaires `frps`/`frpc` et crée leurs services systemd automatiquement. Ils restent aussi téléchargeables/màj depuis l'onglet **Mise à jour** de l'interface.
 
 ---
 
@@ -98,6 +98,11 @@ sudo bash install.sh
 ```
 
 Le script installe automatiquement les dépendances Python dans un virtualenv isolé, crée le service systemd `frp-manager`, et démarre le panel.
+
+Il **provisionne aussi frp de bout en bout** :
+- téléchargement des binaires `frps` / `frpc` dans `/usr/local/bin` (dernière version GitHub, avec miroirs de fallback) ;
+- création des configs par défaut `/etc/frp/frps.toml` et `/etc/frp/frpc.toml` (uniquement si absentes — vos configs existantes sont préservées) ;
+- création des services systemd `frps.service` et `frpc.service`, prêts à être configurés puis démarrés **depuis le panel** (installés mais ni activés ni démarrés, pour ne rien lancer avec une config vide).
 
 ### Méthode 2 — Docker / Portainer
 
@@ -169,6 +174,8 @@ https://VOTRE_IP:8765
 
 /etc/systemd/system/
   frp-manager.service      # Service du panel
+  frps.service             # Service frp serveur (créé par install.sh)
+  frpc.service             # Service frp client (créé par install.sh)
 
 /etc/cron.d/
   frp-autoupdate           # Vérification auto des mises à jour frp (03h00)
@@ -268,7 +275,7 @@ Pour signaler un bug ou proposer une fonctionnalité, ouvrez une [issue](https:/
 
 ## Licence
 
-MIT — voir [LICENSE](LICENSE)
+Apache 2.0 — voir [LICENSE](LICENSE)
 
 ---
 
