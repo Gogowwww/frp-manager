@@ -31,6 +31,7 @@ echo -e "  Interface web de gestion pour ${CYAN}frpc${RESET} et ${CYAN}frps${RES
 echo ""
 
 INSTALL_DIR="/opt/frp-manager"
+FRP_CONF_DIR="/etc/frp"
 LOG_DIR="/var/log/frp"
 STATE_DIR="/var/lib/frp-manager"
 VENV_DIR="${INSTALL_DIR}/venv"
