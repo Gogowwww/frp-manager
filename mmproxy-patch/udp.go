@@ -15,6 +15,12 @@
 // en-tête) réutilisent l'adresse mémorisée. Le mapping est rafraîchi à chaque
 // en-tête reçu (auto-réparation si frpc recycle un port source).
 //
+// Ce fichier corrige aussi un BUG upstream : udp.go amont sélectionne l'adresse
+// cible via netip.MustParseAddr(downstreamAddr.String()) — or String() renvoie
+// "IP:port" et MustParseAddr n'accepte pas de port → panic au 1er datagramme UDP
+// (le service systemd redémarre en boucle, « l'UDP ne marche pas »). tcp.go, lui,
+// utilise correctement MustParseAddrPort. On teste ici la famille via l'IP.
+//
 // Fichier remplacé à la compilation par mmproxy-patch/build.sh — le reste du
 // paquet (Opts, PROXYReadRemoteAddr, GetBuffer, DialUpstreamControl, UDP,
 // CheckOriginAllowed) est inchangé.
@@ -26,7 +32,6 @@ import (
 	"errors"
 	"log/slog"
 	"net"
-	"net/netip"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -106,8 +111,12 @@ func udpGetSocketFromMap(downstream net.PacketConn, downstreamAddr, saddr net.Ad
 		return conn, nil
 	}
 
+	// CORRECTIF (frp-manager) : upstream utilise netip.MustParseAddr sur
+	// downstreamAddr.String() (= "IP:port"), ce qui PANIQUE au 1er datagramme UDP
+	// (MustParseAddr n'accepte pas de port ; cf. tcp.go qui utilise, lui,
+	// MustParseAddrPort). On teste la famille via l'IP directement.
 	targetAddr := Opts.TargetAddr6
-	if netip.MustParseAddr(downstreamAddr.String()).Is4() {
+	if downstreamAddr.(*net.UDPAddr).IP.To4() != nil {
 		targetAddr = Opts.TargetAddr4
 	}
 
