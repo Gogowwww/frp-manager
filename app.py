@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-_PANEL_VERSION_FALLBACK = "0.0.20"   # Version hardcodée — écrasée par state.json
+_PANEL_VERSION_FALLBACK = "0.0.21"   # Version hardcodée — écrasée par state.json
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -455,11 +455,15 @@ def _detect_docker_frp_containers():
         if not bin_type:
             continue
         running = state.lower() == "running"
+        # network_mode "host" requis pour l'option IP réelle (go-mmproxy) :
+        # le container partage alors le loopback de l'hôte
+        net_mode = (c.get("HostConfig") or {}).get("NetworkMode", "")
         iid = f"docker_{name}"
         instances[iid] = {
             "type":           bin_type,
             "source":         "docker",
             "container_name": name,
+            "network_mode":   net_mode,
             "image":          image,
             "binary":         Path(f"/docker/{name}"),
             "version":        None,
@@ -601,6 +605,7 @@ def detect_frp(force=False):
                     "id": iid, "type": inst["type"],
                     "source": "docker",
                     "container_name": inst["container_name"],
+                    "network_mode": inst.get("network_mode", ""),
                     "image": inst["image"],
                     "binary_path": f"docker:{inst['container_name']}",
                     "binary_found": True,
@@ -1830,8 +1835,10 @@ def api_mmproxy_sync():
 
     if errs:
         return jsonify({"ok": False, "msg": " · ".join(errs)}), 400
-    if desired and inst.get("source") == "docker":
-        return jsonify({"ok": False, "msg": "IP réelle (go-mmproxy) indisponible pour les instances frpc Docker"}), 400
+    # Container frpc : OK seulement en network_mode host (loopback partagé avec
+    # l'hôte, sinon le container ne peut pas atteindre le relais sur 127.0.0.1)
+    if desired and inst.get("source") == "docker" and inst.get("network_mode") != "host":
+        return jsonify({"ok": False, "msg": "IP réelle (go-mmproxy) : le container frpc doit être en network_mode: host"}), 400
 
     ok, ports, entries, msgs = mmproxy_sync(iid, desired)
     return jsonify({"ok": ok, "ports": ports, "entries": entries,

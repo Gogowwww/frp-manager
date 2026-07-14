@@ -91,7 +91,8 @@ Le service reçoit du **TCP brut avec la vraie IP source**, sans aucune modifica
   les règles de routage sont désactivées quand plus aucun relais n'existe
 
 > ⚠️ **Prérequis** : le service doit écouter sur `127.0.0.1` (même machine que frpc), hôte Linux
-> avec systemd. Indisponible pour les instances frpc qui tournent en container Docker.
+> avec systemd. Les instances frpc en container Docker sont supportées uniquement en
+> `network_mode: host` (loopback partagé avec l'hôte).
 > Le trafic de réponse du service vers l'IP usurpée reste sur loopback grâce aux règles
 > `ip rule`/`ip route` installées par le panel.
 

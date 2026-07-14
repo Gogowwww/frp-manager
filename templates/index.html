@@ -1204,7 +1204,13 @@ let mmState={installed:false,routes_active:false,entries:{},docker_inst:false};
 function onPortsFrpcSel(){portsFrpcTgt=gv('ports-frpc-sel');loadPortsTunnels();}
 
 // ── go-mmproxy (IP réelle) ────────────────────────────────────────────
-function mmAvail(){const inst=lastInst[portsFrpcTgt];return !(inst&&inst.source==='docker');}
+// Dispo si frpc systemd, ou container Docker en network_mode: host
+// (loopback partagé avec l'hôte → le container atteint le relais 127.0.0.1)
+function mmAvail(){
+  const inst=lastInst[portsFrpcTgt];
+  if(!inst||inst.source!=='docker')return true;
+  return inst.network_mode==='host';
+}
 
 async function loadMmStatus(){
   mmState={installed:false,routes_active:false,entries:{},docker_inst:false};
@@ -1223,7 +1229,8 @@ function renderMmBanner(show){
   b.style.display=show?'flex':'none';
   if(!show)return;
   if(mmState.docker_inst){
-    b.innerHTML=`⚡ Option « IP réelle » (go-mmproxy) indisponible pour les instances frpc Docker.`;
+    const nm=(lastInst[portsFrpcTgt]||{}).network_mode||'bridge';
+    b.innerHTML=`⚡ Option « IP réelle » (go-mmproxy) : le container frpc doit être en <b style="color:var(--text)">network_mode: host</b> (actuellement : <b style="color:var(--warn)">${esc(nm)}</b>). Recréez le container avec le réseau « host » dans Portainer, ou passez frpc en service systemd.`;
     return;
   }
   if(!mmState.installed){
@@ -1404,7 +1411,7 @@ async function savePortsTunnels(){
     mmTunnels.push({name,target_ip:ip,target_port:+lp});
   });
   if(mmErr){toast(mmErr,'err');return false;}
-  if(mmTunnels.length&&!mmAvail()){toast('IP réelle indisponible pour les instances frpc Docker','err');return false;}
+  if(mmTunnels.length&&!mmAvail()){toast('IP réelle : le container frpc doit être en network_mode: host','err');return false;}
   // ── 2. Synchroniser les relais go-mmproxy (aussi pour nettoyer) ────────
   let mmPorts={};
   if(mmAvail()){
