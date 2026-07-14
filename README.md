@@ -64,6 +64,7 @@ Il détecte automatiquement vos services systemd existants, démarre en **HTTPS*
   - **Section principale** : ports essentiels, authentification (token masqué + bouton révéler 👁️)
   - **Options avancées** (accordéon) : TLS, ports optionnels (KCP, QUIC, vhost), performance, logs
   - **Tunnels (proxies)** pour frpc : ajout dynamique en `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp`, Proxy Protocol v1/v2
+  - **Visiteurs (`[[visitors]]`)** pour frpc : accès local à un service `stcp`/`xtcp` partagé (name, serverName, secretKey, bindAddr/bindPort)
 - 🛠️ **Mode TOML brut** pour les utilisateurs avancés
 - 💾 **Sauvegarde + Reload** en un clic
 
@@ -72,15 +73,15 @@ Il détecte automatiquement vos services systemd existants, démarre en **HTTPS*
 Par défaut, un service exposé via frp voit toutes les connexions arriver depuis `127.0.0.1`.
 Le Proxy Protocol v2 transmet l'IP réelle, **mais le service doit le supporter** (nginx, HAProxy…).
 Pour tous les autres (serveur de jeu, SSH, base de données…), l'onglet **Ports** propose
-l'option **« IP réelle du client »** par tunnel TCP, basée sur
+l'option **« IP réelle du client »** par tunnel TCP (ou UDP, expérimental), basée sur
 [go-mmproxy](https://github.com/path-network/go-mmproxy) :
 
 ```
-client → frps → frpc ──PROXY v2──▶ go-mmproxy (127.0.0.1:18xxx) ──TCP brut──▶ service
+client → frps → frpc ──PROXY v2──▶ go-mmproxy (127.0.0.1:18xxx) ──TCP/UDP brut──▶ service
                                    (IP source usurpée = IP réelle du client)
 ```
 
-Le service reçoit du **TCP brut avec la vraie IP source**, sans aucune modification.
+Le service reçoit du **trafic brut avec la vraie IP source**, sans aucune modification.
 
 - 🔌 **Un toggle par tunnel** : le panel alloue un port relais (18000-18999, loopback uniquement),
   crée l'unité systemd `frp-mmproxy-…`, installe les règles de routage loopback
@@ -95,6 +96,15 @@ Le service reçoit du **TCP brut avec la vraie IP source**, sans aucune modifica
 > `network_mode: host` (loopback partagé avec l'hôte).
 > Le trafic de réponse du service vers l'IP usurpée reste sur loopback grâce aux règles
 > `ip rule`/`ip route` installées par le panel.
+
+#### 🧪 UDP (expérimental)
+
+frp ≥ v0.67 n'envoie l'en-tête PROXY protocol que sur le **premier datagramme** de chaque
+session UDP, alors que le go-mmproxy amont l'exige sur chaque paquet (et jette les suivants).
+Le binaire distribué ici est **patché** (`mmproxy-patch/`) pour mémoriser l'IP usurpée par
+session (adresse source du socket frpc) et l'appliquer aux datagrammes suivants. Le patch est
+compilé au build (image Docker / `install.sh`) et fourni dans les assets de release.
+À tester sur votre serveur — l'usurpation UDP dépend de la version de frp et de la configuration réseau.
 
 ### 📜 Logs
 - 📂 Lecture via `journalctl` ou fichier log, pour toutes les instances

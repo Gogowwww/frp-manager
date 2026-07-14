@@ -6,6 +6,9 @@ Dockerfile  text eol=lf
 # Python — LF aussi
 *.py        text eol=lf
 
+# Go (patch go-mmproxy) — LF
+*.go        text eol=lf
+
 # Configs serveur — LF (consommées par des outils Linux)
 *.toml      text eol=lf
 *.yml       text eol=lf

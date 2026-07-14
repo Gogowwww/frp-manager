@@ -272,6 +272,11 @@ footer a:hover{color:var(--accent2);}
     <div id="pp-list"></div>
     <div id="pp-empty" style="color:var(--muted);font-size:.76rem;font-family:var(--mono);padding:.35rem 0;">Aucun tunnel configuré.</div>
     <button class="btn btn-info" onclick="addPortProxy()" style="margin-top:.55rem;">+ Ajouter un tunnel</button>
+
+    <div class="fsect-head" style="margin-top:1.3rem;">🔐 Visiteurs <span class="tip" style="font-weight:400;text-transform:none;letter-spacing:0;font-style:italic;">[[visitors]] — accès à un service stcp/xtcp partagé</span></div>
+    <div id="pv-list"></div>
+    <div id="pv-empty" style="color:var(--muted);font-size:.76rem;font-family:var(--mono);padding:.35rem 0;">Aucun visiteur configuré.</div>
+    <button class="btn btn-info" onclick="addVisitor()" style="margin-top:.55rem;">+ Ajouter un visiteur</button>
   </div>
 </div>
 
@@ -824,27 +829,27 @@ function adaptForm(iid){
 
 // TOML parser
 function parseToml(toml){
-  // Parse TOML complet : sections [x], tables imbriqués [x.y], et [[proxies]]
-  const r={_px:[]};
-  let cur=null;      // proxy courant si dans [[proxies]]
+  // Parse TOML complet : sections [x], tables imbriqués [x.y],
+  // et les tableaux [[proxies]] / [[visitors]]
+  const r={_px:[],_vis:[]};
+  let cur=null;      // objet courant si dans [[proxies]] ou [[visitors]]
+  let curArr=null;   // tableau cible (_px ou _vis)
   let section='';    // section courante ex: "auth", "transport.tls"
+  const flush=()=>{if(cur&&curArr)curArr.push(cur);};
 
   for(let raw of toml.split('\n')){
     const line=raw.trim();
     if(!line||line.startsWith('#'))continue;
 
-    // [[proxies]] — tableau de proxies
-    if(line==='[[proxies]]'){
-      if(cur)r._px.push(cur);
-      cur={};section='';
-      continue;
-    }
+    // [[proxies]] / [[visitors]] — tableaux d'objets
+    if(line==='[[proxies]]'){flush();cur={};curArr=r._px;section='';continue;}
+    if(line==='[[visitors]]'){flush();cur={};curArr=r._vis;section='';continue;}
 
     // [section] — changer la section active
     if(line.startsWith('[')){
       const sec=line.slice(1,line.indexOf(']'));
       if(cur!==null){
-        // On est dans un proxy, ignorer les sous-sections pour l'instant
+        // On est dans un proxy/visitor, ignorer les sous-sections pour l'instant
       } else {
         section=sec;  // ex: "auth", "webServer", "transport.tls", "log"
       }
@@ -861,7 +866,7 @@ function parseToml(toml){
     if((val.startsWith('"')&&val.endsWith('"'))||(val.startsWith("'")&&val.endsWith("'")))val=val.slice(1,-1);
 
     if(cur!==null){
-      // Dans [[proxies]] : clé directe
+      // Dans [[proxies]]/[[visitors]] : clé directe
       cur[k]=val;
     } else {
       // Clé avec préfixe de section : "auth.token", "webServer.port", etc.
@@ -869,7 +874,7 @@ function parseToml(toml){
       r[fullKey]=val;
     }
   }
-  if(cur)r._px.push(cur);
+  flush();
   return r;
 }
 
@@ -1305,13 +1310,18 @@ async function loadPortsTunnels(){
   const lst=document.getElementById('pp-list');
   if(lst)lst.innerHTML='';
   portsPxCount=0;
+  const vlst=document.getElementById('pv-list');
+  if(vlst)vlst.innerHTML='';
+  portsVisCount=0;
   if(d.ok&&d.content){
     const cfg=parseToml(d.content);
     for(const p of cfg._px)addPortPxFromData(p);
+    for(const v of cfg._vis)addVisitorFromData(v);
   }
   const emp=document.getElementById('pp-empty');
   if(emp)emp.textContent='Aucun tunnel configuré.';
   updPortsEmpty();
+  updVisEmpty();
 }
 
 function addPortProxy(){addPortPxFromData({});}
@@ -1324,8 +1334,8 @@ function addPortPxFromData(data){
   const mmOn=!!mmE;
   const dispIP=mmE?mmE.target_ip:(data.localIP||'127.0.0.1');
   const dispLP=mmE?mmE.target_port:(data.localPort||'');
-  const mmShow=type==='tcp'&&mmAvail();
-  const mmNote=mmE?`relais 127.0.0.1:${mmE.listen_port}${mmE.active?' · PROXY v2 auto':' · ⚠ relais inactif'}`:'';
+  const mmShow=(type==='tcp'||type==='udp')&&mmAvail();
+  const mmNote=mmE?`relais 127.0.0.1:${mmE.listen_port}/${mmE.proto||'tcp'}${mmE.active?' · PROXY v2 auto':' · ⚠ relais inactif'}`:'';
   const el=document.createElement('div');el.className='px-card';el.dataset.idx=i;
   el.innerHTML=`<div class="px-head">
     <span class="px-badge" id="ppb-${i}">${type.toUpperCase()}</span>
@@ -1339,7 +1349,7 @@ function addPortPxFromData(data){
     <div class="ffield port-f"><label class="flabel">Port local <span class="fkey">localPort</span> <span class="tip-i" data-tip="Port du service sur cette machine.">?</span></label><input class="finput" id="pp-lport-${i}" type="number" value="${esc(dispLP)}" min="1" max="65535" placeholder="ex: 22"></div>
     <div class="ffield port-f" id="pprf-${i}"${nr?'':' style="display:none"'}><label class="flabel">Port distant <span class="fkey">remotePort</span> <span class="tip-i" data-tip="Port exposé côté serveur frps.">?</span></label><input class="finput" id="pp-rport-${i}" type="number" value="${esc(data.remotePort||'')}" min="1" max="65535" placeholder="ex: 6022"></div>
     <div class="ffield" id="ppdf-${i}"${nd?'':' style="display:none"'}><label class="flabel">Domaines <span class="fkey">customDomains</span></label><input class="finput" id="pp-dom-${i}" value="${esc((data.customDomains||'').replace(/["\[\]]/g,''))}" placeholder="mon.domaine.fr"></div>
-    <div class="ffield" id="pp-mmf-${i}"${mmShow?'':' style="display:none"'}><label class="flabel">IP réelle du client <span class="fkey">go-mmproxy</span> <span class="tip-i" data-tip="Le service local reçoit l'IP réelle du client&#10;sans avoir à supporter le PROXY protocol.&#10;Chaîne : frpc → PROXY v2 → go-mmproxy → service.&#10;Requis : service sur 127.0.0.1 (même machine).">?</span></label><label class="tog-row" style="padding-top:.28rem;"><div class="tog"><input type="checkbox" id="pp-mm-${i}"${mmOn?' checked':''} onchange="updMm(${i})"><span class="sldr"></span></div><span style="font-size:.66rem;color:var(--accent2);font-family:var(--mono);" id="pp-mmnote-${i}">${esc(mmNote)}</span></label></div>
+    <div class="ffield" id="pp-mmf-${i}"${mmShow?'':' style="display:none"'}><label class="flabel">IP réelle du client <span class="fkey">go-mmproxy</span> <span class="tip-i" data-tip="Le service local reçoit l'IP réelle du client&#10;sans avoir à supporter le PROXY protocol.&#10;Chaîne : frpc → PROXY v2 → go-mmproxy → service.&#10;Requis : service sur 127.0.0.1 (même machine).&#10;UDP : expérimental (nécessite frp récent).">?</span></label><label class="tog-row" style="padding-top:.28rem;"><div class="tog"><input type="checkbox" id="pp-mm-${i}"${mmOn?' checked':''} onchange="updMm(${i})"><span class="sldr"></span></div><span style="font-size:.66rem;color:var(--accent2);font-family:var(--mono);" id="pp-mmnote-${i}">${esc(mmNote)}</span></label></div>
     <div class="ffield" id="pp-ppvf-${i}"${mmOn?' style="display:none"':''}><label class="flabel">Proxy Protocol <span class="tip-i" data-tip="Transmet l'IP réelle du client.&#10;v2 recommandé pour nginx/haproxy.&#10;(géré automatiquement si « IP réelle » est actif)">?</span></label><select class="finput" id="pp-ppv-${i}"><option value="">Désactivé</option><option value="v1"${data['transport.proxyProtocolVersion']==='v1'?' selected':''}>v1</option><option value="v2"${data['transport.proxyProtocolVersion']==='v2'?' selected':''}>v2 (recommandé)</option></select></div>
     <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="pp-cmp-${i}"${data['transport.useCompression']==='true'?' checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Compression</span></label></div>
     <div class="ffield"><label class="tog-row"><div class="tog"><input type="checkbox" id="pp-enc-${i}"${data['transport.useEncryption']==='true'?' checked':''}><span class="sldr"></span></div><span style="font-size:.74rem;">Chiffrement</span></label></div>
@@ -1354,29 +1364,38 @@ function updPortPxType(sel,i){
   document.getElementById(`ppdf-${i}`).style.display=['http','https'].includes(t)?'':'none';
   const mmf=document.getElementById(`pp-mmf-${i}`);
   if(mmf){
-    const show=t==='tcp'&&mmAvail();
+    const show=(t==='tcp'||t==='udp')&&mmAvail();
     mmf.style.display=show?'':'none';
     if(!show&&gv(`pp-mm-${i}`)===true){sv(`pp-mm-${i}`,false);updMm(i);}
   }
 }
+// Sépare la config « base » (connexion serveur) des blocs gérés par l'onglet
+// Ports : [[proxies]] ET [[visitors]] (quel que soit leur ordre).
+const _BLOCK_MARKERS=['[[proxies]]','[[visitors]]'];
+function _blocksStartIdx(toml){
+  let idx=-1;
+  for(const m of _BLOCK_MARKERS){
+    const p=toml.indexOf('\n'+m);
+    if(p>=0&&(idx<0||p<idx))idx=p;
+  }
+  return idx;
+}
 function stripProxies(toml){
-  const idx=toml.indexOf('\n[[proxies]]');
-  if(idx>=0)return toml.slice(0,idx).trimEnd();
-  if(toml.startsWith('[[proxies]]'))return '';
-  return toml.trimEnd();
+  if(_BLOCK_MARKERS.some(m=>toml.startsWith(m)))return '';
+  const idx=_blocksStartIdx(toml);
+  return idx>=0?toml.slice(0,idx).trimEnd():toml.trimEnd();
 }
 function extractProxiesText(toml){
-  const idx=toml.indexOf('\n[[proxies]]');
-  if(idx>=0)return toml.slice(idx+1).trimStart();
-  if(toml.startsWith('[[proxies]]'))return toml;
-  return '';
+  if(_BLOCK_MARKERS.some(m=>toml.startsWith(m)))return toml;
+  const idx=_blocksStartIdx(toml);
+  return idx>=0?toml.slice(idx+1).trimStart():'';
 }
 function genPortsProxiesText(mmPorts){
   const L=[];mmPorts=mmPorts||{};
   document.querySelectorAll('#pp-list .px-card').forEach(card=>{
     const i=card.dataset.idx,t=gv(`pp-type-${i}`);
     const name=gv(`pp-name-${i}`);
-    const mmOn=t==='tcp'&&gv(`pp-mm-${i}`)===true&&mmPorts[name];
+    const mmOn=(t==='tcp'||t==='udp')&&gv(`pp-mm-${i}`)===true&&mmPorts[name];
     L.push('\n[[proxies]]');L.push(`name = "${name}"`);L.push(`type = "${t}"`);
     if(mmOn){
       // frpc pointe vers le relais go-mmproxy, qui transmet au vrai service
@@ -1395,20 +1414,63 @@ function genPortsProxiesText(mmPorts){
   });
   return L.join('\n');
 }
+
+// ── Visiteurs ([[visitors]]) : accès local à un service stcp/xtcp partagé ──
+let portsVisCount=0;
+function updVisEmpty(){
+  const lst=document.getElementById('pv-list');
+  const emp=document.getElementById('pv-empty');
+  if(lst&&emp)emp.style.display=lst.children.length?'none':'';
+}
+function addVisitor(){addVisitorFromData({});}
+function addVisitorFromData(data){
+  const i=++portsVisCount;const type=data.type||'stcp';
+  const el=document.createElement('div');el.className='px-card pv-card';el.dataset.idx=i;
+  el.innerHTML=`<div class="px-head">
+    <span class="px-badge" id="pvb-${i}" style="background:rgba(74,222,128,.1);color:var(--accent);border-color:rgba(74,222,128,.18);">${type.toUpperCase()}</span>
+    <span class="px-namelbl" id="pvnl-${i}">${esc(data.name||'nouveau visiteur')}</span>
+    <button class="px-del" onclick="this.closest('.pv-card').remove();updVisEmpty()">✕</button>
+  </div>
+  <div class="fcols">
+    <div class="ffield"><label class="flabel">Nom <span class="fkey">name</span></label><input class="finput" id="pv-name-${i}" value="${esc(data.name||'')}" placeholder="ex: service-hms-visitor" oninput="document.getElementById('pvnl-${i}').textContent=this.value||'visiteur'"></div>
+    <div class="ffield"><label class="flabel">Type <span class="fkey">type</span></label><select class="finput" id="pv-type-${i}" onchange="document.getElementById('pvb-${i}').textContent=this.value.toUpperCase()">${['stcp','xtcp'].map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="ffield"><label class="flabel">Service cible <span class="fkey">serverName</span> <span class="tip-i" data-tip="Nom du proxy stcp/xtcp partagé côté serveur&#10;auquel ce visiteur se connecte.">?</span></label><input class="finput" id="pv-srv-${i}" value="${esc(data.serverName||'')}" placeholder="ex: service-hms"></div>
+    <div class="ffield"><label class="flabel">Clé secrète <span class="fkey">secretKey</span></label><div class="tok-wrap"><input class="finput" id="pv-key-${i}" type="password" value="${esc(data.secretKey||'')}" placeholder="même secret que le service"><button class="btn btn-secondary" onclick="toggleTok('pv-key-${i}')" style="padding:.37rem .52rem;">👁</button></div></div>
+    <div class="ffield"><label class="flabel">IP d'écoute locale <span class="fkey">bindAddr</span></label><input class="finput" id="pv-baddr-${i}" value="${esc(data.bindAddr||'127.0.0.1')}"></div>
+    <div class="ffield port-f"><label class="flabel">Port d'écoute local <span class="fkey">bindPort</span> <span class="tip-i" data-tip="Port local où le service partagé devient accessible sur cette machine.">?</span></label><input class="finput" id="pv-bport-${i}" type="number" value="${esc(data.bindPort||'')}" min="1" max="65535" placeholder="ex: 9001"></div>
+  </div>`;
+  document.getElementById('pv-list').appendChild(el);
+  updVisEmpty();
+}
+function genVisitorsText(){
+  const L=[];
+  document.querySelectorAll('#pv-list .pv-card').forEach(card=>{
+    const i=card.dataset.idx;
+    const name=gv(`pv-name-${i}`);if(!name)return;
+    L.push('\n[[visitors]]');
+    L.push(`name = "${name}"`);
+    L.push(`type = "${gv(`pv-type-${i}`)}"`);
+    const sn=gv(`pv-srv-${i}`);if(sn)L.push(`serverName = "${sn}"`);
+    const sk=gv(`pv-key-${i}`);if(sk)L.push(`secretKey = "${sk}"`);
+    const ba=gv(`pv-baddr-${i}`);if(ba)L.push(`bindAddr = "${ba}"`);
+    const bp=gv(`pv-bport-${i}`);if(bp)L.push(`bindPort = ${bp}`);
+  });
+  return L.join('\n');
+}
 async function savePortsTunnels(){
   if(!portsFrpcTgt){toast('Sélectionnez une instance frpc','err');return false;}
   // ── 1. Collecter les tunnels « IP réelle » et valider ──────────────────
   const mmTunnels=[];let mmErr=null;
   document.querySelectorAll('#pp-list .px-card').forEach(card=>{
-    const i=card.dataset.idx;
-    if(gv(`pp-type-${i}`)!=='tcp'||gv(`pp-mm-${i}`)!==true)return;
+    const i=card.dataset.idx;const t=gv(`pp-type-${i}`);
+    if((t!=='tcp'&&t!=='udp')||gv(`pp-mm-${i}`)!==true)return;
     const name=gv(`pp-name-${i}`);
     let ip=gv(`pp-lip-${i}`)||'127.0.0.1';if(ip==='localhost')ip='127.0.0.1';
     const lp=gv(`pp-lport-${i}`);
     if(!name)mmErr='IP réelle : chaque tunnel doit avoir un nom';
     else if(!/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip))mmErr=`« ${name} » : avec IP réelle, l'IP locale doit être en 127.x.x.x (service sur cette machine)`;
     else if(!lp)mmErr=`« ${name} » : port local requis`;
-    mmTunnels.push({name,target_ip:ip,target_port:+lp});
+    mmTunnels.push({name,target_ip:ip,target_port:+lp,proto:t});
   });
   if(mmErr){toast(mmErr,'err');return false;}
   if(mmTunnels.length&&!mmAvail()){toast('IP réelle : le container frpc doit être en network_mode: host','err');return false;}
@@ -1429,7 +1491,7 @@ async function savePortsTunnels(){
   // ── 3. Écrire la config frpc (en préservant la connexion serveur) ──────
   let base='';
   try{const cr=await fetch(`/api/config/${portsFrpcTgt}`);const cd=await cr.json();if(cd.ok)base=cd.content||'';}catch(e){}
-  const content=stripProxies(base)+genPortsProxiesText(mmPorts);
+  const content=stripProxies(base)+genPortsProxiesText(mmPorts)+genVisitorsText();
   const r=await fetch(`/api/config/${portsFrpcTgt}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
   const d=await r.json();toast(d.msg,d.ok?'ok':'err');
   if(mmAvail()){await loadMmStatus();refreshMmNotes();}

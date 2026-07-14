@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-_PANEL_VERSION_FALLBACK = "0.0.21"   # Version hardcodée — écrasée par state.json
+_PANEL_VERSION_FALLBACK = "0.0.22"   # Version hardcodée — écrasée par state.json
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -1132,7 +1132,7 @@ def api_panel_update():
                         _panel_log(f"[INFO] Source zip : {src_dir} — contenu : {[p.name for p in src_dir.iterdir()] if src_dir.exists() else '?'}")
 
                         # Copier app.py, templates/, frp-autoupdate.py, install.sh
-                        for item in ["app.py", "frp-autoupdate.py", "templates", "install.sh"]:
+                        for item in ["app.py", "frp-autoupdate.py", "templates", "install.sh", "mmproxy-patch"]:
                             src = src_dir / item
                             dst = install_dir / item
                             if not src.exists():
@@ -1317,6 +1317,38 @@ def _extract_ports_from_config(content, bin_type):
                     proto = "udp" if proxy_type == "udp" else "tcp"
                     label = f"Tunnel {proxy_name or proxy_type} (remotePort)"
                     ports.append({"port": int(rm.group(1)), "proto": proto, "label": label})
+        # Extraire les bindPort de chaque [[visitors]] (écoute LOCALE côté frpc).
+        # On ne les remonte que si bindAddr n'est pas loopback : un visiteur sur
+        # 127.0.0.1 n'a pas besoin d'ouverture firewall.
+        in_visitor = False
+        vis_name = ""
+        vis_bind_addr = "127.0.0.1"
+        vis_bind_port = None
+        def _flush_visitor():
+            if vis_bind_port and vis_bind_addr not in ("127.0.0.1", "::1", "localhost"):
+                ports.append({"port": vis_bind_port, "proto": "tcp",
+                              "label": f"Visiteur {vis_name or ''} (bindPort)".strip()})
+        for line in content.splitlines():
+            s = line.strip()
+            if s == "[[visitors]]":
+                _flush_visitor()
+                in_visitor, vis_name, vis_bind_addr, vis_bind_port = True, "", "127.0.0.1", None
+                continue
+            if s.startswith("[") and s != "[[visitors]]":
+                _flush_visitor()
+                in_visitor = False
+                continue
+            if in_visitor:
+                nm = re.match(r'name\s*=\s*["\']?([^"\']+)["\']?', s)
+                if nm:
+                    vis_name = nm.group(1).strip()
+                am = re.match(r'bindAddr\s*=\s*["\']?([^"\']+)["\']?', s)
+                if am:
+                    vis_bind_addr = am.group(1).strip()
+                bm = re.match(r'bindPort\s*=\s*(\d+)', s)
+                if bm:
+                    vis_bind_port = int(bm.group(1))
+        _flush_visitor()
     # Port du webServer (section [webServer]) — frps & frpc
     in_ws = False
     for line in content.splitlines():
@@ -1471,7 +1503,6 @@ MMPROXY_ROUTES_UNIT  = "frp-mmproxy-routes"
 MMPROXY_UNIT_PREFIX  = "frp-mmproxy"
 MMPROXY_PORT_MIN     = 18000
 MMPROXY_PORT_MAX     = 18999
-MMPROXY_GO_MODULE    = "github.com/path-network/go-mmproxy@latest"
 SYSTEMD_UNIT_DIR     = "/etc/systemd/system"
 
 _mmproxy_lock         = threading.Lock()
@@ -1525,16 +1556,17 @@ ExecStop=-/sbin/ip -6 rule del from ::1/128 iif lo table 123
 WantedBy=multi-user.target
 """
 
-def _mm_tunnel_unit_content(iid, name, listen_port, target_ip, target_port):
+def _mm_tunnel_unit_content(iid, name, listen_port, target_ip, target_port, proto="tcp"):
+    p = "udp" if proto == "udp" else "tcp"
     return f"""[Unit]
-Description=go-mmproxy (IP reelle) - tunnel frp '{name}' ({iid})
+Description=go-mmproxy (IP reelle) - tunnel frp '{name}' ({iid}, {p})
 Documentation=https://github.com/path-network/go-mmproxy
 After=network.target {MMPROXY_ROUTES_UNIT}.service
 Requires={MMPROXY_ROUTES_UNIT}.service
 
 [Service]
 Type=simple
-ExecStart={MMPROXY_HOST_BIN} -l 127.0.0.1:{listen_port} -4 {target_ip}:{target_port} -6 [::1]:{target_port} -p tcp -allowed-subnets {MMPROXY_ALLOWED_FILE} -v 0
+ExecStart={MMPROXY_HOST_BIN} -l 127.0.0.1:{listen_port} -4 {target_ip}:{target_port} -6 [::1]:{target_port} -p {p} -allowed-subnets {MMPROXY_ALLOWED_FILE} -v 0
 Restart=always
 RestartSec=3
 LimitNOFILE=1048576
@@ -1569,18 +1601,22 @@ def _ensure_mm_routes_unit():
     return True, ""
 
 def _mm_alloc_port(used):
-    """Premier port libre de la plage relais (test de bind sur loopback)."""
+    """Premier port libre de la plage relais (test de bind TCP + UDP sur loopback)."""
     for port in range(MMPROXY_PORT_MIN, MMPROXY_PORT_MAX + 1):
         if port in used:
             continue
-        try:
-            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-            s.bind(("127.0.0.1", port))
-            s.close()
+        ok = True
+        for fam in (_socket.SOCK_STREAM, _socket.SOCK_DGRAM):
+            try:
+                s = _socket.socket(_socket.AF_INET, fam)
+                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                s.bind(("127.0.0.1", port))
+                s.close()
+            except OSError:
+                ok = False
+                break
+        if ok:
             return port
-        except OSError:
-            continue
     return None
 
 def mmproxy_sync(iid, desired):
@@ -1644,8 +1680,9 @@ def mmproxy_sync(iid, desired):
                     run_cmd(["systemctl", "disable", "--now", prev["unit"] + ".service"])
                     host_remove_file(f"{SYSTEMD_UNIT_DIR}/{prev['unit']}.service")
                     need_reload = True
+                proto   = "udp" if t.get("proto") == "udp" else "tcp"
                 upath   = f"{SYSTEMD_UNIT_DIR}/{unit}.service"
-                content = _mm_tunnel_unit_content(iid, name, lp, t["target_ip"], t["target_port"])
+                content = _mm_tunnel_unit_content(iid, name, lp, t["target_ip"], t["target_port"], proto)
                 old     = host_read_file(upath)
                 if (old or "").strip() != content.strip():
                     if not host_write_file(upath, content):
@@ -1654,7 +1691,7 @@ def mmproxy_sync(iid, desired):
                     changed_units.add(unit)
                     need_reload = True
                 inst_state[name] = {"target_ip": t["target_ip"], "target_port": t["target_port"],
-                                    "listen_port": lp, "proto": "tcp", "unit": unit}
+                                    "listen_port": lp, "proto": proto, "unit": unit}
                 ports[name] = lp
 
         if need_reload:
@@ -1748,22 +1785,30 @@ def install_mmproxy():
         except Exception as e:
             logs.append(f"{repo} : {e}")
 
-    # 3. Compilation sur l'hôte (Go >= 1.21)
-    ok, out, _ = run_host(["sh", "-c", "go version"], timeout=15)
-    if ok and out:
-        m = re.search(r'go(\d+)\.(\d+)', out)
-        if m and (int(m.group(1)), int(m.group(2))) >= (1, 21):
-            logs.append(f"compilation via {out.strip()} …")
-            cmd = ("HOME=${HOME:-/root} GOTOOLCHAIN=auto GOBIN=/usr/local/bin "
-                   f"go install {MMPROXY_GO_MODULE}")
-            bok, bout, berr = run_host(["sh", "-c", cmd], timeout=300)
-            if bok and mmproxy_installed():
-                return done("go-mmproxy compilé et installé via Go", "go-install")
-            logs.append(f"go install : {berr or bout or 'échec'}")
-        else:
-            logs.append(f"Go trop ancien ({out.strip()}) — 1.21+ requis")
+    # 3. Compilation sur l'hôte via le patch UDP (Go >= 1.21).
+    # Uniquement hors Docker : en Docker, le script de patch est DANS le container
+    # et `go` tourne sur l'hôte (via nsenter) — il ne verrait pas les fichiers.
+    # En Docker, le binaire embarqué (stratégie 1) couvre déjà ce cas.
+    build_sh = Path(__file__).resolve().parent / "mmproxy-patch" / "build.sh"
+    if _IN_DOCKER:
+        logs.append("compilation hôte ignorée en mode Docker (binaire embarqué attendu)")
+    elif not build_sh.exists():
+        logs.append(f"script de build absent : {build_sh}")
     else:
-        logs.append("Go absent de l'hôte")
+        ok, out, _ = run_host(["sh", "-c", "go version"], timeout=15)
+        if ok and out:
+            m = re.search(r'go(\d+)\.(\d+)', out)
+            if m and (int(m.group(1)), int(m.group(2))) >= (1, 21):
+                logs.append(f"compilation (patch UDP) via {out.strip()} …")
+                bok, bout, berr = run_host(
+                    ["sh", str(build_sh), str(dst)], timeout=420)
+                if bok and mmproxy_installed():
+                    return done("go-mmproxy (patch UDP) compilé et installé via Go", "go-build")
+                logs.append(f"build.sh : {berr or bout or 'échec'}")
+            else:
+                logs.append(f"Go trop ancien ({out.strip()}) — 1.21+ requis")
+        else:
+            logs.append("Go absent de l'hôte")
 
     return {"ok": False,
             "msg": "Installation impossible (voir log). Manuellement : installez Go ≥ 1.21 puis "
@@ -1828,10 +1873,11 @@ def api_mmproxy_sync():
         if not re.match(r'^127(\.\d{1,3}){3}$', ip):
             errs.append(f"« {name} » : l'IP locale doit être en 127.0.0.0/8 (service sur la même machine que frpc)")
             continue
+        proto = "udp" if str(t.get("proto", "tcp")).lower() == "udp" else "tcp"
         if name in desired:
             errs.append(f"nom de tunnel dupliqué : {name}")
             continue
-        desired[name] = {"target_ip": ip, "target_port": port}
+        desired[name] = {"target_ip": ip, "target_port": port, "proto": proto}
 
     if errs:
         return jsonify({"ok": False, "msg": " · ".join(errs)}), 400
