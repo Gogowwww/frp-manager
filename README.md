@@ -67,6 +67,34 @@ Il détecte automatiquement vos services systemd existants, démarre en **HTTPS*
 - 🛠️ **Mode TOML brut** pour les utilisateurs avancés
 - 💾 **Sauvegarde + Reload** en un clic
 
+### ⚡ IP réelle du client — go-mmproxy (option)
+
+Par défaut, un service exposé via frp voit toutes les connexions arriver depuis `127.0.0.1`.
+Le Proxy Protocol v2 transmet l'IP réelle, **mais le service doit le supporter** (nginx, HAProxy…).
+Pour tous les autres (serveur de jeu, SSH, base de données…), l'onglet **Ports** propose
+l'option **« IP réelle du client »** par tunnel TCP, basée sur
+[go-mmproxy](https://github.com/path-network/go-mmproxy) :
+
+```
+client → frps → frpc ──PROXY v2──▶ go-mmproxy (127.0.0.1:18xxx) ──TCP brut──▶ service
+                                   (IP source usurpée = IP réelle du client)
+```
+
+Le service reçoit du **TCP brut avec la vraie IP source**, sans aucune modification.
+
+- 🔌 **Un toggle par tunnel** : le panel alloue un port relais (18000-18999, loopback uniquement),
+  crée l'unité systemd `frp-mmproxy-…`, installe les règles de routage loopback
+  (`frp-mmproxy-routes.service`) et écrit la config frpc automatiquement
+- ⬇️ **Installation en un clic** du binaire `go-mmproxy` depuis l'onglet Ports
+  (binaire embarqué dans l'image Docker, sinon release GitHub, sinon compilation via Go ≥ 1.21)
+- 🧹 **Nettoyage automatique** : désactiver le toggle (ou supprimer le tunnel) retire l'unité systemd ;
+  les règles de routage sont désactivées quand plus aucun relais n'existe
+
+> ⚠️ **Prérequis** : le service doit écouter sur `127.0.0.1` (même machine que frpc), hôte Linux
+> avec systemd. Indisponible pour les instances frpc qui tournent en container Docker.
+> Le trafic de réponse du service vers l'IP usurpée reste sur loopback grâce aux règles
+> `ip rule`/`ip route` installées par le panel.
+
 ### 📜 Logs
 - 📂 Lecture via `journalctl` ou fichier log, pour toutes les instances
 - 📡 **Streaming live** (SSE) avec coloration syntaxique (erreurs, warnings, succès)

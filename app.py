@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FRP Manager — backend Flask multi-instances"""
 
-import os, re, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, ssl
+import os, re, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl
 import socket as _socket, http.client as _http_client
 from pathlib import Path
 from datetime import datetime
@@ -11,7 +11,7 @@ from flask import Flask, render_template, request, jsonify, Response, session, r
 import requests as req
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-_PANEL_VERSION_FALLBACK = "0.0.12"   # Version hardcodée — écrasée par state.json
+_PANEL_VERSION_FALLBACK = "0.0.20"   # Version hardcodée — écrasée par state.json
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -258,6 +258,58 @@ def run_cmd(cmd, timeout=15):
         return False, "", "timeout"
     except Exception as e:
         return False, "", str(e)
+
+def run_host(cmd, timeout=15, input_text=None):
+    """
+    Exécute une commande arbitraire sur l'HÔTE.
+    Hors Docker : exécution directe. En Docker : via nsenter dans les
+    namespaces de PID 1 (comme run_cmd, mais sans liste blanche).
+    """
+    actual = list(cmd)
+    if _IN_DOCKER:
+        actual = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + actual
+    try:
+        r = subprocess.run(actual, capture_output=True, text=True,
+                           timeout=timeout, input=input_text)
+        return r.returncode == 0, r.stdout.strip(), r.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return False, "", "timeout"
+    except Exception as e:
+        return False, "", str(e)
+
+def host_read_file(path):
+    """Lit un fichier sur l'hôte (None si absent/illisible)."""
+    if not _IN_DOCKER:
+        try:
+            return Path(path).read_text()
+        except Exception:
+            return None
+    ok, out, _ = run_host(["cat", str(path)])
+    return out if ok else None
+
+def host_write_file(path, content):
+    """Écrit un fichier sur l'hôte (via nsenter en Docker)."""
+    if not _IN_DOCKER:
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(content)
+            return True
+        except Exception:
+            return False
+    ok, _, _ = run_host(["sh", "-c", f"cat > {shlex.quote(str(path))}"],
+                        input_text=content)
+    return ok
+
+def host_remove_file(path):
+    """Supprime un fichier sur l'hôte (silencieux si absent)."""
+    if not _IN_DOCKER:
+        try:
+            Path(path).unlink(missing_ok=True)
+            return True
+        except Exception:
+            return False
+    ok, _, _ = run_host(["rm", "-f", str(path)])
+    return ok
 
 def get_arch():
     m = platform.machine().lower()
@@ -1401,6 +1453,389 @@ def api_ports_open():
     ok, out, err = run_cmd(["ufw", "allow", f"{port}/{proto}"])
     msg = (out or err or "").strip()
     return jsonify({"ok": ok, "msg": msg or f"Port {port}/{proto} {'ouvert' if ok else 'erreur'}"})
+
+# ── go-mmproxy : IP réelle du client sans PROXY protocol côté service ────────
+# Chaîne : client → frps → frpc (PROXY v2) → go-mmproxy (127.0.0.1:relais)
+#          → service local, avec l'IP source usurpée = IP réelle du client.
+# Le service voit du TCP brut avec la vraie IP, sans supporter le PROXY protocol.
+MMPROXY_HOST_BIN     = "/usr/local/bin/go-mmproxy"              # chemin côté hôte (ExecStart)
+MMPROXY_BUNDLED_BIN  = Path("/opt/frp-manager/bin/go-mmproxy")  # embarqué dans l'image Docker
+MMPROXY_STATE_FILE   = MGR_CONF_DIR / "mmproxy.json"
+MMPROXY_ALLOWED_FILE = MGR_CONF_DIR / "mmproxy-allowed.txt"
+MMPROXY_ROUTES_UNIT  = "frp-mmproxy-routes"
+MMPROXY_UNIT_PREFIX  = "frp-mmproxy"
+MMPROXY_PORT_MIN     = 18000
+MMPROXY_PORT_MAX     = 18999
+MMPROXY_GO_MODULE    = "github.com/path-network/go-mmproxy@latest"
+SYSTEMD_UNIT_DIR     = "/etc/systemd/system"
+
+_mmproxy_lock         = threading.Lock()
+_mmproxy_install_lock = threading.Lock()
+
+def mmproxy_bin_write_path():
+    """Chemin d'écriture du binaire (vue container : /host/usr/local/bin en Docker)."""
+    return FRP_BIN_DIR / "go-mmproxy"
+
+def mmproxy_installed():
+    p = mmproxy_bin_write_path()
+    return p.exists() and os.access(p, os.X_OK)
+
+def load_mmproxy_state():
+    try:
+        if MMPROXY_STATE_FILE.exists():
+            d = json.loads(MMPROXY_STATE_FILE.read_text())
+            if isinstance(d.get("instances"), dict):
+                return d
+    except Exception:
+        pass
+    return {"instances": {}}
+
+def save_mmproxy_state(st):
+    MGR_CONF_DIR.mkdir(parents=True, exist_ok=True)
+    MMPROXY_STATE_FILE.write_text(json.dumps(st, indent=2))
+
+def _mm_unit_name(iid, name, listen_port):
+    slug = re.sub(r'[^A-Za-z0-9_.-]+', '-', f"{iid}-{name}").strip('-') or "tunnel"
+    return f"{MMPROXY_UNIT_PREFIX}-{slug}-{listen_port}"
+
+def _mm_routes_unit_content():
+    # Règles de routage recommandées par go-mmproxy : les réponses du service
+    # vers l'IP usurpée doivent rester sur loopback au lieu de partir vers Internet.
+    return f"""[Unit]
+Description=Regles de routage loopback pour go-mmproxy (frp-manager)
+Documentation=https://github.com/path-network/go-mmproxy
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/sbin/ip rule add from 127.0.0.1/8 iif lo table 123
+ExecStart=-/sbin/ip route add local 0.0.0.0/0 dev lo table 123
+ExecStart=-/sbin/ip -6 rule add from ::1/128 iif lo table 123
+ExecStart=-/sbin/ip -6 route add local ::/0 dev lo table 123
+ExecStop=-/sbin/ip rule del from 127.0.0.1/8 iif lo table 123
+ExecStop=-/sbin/ip -6 rule del from ::1/128 iif lo table 123
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+def _mm_tunnel_unit_content(iid, name, listen_port, target_ip, target_port):
+    return f"""[Unit]
+Description=go-mmproxy (IP reelle) - tunnel frp '{name}' ({iid})
+Documentation=https://github.com/path-network/go-mmproxy
+After=network.target {MMPROXY_ROUTES_UNIT}.service
+Requires={MMPROXY_ROUTES_UNIT}.service
+
+[Service]
+Type=simple
+ExecStart={MMPROXY_HOST_BIN} -l 127.0.0.1:{listen_port} -4 {target_ip}:{target_port} -6 [::1]:{target_port} -p tcp -allowed-subnets {MMPROXY_ALLOWED_FILE} -v 0
+Restart=always
+RestartSec=3
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+def _ensure_mm_allowed_file():
+    """Seul frpc (loopback) a le droit d'envoyer des en-têtes PROXY au relais."""
+    try:
+        content = "127.0.0.1/32\n::1/128\n"
+        if not MMPROXY_ALLOWED_FILE.exists() or MMPROXY_ALLOWED_FILE.read_text() != content:
+            MGR_CONF_DIR.mkdir(parents=True, exist_ok=True)
+            MMPROXY_ALLOWED_FILE.write_text(content)
+        return True
+    except Exception:
+        return False
+
+def _ensure_mm_routes_unit():
+    path = f"{SYSTEMD_UNIT_DIR}/{MMPROXY_ROUTES_UNIT}.service"
+    content = _mm_routes_unit_content()
+    old = host_read_file(path)
+    if (old or "").strip() != content.strip():
+        if not host_write_file(path, content):
+            return False, f"écriture impossible : {path}"
+        run_cmd(["systemctl", "daemon-reload"])
+    run_cmd(["systemctl", "enable", f"{MMPROXY_ROUTES_UNIT}.service"])
+    ok, _, err = run_cmd(["systemctl", "start", f"{MMPROXY_ROUTES_UNIT}.service"])
+    if not ok:
+        return False, err or "démarrage échoué"
+    return True, ""
+
+def _mm_alloc_port(used):
+    """Premier port libre de la plage relais (test de bind sur loopback)."""
+    for port in range(MMPROXY_PORT_MIN, MMPROXY_PORT_MAX + 1):
+        if port in used:
+            continue
+        try:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+            s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", port))
+            s.close()
+            return port
+        except OSError:
+            continue
+    return None
+
+def mmproxy_sync(iid, desired):
+    """
+    Aligne les unités systemd go-mmproxy d'une instance frpc sur `desired`
+    ({name: {target_ip, target_port}}). Retourne (ok, ports, entries, messages).
+    """
+    with _mmproxy_lock:
+        st        = load_mmproxy_state()
+        instances = st.setdefault("instances", {})
+        inst_state = dict(instances.get(iid, {}))
+        msgs, changed_units = [], set()
+        need_reload = False
+
+        def _persist():
+            if inst_state:
+                instances[iid] = inst_state
+            else:
+                instances.pop(iid, None)
+            save_mmproxy_state(st)
+
+        # 1. Nettoyage : tunnels sortis du mode IP réelle
+        for name in [n for n in inst_state if n not in desired]:
+            entry = inst_state.pop(name)
+            unit  = entry.get("unit") or _mm_unit_name(iid, name, entry.get("listen_port", 0))
+            run_cmd(["systemctl", "disable", "--now", f"{unit}.service"])
+            host_remove_file(f"{SYSTEMD_UNIT_DIR}/{unit}.service")
+            need_reload = True
+            msgs.append(f"relais « {name} » supprimé")
+
+        # 2. Création / mise à jour
+        ports = {}
+        if desired:
+            if not mmproxy_installed():
+                _persist()
+                return False, {}, inst_state, ["go-mmproxy n'est pas installé — utilisez le bouton « Installer » de l'onglet Ports"]
+            if not _ensure_mm_allowed_file():
+                _persist()
+                return False, {}, inst_state, [f"écriture impossible : {MMPROXY_ALLOWED_FILE}"]
+            rok, rerr = _ensure_mm_routes_unit()
+            if not rok:
+                _persist()
+                return False, {}, inst_state, [f"règles de routage impossibles à activer : {rerr}"]
+
+            used = {e.get("listen_port") for i2, entries in instances.items() if i2 != iid
+                    for e in entries.values()}
+            used |= {e.get("listen_port") for e in inst_state.values()}
+            used.discard(None)
+
+            for name, t in desired.items():
+                prev = inst_state.get(name) or {}
+                lp   = prev.get("listen_port")
+                if not lp:
+                    lp = _mm_alloc_port(used)
+                    if not lp:
+                        _persist()
+                        return False, {}, inst_state, [f"aucun port libre dans la plage relais {MMPROXY_PORT_MIN}-{MMPROXY_PORT_MAX}"]
+                    used.add(lp)
+                unit = _mm_unit_name(iid, name, lp)
+                if prev.get("unit") and prev["unit"] != unit:
+                    run_cmd(["systemctl", "disable", "--now", prev["unit"] + ".service"])
+                    host_remove_file(f"{SYSTEMD_UNIT_DIR}/{prev['unit']}.service")
+                    need_reload = True
+                upath   = f"{SYSTEMD_UNIT_DIR}/{unit}.service"
+                content = _mm_tunnel_unit_content(iid, name, lp, t["target_ip"], t["target_port"])
+                old     = host_read_file(upath)
+                if (old or "").strip() != content.strip():
+                    if not host_write_file(upath, content):
+                        _persist()
+                        return False, {}, inst_state, [f"écriture impossible : {upath}"]
+                    changed_units.add(unit)
+                    need_reload = True
+                inst_state[name] = {"target_ip": t["target_ip"], "target_port": t["target_port"],
+                                    "listen_port": lp, "proto": "tcp", "unit": unit}
+                ports[name] = lp
+
+        if need_reload:
+            run_cmd(["systemctl", "daemon-reload"])
+
+        for name in desired:
+            unit = inst_state[name]["unit"]
+            run_cmd(["systemctl", "enable", f"{unit}.service"])
+            action = "restart" if unit in changed_units else "start"
+            ok_, _, err_ = run_cmd(["systemctl", action, f"{unit}.service"])
+            if not ok_:
+                msgs.append(f"⚠ relais « {name} » : {err_ or 'démarrage échoué'}")
+
+        _persist()
+
+        # Plus aucun relais sur la machine → désactiver les règles de routage
+        if not any(instances.values()):
+            run_cmd(["systemctl", "disable", "--now", f"{MMPROXY_ROUTES_UNIT}.service"])
+
+        if desired:
+            msgs.append(f"{len(desired)} relais go-mmproxy synchronisé(s)")
+        return True, ports, inst_state, msgs
+
+def install_mmproxy():
+    """
+    Installe le binaire go-mmproxy, par ordre de préférence :
+    1. binaire embarqué dans l'image Docker (/opt/frp-manager/bin)
+    2. asset des releases GitHub (frp-manager puis upstream)
+    3. compilation sur l'hôte via Go >= 1.21
+    """
+    logs = []
+    dst  = mmproxy_bin_write_path()
+    arch = get_arch()
+
+    def done(msg, version):
+        st = load_mmproxy_state()
+        st["version"] = version
+        save_mmproxy_state(st)
+        logs.append(f"[OK] {msg}")
+        return {"ok": True, "msg": msg, "log": logs}
+
+    # 1. Binaire embarqué (image Docker)
+    try:
+        if MMPROXY_BUNDLED_BIN.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(MMPROXY_BUNDLED_BIN), str(dst))
+            dst.chmod(0o755)
+            return done(f"go-mmproxy installé depuis l'image Docker → {MMPROXY_HOST_BIN}", "bundled")
+    except Exception as e:
+        logs.append(f"binaire embarqué : {e}")
+
+    # 2. Assets de release GitHub
+    for repo in (PANEL_GITHUB_REPO, "path-network/go-mmproxy"):
+        try:
+            r = req.get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=12,
+                        headers={"Accept": "application/vnd.github.v3+json"})
+            r.raise_for_status()
+            rel = r.json()
+            asset = next((a for a in rel.get("assets", [])
+                          if "go-mmproxy" in a.get("name", "").lower()
+                          and re.search(rf'linux[_-]{arch}(\.|$)', a.get("name", "").lower())), None)
+            if not asset:
+                logs.append(f"{repo} : aucun binaire go-mmproxy linux/{arch} dans la release")
+                continue
+            aname = asset["name"].lower()
+            with req.get(asset["browser_download_url"], stream=True, timeout=120) as dl:
+                dl.raise_for_status()
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    for chunk in dl.iter_content(65536):
+                        tmp.write(chunk)
+                    tmp_path = Path(tmp.name)
+            try:
+                data = None
+                if aname.endswith((".tar.gz", ".tgz")):
+                    with tarfile.open(tmp_path, "r:gz") as tf:
+                        for m in tf.getmembers():
+                            if m.isfile() and Path(m.name).name == "go-mmproxy":
+                                data = tf.extractfile(m).read()
+                                break
+                else:
+                    data = tmp_path.read_bytes()
+                if not data:
+                    raise RuntimeError("binaire absent de l'archive")
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(data)
+                dst.chmod(0o755)
+                return done(f"go-mmproxy téléchargé depuis {repo} ({rel.get('tag_name', '?')})",
+                            rel.get("tag_name") or "release")
+            finally:
+                tmp_path.unlink(missing_ok=True)
+        except Exception as e:
+            logs.append(f"{repo} : {e}")
+
+    # 3. Compilation sur l'hôte (Go >= 1.21)
+    ok, out, _ = run_host(["sh", "-c", "go version"], timeout=15)
+    if ok and out:
+        m = re.search(r'go(\d+)\.(\d+)', out)
+        if m and (int(m.group(1)), int(m.group(2))) >= (1, 21):
+            logs.append(f"compilation via {out.strip()} …")
+            cmd = ("HOME=${HOME:-/root} GOTOOLCHAIN=auto GOBIN=/usr/local/bin "
+                   f"go install {MMPROXY_GO_MODULE}")
+            bok, bout, berr = run_host(["sh", "-c", cmd], timeout=300)
+            if bok and mmproxy_installed():
+                return done("go-mmproxy compilé et installé via Go", "go-install")
+            logs.append(f"go install : {berr or bout or 'échec'}")
+        else:
+            logs.append(f"Go trop ancien ({out.strip()}) — 1.21+ requis")
+    else:
+        logs.append("Go absent de l'hôte")
+
+    return {"ok": False,
+            "msg": "Installation impossible (voir log). Manuellement : installez Go ≥ 1.21 puis "
+                   "GOBIN=/usr/local/bin go install github.com/path-network/go-mmproxy@latest",
+            "log": logs}
+
+@app.route("/api/mmproxy/status")
+@login_required
+def api_mmproxy_status():
+    iid       = request.args.get("iid", "")
+    installed = mmproxy_installed()
+    st        = load_mmproxy_state()
+    routes_active = service_status(MMPROXY_ROUTES_UNIT)["running"] if installed else False
+    entries = {}
+    if iid:
+        for name, e in st.get("instances", {}).get(iid, {}).items():
+            unit = e.get("unit", "")
+            entries[name] = {**e, "active": service_status(unit)["running"] if unit else False}
+    return jsonify({"ok": True, "installed": installed, "version": st.get("version"),
+                    "bin": MMPROXY_HOST_BIN, "routes_active": routes_active,
+                    "in_docker": IN_DOCKER, "entries": entries,
+                    "port_range": [MMPROXY_PORT_MIN, MMPROXY_PORT_MAX]})
+
+@app.route("/api/mmproxy/install", methods=["POST"])
+@login_required
+def api_mmproxy_install():
+    if not _mmproxy_install_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "msg": "Installation déjà en cours"})
+    try:
+        if mmproxy_installed():
+            return jsonify({"ok": True, "msg": "go-mmproxy est déjà installé", "log": []})
+        return jsonify(install_mmproxy())
+    finally:
+        _mmproxy_install_lock.release()
+
+@app.route("/api/mmproxy/sync", methods=["POST"])
+@login_required
+def api_mmproxy_sync():
+    data = request.get_json() or {}
+    iid  = str(data.get("iid", ""))
+    detect_frp(force=False)
+    inst = INSTANCES.get(iid)
+    if not inst or inst.get("type") != "frpc":
+        return jsonify({"ok": False, "msg": f"Instance frpc inconnue : {iid}"}), 404
+
+    desired, errs = {}, []
+    for t in (data.get("tunnels") or []):
+        name = str(t.get("name", "")).strip()
+        if not name:
+            errs.append("tunnel sans nom")
+            continue
+        try:
+            port = int(t.get("target_port", 0))
+        except (TypeError, ValueError):
+            port = 0
+        if not (1 <= port <= 65535):
+            errs.append(f"« {name} » : port local invalide")
+            continue
+        ip = str(t.get("target_ip", "") or "127.0.0.1").strip()
+        if ip in ("", "localhost"):
+            ip = "127.0.0.1"
+        if not re.match(r'^127(\.\d{1,3}){3}$', ip):
+            errs.append(f"« {name} » : l'IP locale doit être en 127.0.0.0/8 (service sur la même machine que frpc)")
+            continue
+        if name in desired:
+            errs.append(f"nom de tunnel dupliqué : {name}")
+            continue
+        desired[name] = {"target_ip": ip, "target_port": port}
+
+    if errs:
+        return jsonify({"ok": False, "msg": " · ".join(errs)}), 400
+    if desired and inst.get("source") == "docker":
+        return jsonify({"ok": False, "msg": "IP réelle (go-mmproxy) indisponible pour les instances frpc Docker"}), 400
+
+    ok, ports, entries, msgs = mmproxy_sync(iid, desired)
+    return jsonify({"ok": ok, "ports": ports, "entries": entries,
+                    "msg": " · ".join(msgs) if msgs else ("OK" if ok else "échec")}), (200 if ok else 500)
 
 if __name__ == "__main__":
     host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))

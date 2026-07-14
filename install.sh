@@ -114,6 +114,21 @@ else
     fi
 fi
 
+title "go-mmproxy (option « IP réelle », facultatif)"
+
+if [[ -x /usr/local/bin/go-mmproxy ]]; then
+    ok "go-mmproxy déjà présent."
+elif command -v go &>/dev/null && go version | grep -qE 'go1\.(2[1-9]|[3-9][0-9])'; then
+    info "Compilation de go-mmproxy (permet de transmettre l'IP réelle du client)…"
+    if GOBIN=/usr/local/bin GOTOOLCHAIN=auto go install github.com/path-network/go-mmproxy@latest &>/dev/null; then
+        ok "go-mmproxy installé dans /usr/local/bin."
+    else
+        warn "Compilation échouée — installez-le plus tard depuis l'onglet Ports du panel."
+    fi
+else
+    info "go-mmproxy non installé (facultatif) — bouton d'installation dans l'onglet Ports du panel."
+fi
+
 title "Configs frp par défaut (/etc/frp)"
 
 mkdir -p "$FRP_CONF_DIR"
