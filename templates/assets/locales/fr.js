@@ -365,7 +365,10 @@ export default {
     releaseNotes: 'Notes de version',
     repoMissing: 'Dépôt non configuré',
     prerelease: 'Pré-release',
-    prereleaseText: 'Version de test : aucune mise à jour n’est proposée tant qu’elle n’est pas publiée en version définitive.',
+    prereleaseDockerText: 'Version de test sous Docker : changez le tag de l’image (par exemple :dev ou :latest) pour mettre à jour.',
+    prereleaseChannel: 'Version de test : ce panel suit les pré-releases et se met à jour vers la version publiée la plus récente, pré-release ou release.',
+    prereleaseAvailable: 'Nouvelle version disponible',
+    prereleaseUpToDate: 'Pré-release à jour',
   },
 
   settings: {

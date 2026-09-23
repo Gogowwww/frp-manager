@@ -162,9 +162,14 @@ Chaque nouvelle version sort d'abord en **pré-release**, pour être testée ava
 |---|---|---|
 | Page GitHub | marquée *Pre-release* | *Latest* |
 | Image Docker | `:X.Y.Z` + `:dev` | `:X.Y.Z` + `:latest` |
-| Proposée par le bouton « Mettre à jour » | ❌ | ✅ |
+| Proposée aux panels stables | ❌ | ✅ |
+| Proposée aux panels en pré-release (installation classique) | ✅ | ✅ |
 
-Un panel installé depuis une pré-release (Docker ou installation classique) **ne propose aucune mise à jour** tant que sa version n'est pas passée en release définitive ; ensuite, les mises à jour reprennent d'elles-mêmes.
+- **Panel stable** : il ne voit que les releases, jamais les pré-releases.
+- **Panel en pré-release, installation classique** : il suit le canal des pré-releases et le bouton « Mettre à jour » propose la version publiée la plus récente, pré-release ou release.
+- **Panel en pré-release sous Docker** : aucune mise à jour proposée dans l'interface ; changez le tag de l'image (`:dev` pour suivre les pré-releases, `:latest` pour revenir aux releases).
+
+Quand la pré-release installée devient une release définitive, le panel repasse de lui-même sur le canal stable.
 
 > ℹ️ **0.0.26 : l'option « IP réelle » (go-mmproxy) est retirée.** Si vous l'utilisiez, le panel remet automatiquement les tunnels concernés sur leur vrai service au premier démarrage, redémarre frpc, puis supprime les relais, les règles de routage et le binaire `go-mmproxy`. Pour transmettre l'IP des visiteurs, utilisez l'option **PROXY protocol** avec un service qui la prend en charge (nginx, HAProxy…).
 

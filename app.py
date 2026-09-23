@@ -674,18 +674,32 @@ def fetch_latest_version():
             continue
     return None, None, "toutes les sources inaccessibles"
 
-def fetch_panel_latest():
-    """Vérifie si une nouvelle version du panel est disponible sur le repo GitHub."""
+def fetch_panel_release(include_prereleases=False):
+    """Release GitHub cible du panel (JSON de l'API), ou None.
+    Canal stable : la release « latest ». Canal pré-release : la version la plus
+    récente parmi toutes les releases publiées, pré-releases comprises."""
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if not include_prereleases:
+        r = req.get(PANEL_GITHUB_API, timeout=10, headers=headers)
+        r.raise_for_status()
+        return r.json()
+    r = req.get(f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases?per_page=30",
+                timeout=10, headers=headers)
+    r.raise_for_status()
+    candidates = [rel for rel in r.json()
+                  if not rel.get("draft") and _version_key(rel.get("tag_name", ""))]
+    return max(candidates, key=lambda rel: _version_key(rel["tag_name"]), default=None)
+
+def fetch_panel_latest(include_prereleases=False):
+    """(version, url) de la release cible du panel, ou (None, None)."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
         return None, None   # Repo pas encore configuré
     try:
-        r = req.get(PANEL_GITHUB_API, timeout=10,
-                    headers={"Accept": "application/vnd.github.v3+json"})
-        r.raise_for_status()
-        data = r.json()
-        tag  = data.get("tag_name", "")
-        ver  = tag.lstrip("v")
-        url  = data.get("html_url", f"https://github.com/{PANEL_GITHUB_REPO}/releases")
+        data = fetch_panel_release(include_prereleases)
+        if not data:
+            return None, None
+        ver = data.get("tag_name", "").lstrip("v")
+        url = data.get("html_url", f"https://github.com/{PANEL_GITHUB_REPO}/releases")
         return ver, url
     except Exception:
         return None, None
@@ -1087,11 +1101,14 @@ def panel_is_prerelease():
 @login_required
 def api_panel_version():
     """Retourne la version actuelle du panel et vérifie si une mise à jour est dispo.
-    Une pré-release (Docker ou installation classique) ne propose jamais de mise à jour."""
-    latest_ver, release_url = fetch_panel_latest()
+    Canal stable : releases uniquement. Pré-release en installation classique :
+    pré-releases et releases plus récentes. Pré-release sous Docker : rien
+    (la mise à jour passe par l'image)."""
     repo_configured = "VOTRE_USER" not in PANEL_GITHUB_REPO
     prerelease = panel_is_prerelease()
-    update_available = bool(latest_ver and repo_configured and not prerelease
+    latest_ver, release_url = fetch_panel_latest(include_prereleases=prerelease)
+    update_available = bool(latest_ver and repo_configured
+                            and not (prerelease and IN_DOCKER)
                             and version_newer(latest_ver, PANEL_VERSION))
     return jsonify({
         "ok":               True,
@@ -1118,8 +1135,9 @@ def api_panel_update():
     """Télécharge la dernière release du panel et relance frp-manager."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
         return jsonify({"ok": False, "msg": "Repo GitHub du panel non configuré."})
-    if panel_is_prerelease():
-        return jsonify({"ok": False, "msg": "Version de pré-release : mise à jour automatique désactivée."})
+    prerelease = panel_is_prerelease()
+    if prerelease and IN_DOCKER:
+        return jsonify({"ok": False, "msg": "Pré-release sous Docker : mettez à jour l'image du conteneur."})
     if not panel_update_lock.acquire(blocking=False):
         return jsonify({"ok": False, "msg": "Mise à jour du panel déjà en cours."})
 
@@ -1130,14 +1148,18 @@ def api_panel_update():
         try:
             _panel_log("[INFO] Récupération des infos de release…")
             try:
-                r = req.get(PANEL_GITHUB_API, timeout=12,
-                            headers={"Accept": "application/vnd.github.v3+json"})
-                r.raise_for_status()
-                data = r.json()
+                # Une installation en pré-release suit aussi les pré-releases suivantes
+                data = fetch_panel_release(include_prereleases=prerelease)
+                if not data:
+                    _panel_log("[ERROR] Aucune release trouvée.")
+                    return
                 tag = data.get("tag_name", "")
                 assets = data.get("assets", [])
             except Exception as e:
                 _panel_log(f"[ERROR] GitHub inaccessible : {e}")
+                return
+            if not version_newer(tag, PANEL_VERSION):
+                _panel_log(f"[ERROR] {tag} n'est pas plus récente que v{PANEL_VERSION} : rien à faire.")
                 return
 
             # Chercher l'asset zip (frp-manager.zip ou frp-manager-vX.X.X.zip)

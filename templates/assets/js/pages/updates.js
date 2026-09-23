@@ -242,14 +242,16 @@ function panelCard() {
         return;
       }
       cells.latest.dd.textContent = `v${d.latest}`;
-      if (d.prerelease) {
-        // Pré-release (Docker ou installation classique) : jamais de mise à jour proposée
+      if (d.prerelease && d.in_docker) {
+        // Pré-release sous Docker : la mise à jour passe par l'image, rien à proposer ici
         setStatus(cells.status, 'info', t('updates.prerelease'));
-        extra.append(callout({ type: 'info', compact: true, text: t('updates.prereleaseText') }));
+        extra.append(callout({ type: 'info', compact: true, text: t('updates.prereleaseDockerText') }));
         releaseLink.hidden = true;
         updateBtn.hidden = true;
       } else if (d.update_available) {
-        setStatus(cells.status, 'warn', t('updates.available'));
+        // Installation en pré-release : elle suit aussi les pré-releases suivantes
+        if (d.prerelease) extra.append(callout({ type: 'info', compact: true, text: t('updates.prereleaseChannel') }));
+        setStatus(cells.status, 'warn', t(d.prerelease ? 'updates.prereleaseAvailable' : 'updates.available'));
         releaseLink.href = d.release_url || `https://github.com/${d.repo}/releases`;
         releaseLink.hidden = false;
         updateBtn.hidden = !!d.in_docker;
@@ -259,7 +261,8 @@ function panelCard() {
             h('div', { class: 'code-block' }, h('code', null, DOCKER_PULL), copyButton(DOCKER_PULL)));
         }
       } else {
-        setStatus(cells.status, 'success', t('updates.upToDate'));
+        if (d.prerelease) extra.append(callout({ type: 'info', compact: true, text: t('updates.prereleaseChannel') }));
+        setStatus(cells.status, d.prerelease ? 'info' : 'success', t(d.prerelease ? 'updates.prereleaseUpToDate' : 'updates.upToDate'));
         releaseLink.hidden = true;
         updateBtn.hidden = true;
       }
