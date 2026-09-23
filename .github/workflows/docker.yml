@@ -1,10 +1,11 @@
 name: Build & Push Docker Image
 
+# Dépôt public GitHub : images de release uniquement.
+# Les images de développement (:dev) sont construites par Forgejo (.forgejo/workflows/).
 on:
   push:
-    tags: ['v*']        # Release taguée → :<version> + :latest
-    branches: [dev]     # Branche de développement → :dev + :dev-<sha>
-  workflow_dispatch:    # Manuel : branche dev → image dev, sinon dernière release
+    tags: ['v*']       # Sur release taguée
+  workflow_dispatch:   # Ou manuellement (récupère la dernière release)
 
 permissions:
   contents: read
@@ -23,44 +24,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Déterminer la version et les tags
-        id: meta
+      - name: Récupérer la version
+        id: version
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Release : la version vient du tag
+            # Déclenché par un tag → utiliser ce tag
             VERSION=${GITHUB_REF#refs/tags/v}
-            TAGS="$IMAGE:$VERSION $IMAGE:latest"
-          elif [[ "$GITHUB_REF" == refs/heads/dev ]]; then
-            # Développement : jamais :latest, pour ne pas toucher aux utilisateurs
-            VERSION="dev-${GITHUB_SHA::7}"
-            TAGS="$IMAGE:dev $IMAGE:$VERSION"
           else
-            # Lancement manuel hors dev : reconstruire la dernière release publique
+            # Déclenché manuellement → récupérer la dernière release GitHub
             VERSION=$(curl -s https://api.github.com/repos/Gogowwww/frp-manager/releases/latest \
               | grep '"tag_name"' | head -1 | sed 's/.*"v\([^"]*\)".*/\1/')
             if [[ -z "$VERSION" ]]; then
               echo "Aucune release trouvée, abandon."
               exit 1
             fi
-            TAGS="$IMAGE:$VERSION $IMAGE:latest"
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
-          echo "Version : $VERSION"
-          echo "Tags    : $TAGS"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version : ${VERSION}"
 
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Build image
         run: |
-          TAG_ARGS=""
-          for t in ${{ steps.meta.outputs.tags }}; do TAG_ARGS="$TAG_ARGS -t $t"; done
-          docker build --build-arg PANEL_VERSION=${{ steps.meta.outputs.version }} $TAG_ARGS .
+          docker build \
+            --build-arg PANEL_VERSION=${{ steps.version.outputs.version }} \
+            -t $IMAGE:latest \
+            -t $IMAGE:${{ steps.version.outputs.version }} \
+            .
 
       - name: Push image
         run: |
-          for t in ${{ steps.meta.outputs.tags }}; do docker push "$t"; done
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ steps.version.outputs.version }}
 
       # Ne pas laisser le jeton GHCR sur la machine du runner
       - name: Log out of GitHub Container Registry

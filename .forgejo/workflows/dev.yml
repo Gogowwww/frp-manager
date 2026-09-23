@@ -1,0 +1,46 @@
+# Forgejo Actions (dépôt de dev sur le homelab) : chaque push sur main
+# construit ghcr.io/gogowwww/frp-manager:dev (+ :dev-<sha>). Jamais :latest,
+# qui reste réservé aux releases du dépôt public GitHub (.github/workflows/).
+#
+# Prérequis :
+#   - un forgejo-runner avec le label « host » (docker + git disponibles) ;
+#   - un secret de dépôt GHCR_TOKEN : token GitHub *classic* avec write:packages.
+
+name: Image Docker dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  GHCR_USER: Gogowwww
+
+jobs:
+  build:
+    runs-on: host
+    steps:
+      # git simple plutôt qu'actions/checkout : pas besoin de Node sur le runner
+      - name: Récupérer le code
+        run: |
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet --depth 1 --branch "${{ github.ref_name }}" \
+            "${{ github.server_url }}/${{ github.repository }}.git" src
+          git -C src log -1 --format='Commit %h : %s'
+
+      - name: Construire et pousser l'image
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          VERSION="dev-$(git -C src rev-parse --short=7 HEAD)"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          # --network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
+          docker build --network=host --pull \
+            --build-arg PANEL_VERSION="$VERSION" \
+            -t "$IMAGE:dev" -t "$IMAGE:$VERSION" src
+          docker push --quiet "$IMAGE:$VERSION"
+          docker push --quiet "$IMAGE:dev"
+          echo "OK : $IMAGE:dev = $VERSION"
