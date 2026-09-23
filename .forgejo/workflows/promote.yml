@@ -3,7 +3,7 @@
 # Toute version sort d'abord en pré-release (release.yml) ; celle-ci rend
 # définitive la pré-release validée, sans la reconstruire.
 #
-# Lancement : Actions → « Promouvoir une release » → Run workflow (tag : v0.1.0),
+# Lancement : Actions → « Promouvoir une release » → Run workflow (tag : v0.0.24),
 # ou via l'API Forgejo (POST …/actions/workflows/promote.yml/dispatches).
 #
 # Effets, dans cet ordre :
@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag à promouvoir (ex. v0.1.0)"
+        description: "Tag à promouvoir (ex. v0.0.24)"
         required: true
 
 env:

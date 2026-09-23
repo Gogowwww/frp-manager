@@ -1,10 +1,10 @@
 # Forgejo Actions : publication d'une PRÉ-RELEASE sur GitHub à partir d'un tag.
 #
-# Numérotation : chaque pré-release prend le numéro suivant (v0.1.0, v0.1.1,
-# v0.1.2, …). Quand une pré-release est validée, promote.yml la rend définitive
+# Numérotation : chaque pré-release prend le numéro suivant (v0.0.24, v0.0.25,
+# v0.0.26, …). Quand une pré-release est validée, promote.yml la rend définitive
 # telle quelle (pas de rebuild).
 #
-#   git tag -a v0.1.1 -m "…" && git push origin v0.1.1
+#   git tag -a v0.0.24 -m "…" && git push origin v0.0.24
 #
 # Pré-release :
 #   - pré-release GitHub ; un panel installé en pré-release ne propose aucune
