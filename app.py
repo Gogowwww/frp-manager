@@ -418,12 +418,14 @@ def _docker_logs_raw(container_name, tail=200):
         return ""
 
 class LiveLog:
-    """Journal en direct d'une instance (journalctl -f ou logs Docker en follow),
-    ligne par ligne. close() peut être appelé depuis un autre thread : il arrête
-    journalctl / coupe la connexion Docker, ce qui termine lines()."""
+    """Journal en direct d'une instance, ligne par ligne : journal systemd
+    (journalctl -f), fichier de log (tail -F) ou logs Docker en follow.
+    close() peut être appelé depuis un autre thread : il arrête le processus
+    lu / coupe la connexion Docker, ce qui termine lines()."""
 
-    def __init__(self, inst):
+    def __init__(self, inst, source="journal"):
         self.inst = inst
+        self.source = "file" if source == "file" else "journal"
         self._proc = None
         self._conn = None
 
@@ -443,19 +445,27 @@ class LiveLog:
         try:
             if self.inst.get("source") == "docker":
                 yield from self._docker_lines(_resolve_container(self.inst["container_name"]))
+            elif self.source == "file":
+                path = self.inst.get("log")
+                if not path:
+                    yield "[frp-manager] aucun fichier de log connu pour cette instance"
+                    return
+                # -F : suit le fichier même après une rotation des logs
+                yield from self._command_lines(["tail", "-n50", "-F", str(path)])
             else:
-                yield from self._journal_lines(self.inst.get("service", ""))
+                yield from self._command_lines(["journalctl", "-u", self.inst.get("service", ""),
+                                                "-f", "-n50", "--no-pager", "-o", "short-iso"])
         except Exception:
             pass
         finally:
             self.close()
 
-    def _journal_lines(self, svc):
-        cmd = ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"]
+    def _command_lines(self, cmd):
         if _IN_DOCKER:
-            # Comme run_cmd : le journal systemd est celui de l'hôte
+            # Comme run_cmd : journal et fichiers de log sont ceux de l'hôte
             cmd = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd
-        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                      text=True, errors="replace")
         for line in self._proc.stdout:
             yield line.rstrip("\n")
 
@@ -710,9 +720,14 @@ def detect_frp(force=False):
         _detect_cache_time = now
         return result
 
+_status_changed = threading.Condition()
+
 def _invalidate_cache():
     global _detect_cache_time
     _detect_cache_time = 0
+    # Réveille les WebSocket /ws/status : l'état est renvoyé tout de suite après une action
+    with _status_changed:
+        _status_changed.notify_all()
 
 # ── Download / install ────────────────────────────────────────────────────────
 update_lock    = threading.Lock()
@@ -1033,7 +1048,7 @@ def api_logs_stream(iid):
     inst = INSTANCES.get(iid)
     if not inst:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
-    live = LiveLog(inst)
+    live = LiveLog(inst, request.args.get("source", "journal"))
     def generate():
         try:
             for line in live.lines():
@@ -1043,19 +1058,47 @@ def api_logs_stream(iid):
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+def _ws_authenticated(ws):
+    if MGR_CFG.get("password_hash") and not session.get("authenticated"):
+        ws.close(reason=1008, message="Non authentifié")
+        return False
+    return True
+
 if sock:
+    @sock.route("/ws/status")
+    def ws_status(ws):
+        """État des instances poussé au navigateur : vérifié toutes les 2 s côté
+        serveur (et aussitôt après une action), envoyé seulement s'il a changé.
+        Remplace l'appel périodique de /api/status par l'interface."""
+        if not _ws_authenticated(ws):
+            return
+        last = None
+        try:
+            while ws.connected:
+                try:
+                    payload = json.dumps({"instances": detect_frp(force=False), "in_docker": IN_DOCKER},
+                                         sort_keys=True, default=str)
+                except Exception:
+                    payload = None
+                if payload and payload != last:
+                    ws.send(payload)
+                    last = payload
+                with _status_changed:
+                    _status_changed.wait(timeout=2)
+        except Exception:
+            pass
+
     @sock.route("/ws/logs/<iid>")
     def ws_logs(ws, iid):
         """Journal en direct par WebSocket : une ligne par message texte."""
-        if MGR_CFG.get("password_hash") and not session.get("authenticated"):
-            ws.close(reason=1008, message="Non authentifié")
+        if not _ws_authenticated(ws):
             return
         detect_frp(force=False)
         inst = INSTANCES.get(iid)
         if not inst:
             ws.close(reason=1008, message="Instance inconnue")
             return
-        live = LiveLog(inst)
+        live = LiveLog(inst, request.args.get("source", "journal"))
         lines = queue.Queue()
 
         def pump():

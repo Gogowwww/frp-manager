@@ -49,7 +49,11 @@ export default {
     const source = segmented([
       { value: 'journal', label: t('logs.sources.journal') },
       { value: 'file', label: t('logs.sources.file') },
-    ], S.source, (v) => { S.source = v; load(); }, { label: t('logs.source') });
+    ], S.source, (v) => {
+      S.source = v;
+      // En direct : on bascule le flux sur la nouvelle source, sinon on recharge
+      if (S.live) { stopLive(); startLive(); } else load();
+    }, { label: t('logs.source') });
 
     const search = h('input', { class: 'input', type: 'search', placeholder: t('logs.filter'), 'aria-label': t('logs.filter') });
     search.addEventListener('input', () => {
@@ -122,25 +126,31 @@ function appendLive(text) {
   if (stick) out.scrollTop = out.scrollHeight;
 }
 
+/** Source du direct : journal systemd ou fichier (les conteneurs n'ont que leurs logs Docker). */
+function liveQuery() {
+  const src = isDocker(store.instances[S.iid]) ? 'docker' : S.source;
+  return `?source=${encodeURIComponent(src)}`;
+}
+
 /** WebSocket (wss:// en HTTPS) ; s'il ne s'ouvre pas, repli sur le flux SSE. */
-function openWebSocket(iid) {
+function openWebSocket(iid, query) {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${scheme}://${location.host}/ws/logs/${encodeURIComponent(iid)}`);
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/logs/${encodeURIComponent(iid)}${query}`);
   let opened = false;
   const live = { close: () => ws.close(), transport: 'websocket' };
   ws.onopen = () => { opened = true; };
   ws.onmessage = (e) => appendLive(e.data);
   ws.onclose = () => {
     if (S.live !== live) return;               // arrêt demandé par l'utilisateur
-    if (!opened) { S.live = openEventSource(iid); return; }
+    if (!opened) { S.live = openEventSource(iid, query); return; }
     stopLive();
     toast(t('logs.liveEnded'), 'info');
   };
   return live;
 }
 
-function openEventSource(iid) {
-  const es = new EventSource(`/api/logs/stream/${encodeURIComponent(iid)}`);
+function openEventSource(iid, query) {
+  const es = new EventSource(`/api/logs/stream/${encodeURIComponent(iid)}${query}`);
   const live = { close: () => es.close(), transport: 'sse' };
   es.onmessage = (e) => appendLive(e.data);
   es.onerror = () => {
@@ -149,13 +159,18 @@ function openEventSource(iid) {
   return live;
 }
 
-function toggleLive() {
-  if (S.live) { stopLive(); return; }
+function startLive() {
   loadSeq += 1;   // un chargement encore en cours n'écrasera pas le direct
   S.els.out.replaceChildren();
-  S.live = 'WebSocket' in window ? openWebSocket(S.iid) : openEventSource(S.iid);
+  const query = liveQuery();
+  S.live = 'WebSocket' in window ? openWebSocket(S.iid, query) : openEventSource(S.iid, query);
   S.els.livePill.hidden = false;
   S.els.liveBtn.replaceChildren(icon('stop'), t('logs.stopLive'));
+}
+
+function toggleLive() {
+  if (S.live) stopLive();
+  else startLive();
 }
 
 function stopLive() {

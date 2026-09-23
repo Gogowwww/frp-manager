@@ -66,6 +66,7 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 - 🛑 **Confirmation avant d'arrêter** un frpc : si vous accédez au panel à travers l'un de ses tunnels, vous êtes prévenu
 - ✏️ **Surnoms** d'instances (*« Serveur maison »*, *« Tunnel bureau »*…)
 - 🔔 Alertes utiles en haut de page : panel sans mot de passe, mise à jour disponible
+- ⚡ **État en direct** : poussé par WebSocket dès qu'un service change (repli sur une vérification toutes les 12 s si le WebSocket ne passe pas)
 
 ### 🔌 Tunnels (frpc)
 - 🗺️ **Liste lisible** : chaque tunnel montre son chemin `vps.exemple.net:25565 → 127.0.0.1:25565`
@@ -81,7 +82,7 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 
 ### 📜 Journaux
 - 📂 Source **journal systemd**, **fichier de log** ou **conteneur Docker** (avec ou sans `tty`)
-- 📡 **Flux en direct par WebSocket** (`wss://` sur le panel en HTTPS), avec repli automatique sur SSE si le WebSocket ne passe pas ; coloration des erreurs et avertissements, **filtre** de lignes
+- 📡 **Flux en direct par WebSocket** (`wss://` sur le panel en HTTPS) sur la source choisie (journal systemd ou fichier), avec repli automatique sur SSE si le WebSocket ne passe pas ; coloration des erreurs et avertissements, **filtre** de lignes
 
 > 🔀 Derrière un reverse proxy, autorisez la mise à niveau WebSocket sur `/ws/` (nginx : `proxy_http_version 1.1;` + en-têtes `Upgrade` et `Connection`). Sans ça, le panel retombe simplement sur SSE.
 

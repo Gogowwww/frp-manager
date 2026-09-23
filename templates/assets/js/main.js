@@ -3,7 +3,7 @@
 import { initI18n, applyI18n, t } from './i18n.js';
 import { api } from './api.js';
 import {
-  store, frpcIds, detect, refreshStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
+  store, frpcIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
 } from './store.js';
 import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
@@ -14,7 +14,6 @@ import logs from './pages/logs.js';
 import updates from './pages/updates.js';
 import settings from './pages/settings.js';
 
-const POLL_MS = 12000;
 const WELCOME_KEY = 'frpMgrWelcomeSeen';
 
 function setupShell() {
@@ -83,9 +82,8 @@ async function boot() {
   showWelcome();
   checkUpdatesQuietly();
 
-  setInterval(() => {
-    if (document.visibilityState === 'visible') refreshStatus().catch(() => {});
-  }, POLL_MS);
+  // État des instances poussé en direct (WebSocket), repli sur une vérification périodique
+  connectStatus();
 }
 
 boot();

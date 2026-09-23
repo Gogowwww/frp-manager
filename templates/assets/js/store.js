@@ -65,7 +65,54 @@ export async function detect() {
   store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, ready: true });
 }
 
+// ── État en direct : WebSocket /ws/status, repli sur /api/status ─────────
+// Le serveur pousse l'état des instances dès qu'il change (et juste après une
+// action). Sans WebSocket, on revient à une vérification toutes les 12 s et on
+// retente la connexion avec un délai croissant.
+
+const POLL_MS = 12000;
+let statusSocket = null;
+let statusRetries = 0;
+let pollTimer = null;
+
+const statusLive = () => !!statusSocket && statusSocket.readyState === WebSocket.OPEN;
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshStatus().catch(() => {});
+  }, POLL_MS);
+}
+
+function stopPolling() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+export function connectStatus() {
+  if (!('WebSocket' in window)) { startPolling(); return; }
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/status`);
+  statusSocket = ws;
+  ws.onopen = () => { statusRetries = 0; stopPolling(); };
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.instances) store.set({ instances: d.instances });
+    } catch { /* message illisible : ignoré */ }
+  };
+  ws.onclose = () => {
+    if (statusSocket !== ws) return;
+    statusSocket = null;
+    startPolling();
+    statusRetries += 1;
+    setTimeout(connectStatus, Math.min(30000, 2000 * statusRetries));
+  };
+}
+
+/** Rafraîchit l'état à la demande ; inutile quand le WebSocket le pousse déjà. */
 export async function refreshStatus() {
+  if (statusLive()) return;
   const d = await api('/api/status');
   if (d.ok) store.set({ instances: d.instances || {} });
 }
@@ -99,6 +146,18 @@ export async function checkUpdatesQuietly() {
 
 /** Attend qu'une instance repasse « running » après un redémarrage. */
 export async function waitRunning(iid, { attempts = 15, interval = 1000 } = {}) {
+  if (statusLive()) {
+    // État poussé par /ws/status : on écoute au lieu d'interroger. On ignore la
+    // première seconde, où l'instance peut encore apparaître « running » avant l'arrêt.
+    await new Promise((r) => setTimeout(r, interval));
+    if (store.instances[iid]?.status?.running) return true;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { unsubscribe(); resolve(false); }, attempts * interval);
+      const unsubscribe = store.subscribe((s) => {
+        if (s.instances[iid]?.status?.running) { clearTimeout(timer); unsubscribe(); resolve(true); }
+      });
+    });
+  }
   for (let i = 0; i < attempts; i += 1) {
     await new Promise((r) => setTimeout(r, interval));
     try {
