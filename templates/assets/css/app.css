@@ -330,12 +330,20 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 /* Variante discrète (rappels « mode Docker ») : fine bordure orange, pas de fond */
 .callout.callout-compact {
   align-items: center; gap: 8px; padding: 6px 12px;
-  background: transparent; border-color: color-mix(in srgb, var(--warn) 45%, transparent);
-  font-size: 12.5px; color: var(--text-2);
+  background: transparent; font-size: 12.5px; line-height: 1.45;
 }
-.callout.callout-compact > .icon { margin-top: 0; width: 14px; height: 14px; color: var(--warn); }
-.callout-compact strong { color: var(--warn-text); font-weight: 600; }
-.callout.callout-compact.callout-info { border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+.callout.callout-compact > .icon { margin-top: 0; width: 14px; height: 14px; }
+.callout-compact strong { font-weight: 600; color: inherit; }
+/* Tout le texte en orange ; bordure pleine si color-mix n'est pas pris en charge */
+.callout.callout-compact.callout-warn { color: var(--warn-text); border-color: var(--warn); }
+@supports (color: color-mix(in srgb, red, blue)) {
+  .callout.callout-compact.callout-warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+}
+.callout.callout-compact.callout-warn > .icon { color: var(--warn); }
+.callout.callout-compact.callout-info { color: var(--text-2); border-color: var(--info); }
+@supports (color: color-mix(in srgb, red, blue)) {
+  .callout.callout-compact.callout-info { border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+}
 .callout.callout-compact.callout-info > .icon { color: var(--info); }
 .callout-inline-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
 

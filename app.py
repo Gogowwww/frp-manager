@@ -361,6 +361,27 @@ def _docker_api(method, url_path, body=None, timeout=10):
     except Exception as e:
         return 0, str(e)
 
+def _is_docker_frame(buf):
+    """Début d'une trame du flux multiplexé Docker (conteneur SANS tty) :
+    type 0/1/2 puis 3 octets nuls. Un conteneur lancé avec tty: true envoie
+    au contraire le texte brut, sans en-têtes."""
+    return len(buf) >= 4 and buf[0] in (0, 1, 2) and buf[1:4] == b"\x00\x00\x00"
+
+def _docker_demux(buf, tty):
+    """Extrait le texte complet de buf → (texte, reste non consommé)."""
+    if tty:
+        cut = buf.rfind(b"\n") + 1          # ne pas couper un caractère UTF-8
+        return buf[:cut].decode("utf-8", errors="replace"), buf[cut:]
+    out = []
+    # Trame : type[1] + padding[3] + taille[4] (big-endian) + contenu
+    while len(buf) >= 8:
+        size = int.from_bytes(buf[4:8], "big")
+        if len(buf) < 8 + size:
+            break
+        out.append(buf[8:8 + size].decode("utf-8", errors="replace"))
+        buf = buf[8 + size:]
+    return "".join(out), buf
+
 def _docker_logs_raw(container_name, tail=200):
     """200 dernières lignes de logs d'un container Docker, décodées."""
     if not _DOCKER_SOCK.exists():
@@ -374,64 +395,49 @@ def _docker_logs_raw(container_name, tail=200):
         if resp.status != 200:
             return ""
         raw = resp.read()
-        # Stream multiplexé Docker : header 8 octets (type[1] + padding[3] + size[4]) + payload
-        out, i = [], 0
-        while i + 8 <= len(raw):
-            size = int.from_bytes(raw[i+4:i+8], "big")
-            i   += 8
-            out.append(raw[i:i+size].decode("utf-8", errors="replace"))
-            i   += size
-        return "".join(out)
+        tty = bool(raw) and not _is_docker_frame(raw)
+        text, rest = _docker_demux(raw, tty)
+        return text + rest.decode("utf-8", errors="replace") if tty else text
     except Exception:
         return ""
 
 def _docker_logs_stream_gen(container_name):
-    """Générateur SSE qui streame les logs d'un container Docker (follow mode)."""
+    """Générateur SSE qui streame les logs d'un container Docker (follow mode).
+    http.client décode le « chunked encoding » de la réponse ; l'ancienne
+    lecture brute du socket mélangeait ces en-têtes aux trames de logs."""
     if not _DOCKER_SOCK.exists():
         return
-    sock = None
+    conn = None
     try:
-        sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-        sock.connect(str(_DOCKER_SOCK))
-        sock.settimeout(5)
-        req = (
-            f"GET /v1.41/containers/{container_name}/logs"
-            f"?stdout=1&stderr=1&follow=1&tail=50 HTTP/1.1\r\n"
-            f"Host: localhost\r\nConnection: close\r\n\r\n"
-        )
-        sock.sendall(req.encode())
-        # Sauter les headers HTTP
-        hbuf = b""
-        while b"\r\n\r\n" not in hbuf:
-            try:
-                chunk = sock.recv(1)
-                if not chunk: return
-                hbuf += chunk
-            except _socket.timeout:
-                continue
-        buf = b""
+        conn = _UnixHTTPConn(str(_DOCKER_SOCK))
+        conn.request("GET",
+            f"/v1.41/containers/{container_name}/logs?stdout=1&stderr=1&follow=1&tail=50")
+        resp = conn.getresponse()
+        if resp.status != 200:
+            yield f"data: [frp-manager] logs Docker indisponibles (HTTP {resp.status})\n\n"
+            return
+        buf, tty, pending = b"", None, ""
         while True:
-            try:
-                chunk = sock.recv(4096)
-                if not chunk: break
-                buf += chunk
-            except _socket.timeout:
-                continue
-            # Traiter les frames complètes
-            while len(buf) >= 8:
-                size = int.from_bytes(buf[4:8], "big")
-                if len(buf) < 8 + size: break
-                payload = buf[8:8+size].decode("utf-8", errors="replace")
-                buf = buf[8+size:]
-                for line in payload.splitlines():
-                    yield f"data: {line}\n\n"
+            chunk = resp.read1(4096)
+            if not chunk:
+                break
+            buf += chunk
+            if tty is None:
+                if len(buf) < 4:
+                    continue
+                tty = not _is_docker_frame(buf)
+            text, buf = _docker_demux(buf, tty)
+            pending += text
+            *lines, pending = pending.split("\n")
+            for line in lines:
+                yield f"data: {line.rstrip(chr(13))}\n\n"
     except GeneratorExit:
         pass
     except Exception:
         pass
     finally:
-        if sock:
-            try: sock.close()
+        if conn:
+            try: conn.close()
             except: pass
 
 def _detect_docker_frp_containers():
@@ -936,8 +942,9 @@ def api_logs(iid):
         return jsonify({"ok": True, "content": content or "(aucun log disponible)"})
     # ── Instance systemd ──────────────────────────────────────────────────────
     if request.args.get("source") == "file":
-        ok, out, _ = run_cmd(["tail", "-n200", str(inst["log"])])
-        return jsonify({"ok": True, "content": out})
+        # run_host : en mode Docker, le fichier de log est sur l'hôte, pas dans le container
+        ok, out, err = run_host(["tail", "-n200", str(inst["log"])])
+        return jsonify({"ok": True, "content": out if ok else (err or f"Fichier illisible : {inst['log']}")})
     ok, out, err = run_cmd(["journalctl", "-u", inst["service"],
                              "-n200", "--no-pager", "-o", "short-iso"])
     return jsonify({"ok": True, "content": out if ok else err})
@@ -966,10 +973,12 @@ def api_logs_stream(iid):
                         headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
     # ── Instance systemd ──────────────────────────────────────────────────────
     svc = inst.get("service", iid)
+    cmd = ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"]
+    if _IN_DOCKER:
+        # Comme run_cmd : le journal systemd est celui de l'hôte
+        cmd = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd
     def generate():
-        proc = subprocess.Popen(
-            ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
             for line in proc.stdout:
                 yield f"data: {line.rstrip()}\n\n"
