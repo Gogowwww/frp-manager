@@ -60,8 +60,7 @@ jobs:
 
       - name: Push image
         run: |
-          docker push ghcr.io/gogowwww/frp-manager:latest
-          docker push ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }}
+          for t in ${{ steps.meta.outputs.tags }}; do docker push "$t"; done
 
       # Ne pas laisser le jeton GHCR sur la machine du runner
       - name: Log out of GitHub Container Registry
