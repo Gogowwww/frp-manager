@@ -3,7 +3,10 @@
 # qui reste réservé aux releases du dépôt public GitHub (.github/workflows/).
 #
 # Prérequis :
-#   - un forgejo-runner avec le label « host » (docker + git disponibles) ;
+#   - un forgejo-runner avec le label « docker », dont le config.yml contient :
+#       container:
+#         valid_volumes:
+#           - /var/run/docker.sock
 #   - un secret de dépôt GHCR_TOKEN : token GitHub *classic* avec write:packages.
 
 name: Image Docker dev
@@ -19,11 +22,18 @@ env:
 
 jobs:
   build:
-    runs-on: host
+    runs-on: docker
+    # Conteneur avec le client Docker, relié au démon de l'hôte par son socket
+    # (le config.yml du runner doit l'autoriser : container.valid_volumes).
+    container:
+      image: docker:27-cli
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
     steps:
-      # git simple plutôt qu'actions/checkout : pas besoin de Node sur le runner
+      # git simple plutôt qu'actions/checkout : pas besoin de Node dans le conteneur
       - name: Récupérer le code
         run: |
+          apk add --no-cache --quiet git
           rm -rf src
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             clone --quiet --depth 1 --branch "${{ github.ref_name }}" \
