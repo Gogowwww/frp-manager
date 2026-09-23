@@ -1,13 +1,13 @@
 # Forgejo Actions (dépôt de dev sur le homelab) : chaque push sur main
 # construit ghcr.io/gogowwww/frp-manager:dev (+ :dev-<sha>). Jamais :latest,
-# qui reste réservé aux releases du dépôt public GitHub (.github/workflows/).
+# qui reste réservé aux releases stables (.forgejo/workflows/release.yml).
 #
 # Prérequis :
 #   - un forgejo-runner avec le label « docker », dont le config.yml contient :
 #       container:
 #         valid_volumes:
 #           - /var/run/docker.sock
-#   - un secret de dépôt GHCR_TOKEN : token GitHub *classic* avec write:packages.
+#   - un secret de dépôt GH_TOKEN : token GitHub *classic* (repo + write:packages), partagé avec release.yml.
 
 name: Image Docker dev
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Construire et pousser l'image
         env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           VERSION="dev-$(git -C src rev-parse --short=7 HEAD)"
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin

@@ -1,0 +1,173 @@
+# Forgejo Actions : publication d'une release sur GitHub à partir d'un tag.
+#
+#   git tag v0.1.0        && git push origin v0.1.0         # release stable
+#   git tag v0.1.0-dev.1  && git push origin v0.1.0-dev.1   # tag de dev (pré-release)
+#
+# Tag stable (vX.Y.Z)            : release GitHub, image :X.Y.Z + :latest,
+#                                  main public avancé jusqu'au tag (avance rapide uniquement).
+# Tag de dev (vX.Y.Z-quelquechose) : pré-release GitHub, image :X.Y.Z-… + :dev.
+#                                  Ni :latest, ni main public : le bouton « Mettre à jour »
+#                                  du panel ne voit que la dernière release stable.
+#
+# Fichiers joints : frp-manager.zip, go-mmproxy_linux_{amd64,arm64,arm}.tar.gz
+# (noms attendus par install.sh, le README et l'installation go-mmproxy du panel).
+#
+# Prérequis :
+#   - runner Forgejo avec le label « docker » et container.valid_volumes: [/var/run/docker.sock]
+#   - secret de dépôt GH_TOKEN : token GitHub *classic*, scopes « repo » et « write:packages »
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  GH_REPO: Gogowwww/frp-manager
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  GH_USER: Gogowwww
+
+jobs:
+  release:
+    runs-on: docker
+    container:
+      image: docker:27-cli
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    steps:
+      - name: Préparer
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -eu
+          apk add --no-cache --quiet git zip curl jq
+
+          TAG="${{ github.ref_name }}"
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+            || { echo "Tag invalide : $TAG (attendu vX.Y.Z ou vX.Y.Z-dev.N)"; exit 1; }
+          VERSION="${TAG#v}"
+          case "$VERSION" in *-*) PRERELEASE=true ;; *) PRERELEASE=false ;; esac
+          [ -n "$GH_TOKEN" ] || { echo "Secret GH_TOKEN manquant"; exit 1; }
+
+          # Historique complet : nécessaire pour vérifier l'avance rapide du main public
+          rm -rf src dist
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
+          git -C src checkout --quiet "$TAG"
+          SHA="$(git -C src rev-parse HEAD)"
+
+          # Vérifications GitHub AVANT de construire quoi que ce soit
+          API="https://api.github.com/repos/$GH_REPO"
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $GH_TOKEN" "$API/releases/tags/$TAG")
+          [ "$CODE" = 404 ] || { echo "Une release $TAG existe déjà sur GitHub (HTTP $CODE)"; exit 1; }
+
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git -C src remote add public "https://github.com/$GH_REPO.git"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
+          if [ "$PRERELEASE" = false ] && ! git -C src merge-base --is-ancestor public/main "$SHA"; then
+            echo "Le main public a des commits absents de $TAG : publication impossible en avance rapide."
+            exit 1
+          fi
+
+          {
+            echo "TAG=$TAG"
+            echo "VERSION=$VERSION"
+            echo "PRERELEASE=$PRERELEASE"
+            echo "SHA=$SHA"
+          } >> "$GITHUB_ENV"
+          echo "Release $TAG ($SHA) — pré-release : $PRERELEASE"
+
+      - name: Archive frp-manager.zip
+        run: |
+          set -eu
+          mkdir -p dist/frp-manager
+          cd src
+          cp -r app.py frp-autoupdate.py install.sh requirements.txt templates mmproxy-patch \
+                README.md LICENSE docker-compose.yml ../dist/frp-manager/
+          cd ../dist
+          # Version affichée par les installations via install.sh (hors Docker)
+          sed -i "s/^_PANEL_VERSION_FALLBACK = \"[^\"]*\"/_PANEL_VERSION_FALLBACK = \"$VERSION\"/" frp-manager/app.py
+          grep -q "_PANEL_VERSION_FALLBACK = \"$VERSION\"" frp-manager/app.py
+          zip -qr frp-manager.zip frp-manager
+          ls -l frp-manager.zip
+
+      - name: Binaires go-mmproxy (patch UDP)
+        run: |
+          set -eu
+          # Compilation dans un conteneur golang via le démon de l'hôte ; le binaire
+          # est ensuite récupéré par docker cp (pas de montage de chemin).
+          cat > /tmp/Dockerfile.mmproxy <<'EOF'
+          FROM golang:1.22-bookworm AS build
+          COPY mmproxy-patch/ /mmproxy-patch/
+          ARG GOARCH
+          ARG GOARM=
+          RUN GOOS=linux GOARCH=$GOARCH GOARM=$GOARM sh /mmproxy-patch/build.sh /out/go-mmproxy
+          FROM scratch
+          COPY --from=build /out/go-mmproxy /go-mmproxy
+          EOF
+          for spec in amd64: arm64: arm:7; do
+            ARCH="${spec%%:*}"; ARM="${spec#*:}"
+            IMG="frp-manager-mmproxy-build:$ARCH"
+            docker build --quiet --network=host -f /tmp/Dockerfile.mmproxy \
+              --build-arg GOARCH="$ARCH" --build-arg GOARM="$ARM" -t "$IMG" src >/dev/null
+            CID=$(docker create "$IMG" /go-mmproxy)
+            mkdir -p "mm/$ARCH"
+            docker cp "$CID:/go-mmproxy" "mm/$ARCH/go-mmproxy"
+            docker rm "$CID" >/dev/null
+            docker rmi "$IMG" >/dev/null
+            chmod 755 "mm/$ARCH/go-mmproxy"
+            tar -czf "dist/go-mmproxy_linux_$ARCH.tar.gz" -C "mm/$ARCH" go-mmproxy
+          done
+          ls -l dist/*.tar.gz
+
+      - name: Image Docker
+        run: |
+          set -eu
+          if [ "$PRERELEASE" = true ]; then EXTRA=dev; else EXTRA=latest; fi
+          docker build --network=host --pull --build-arg PANEL_VERSION="$VERSION" \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:$EXTRA" src
+          echo "EXTRA_TAG=$EXTRA" >> "$GITHUB_ENV"
+
+      # ── Publication : tout est construit, on pousse ────────────────────────
+      - name: Pousser l'image
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -eu
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          docker push --quiet "$IMAGE:$VERSION"
+          docker push --quiet "$IMAGE:$EXTRA_TAG"
+
+      - name: Pousser le code sur GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -eu
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          if [ "$PRERELEASE" = true ]; then
+            # Pré-release : seulement le tag, le main public ne bouge pas
+            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "refs/tags/$TAG"
+          else
+            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main" "refs/tags/$TAG"
+          fi
+
+      - name: Créer la release GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -eu
+          API="https://api.github.com/repos/$GH_REPO"
+          BODY=$(jq -n --arg tag "$TAG" --argjson pre "$PRERELEASE" \
+            '{tag_name: $tag, name: $tag, prerelease: $pre, generate_release_notes: true}')
+          REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
+          ID=$(echo "$REL" | jq -r .id)
+          for f in dist/frp-manager.zip dist/go-mmproxy_linux_*.tar.gz; do
+            NAME=$(basename "$f")
+            case "$NAME" in *.zip) TYPE=application/zip ;; *) TYPE=application/gzip ;; esac
+            curl -sf -X POST -H "Authorization: token $GH_TOKEN" -H "Content-Type: $TYPE" \
+              --data-binary "@$f" "https://uploads.github.com/repos/$GH_REPO/releases/$ID/assets?name=$NAME" >/dev/null
+            echo "Joint : $NAME"
+          done
+          echo "Release publiée : $(echo "$REL" | jq -r .html_url)"
