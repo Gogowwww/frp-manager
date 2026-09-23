@@ -1,18 +1,18 @@
 // ── Tunnels : [[proxies]] et [[visitors]] d'une instance frpc ─────────────
 // Les modifications se font dans un brouillon local ; la barre du bas
-// enregistre tout d'un coup (sync go-mmproxy → écriture TOML → restart).
+// enregistre tout d'un coup (écriture TOML, puis redémarrage si demandé).
 
 import { t } from '../i18n.js';
 import { api, apiOk, post } from '../api.js';
-import { store, frpcIds, displayName, isDocker, waitRunning } from '../store.js';
+import { frpcIds, displayName, waitRunning } from '../store.js';
 import {
-  h, icon, button, busy, toast, toastResult, toastError, openDialog, confirmDialog,
-  field, setFieldError, input, select, secretInput, switchRow, segmented, callout, emptyState,
+  h, icon, button, toast, toastError, openDialog, confirmDialog,
+  field, setFieldError, input, select, secretInput, switchRow, segmented, emptyState,
   pageHeader, badge, saveBar,
 } from '../ui.js';
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
-  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret, supportsRealIp,
+  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -23,18 +23,11 @@ const S = {
   proxies: [],
   visitors: [],
   snapshot: '',
-  mm: { installed: false, routes_active: false, entries: {}, version: null },
   els: {},
 };
 
 const snapshotOf = () => JSON.stringify([S.proxies, S.visitors]);
 const isDirty = () => S.snapshot !== '' && snapshotOf() !== S.snapshot;
-
-/** Option « IP réelle » possible : frpc systemd, ou conteneur en network_mode: host. */
-function realIpAvailable() {
-  const inst = store.instances[S.iid];
-  return !isDocker(inst) || inst.network_mode === 'host';
-}
 
 function beforeUnload(e) {
   if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
@@ -66,7 +59,6 @@ export default {
     const addBtn = button(t('tunnels.add'), { variant: 'primary', iconName: 'plus', onClick: () => editProxy(null) });
     if (S.iid) actions.push(addBtn);
 
-    S.els.notices = h('div', { class: 'form-stack' });
     S.els.proxies = h('div', { class: 'card' });
     S.els.visitors = h('div', { class: 'card' });
     S.els.savebar = saveBar({
@@ -78,7 +70,6 @@ export default {
 
     view.append(h('div', { class: 'page' },
       pageHeader({ title: t('tunnels.title'), description: t('tunnels.description'), actions }),
-      S.els.notices,
       S.els.proxies,
       h('section', null,
         h('div', { class: 'section-head' },
@@ -118,24 +109,14 @@ function confirmLeave() {
 
 // ── Chargement ─────────────────────────────────────────────────────────────
 
-async function loadMm() {
-  S.mm = { installed: false, routes_active: false, entries: {}, version: null };
-  if (!realIpAvailable()) return;
-  try {
-    const d = await api(`/api/mmproxy/status?iid=${encodeURIComponent(S.iid)}`);
-    if (d.ok) S.mm = d;
-  } catch { /* option indisponible */ }
-}
-
 async function load() {
   S.els.proxies.replaceChildren(h('div', { class: 'skeleton', style: { height: '120px', margin: '16px' } }));
   try {
-    await loadMm();
     const d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
     S.baseText = d.content || '';
     const cfg = parseToml(S.baseText);
     S.serverAddr = cfg.values.serverAddr || '';
-    S.proxies = cfg.proxies.map((b) => proxyFromBlock(b, b.values.name && S.mm.entries[b.values.name]));
+    S.proxies = cfg.proxies.map(proxyFromBlock);
     S.visitors = cfg.visitors.map(visitorFromBlock);
     S.snapshot = snapshotOf();
   } catch (e) {
@@ -156,24 +137,9 @@ function discard() {
 
 function render() {
   if (!S.els.proxies) return;
-  renderNotices();
   renderProxies();
   renderVisitors();
   S.els.savebar.hidden = !isDirty();
-}
-
-function renderNotices() {
-  const items = [];
-  const inst = store.instances[S.iid];
-  if (isDocker(inst) && inst.network_mode !== 'host' && S.proxies.some((p) => supportsRealIp(p.type))) {
-    items.push(callout({ type: 'warn', compact: true, iconName: 'box', title: t('realIp.dockerTitle'), text: t('realIp.dockerText', { mode: inst.network_mode || 'bridge' }) }));
-  }
-  const relays = Object.values(S.mm.entries || {});
-  if (S.mm.installed && relays.length && (!S.mm.routes_active || relays.some((e) => !e.active))) {
-    items.push(callout({ type: 'warn', title: t('realIp.inactiveTitle'), text: t('realIp.inactiveText') }));
-  }
-  S.els.notices.replaceChildren(...items);
-  S.els.notices.hidden = !items.length;
 }
 
 function stateOf(item, list) {
@@ -192,16 +158,7 @@ function renderProxies() {
     }));
     return;
   }
-  const list = h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, S.proxies.map(proxyRow));
-  const foot = S.mm.installed
-    ? h('div', { class: 'card-foot', style: { justifyContent: 'flex-start' } },
-      h('span', { class: 'muted', style: { fontSize: '12.5px' } }, t('realIp.status', {
-        version: S.mm.version ? ` ${S.mm.version}` : '',
-        routes: t(S.mm.routes_active ? 'realIp.routesOn' : 'realIp.routesOff'),
-        count: Object.keys(S.mm.entries || {}).length,
-      })))
-    : null;
-  host.replaceChildren(list, foot);
+  host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, S.proxies.map(proxyRow)));
 }
 
 function publicEndpoint(p) {
@@ -221,18 +178,15 @@ function route(fromLabel, from, toLabel, to, fromIsText = false) {
 
 function proxyRow(p) {
   const flags = [];
-  if (p.realIp) flags.push(badge(t('tunnels.flags.realIp'), 'info'));
-  else if (p.proxyProtocol) flags.push(badge(t('tunnels.flags.proxyProtocol', { v: p.proxyProtocol }), ''));
+  if (p.proxyProtocol) flags.push(badge(t('tunnels.flags.proxyProtocol', { v: p.proxyProtocol }), ''));
   if (p.encryption) flags.push(badge(t('tunnels.flags.encrypted'), ''));
   if (p.compression) flags.push(badge(t('tunnels.flags.compressed'), ''));
 
-  const relay = p.realIp && S.mm.entries?.[p.name];
   const state = stateOf(p, 'proxies');
   const open = () => editProxy(p);
   return h('li', {
     class: `row${state ? ` is-${state}` : ''}`, dataset: { state: state ? t(`common.state.${state}`) : '' },
     tabindex: '0', onClick: open, onKeydown: (e) => { if (e.key === 'Enter') open(); },
-    title: relay ? t('realIp.relayTitle', { port: relay.listen_port }) : null,
   },
   h('div', { class: 'row-name' }, h('span', null, p.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, p.type.toUpperCase())),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
@@ -312,31 +266,8 @@ function editProxy(existing) {
       const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
-      secret.input.id = secret.input.id || `sk-${draft.uid}`;
 
       // Options
-      const realIp = switchRow({
-        label: t('realIp.label'), description: t('realIp.hint'), checked: draft.realIp,
-        onChange: (on) => {
-          if (on && !S.mm.installed) {
-            realIp.input.checked = false;
-            realIpHelp.hidden = false;
-            return;
-          }
-          sync();
-        },
-      });
-      const installBtn = button(t('realIp.install'), { size: 'sm', iconName: 'download', onClick: () => busy(installBtn, installMm) });
-      const realIpHelp = callout({
-        type: 'warn', title: t('realIp.notInstalledTitle'), text: t('realIp.notInstalledText'), actions: [installBtn],
-      });
-      realIpHelp.hidden = true;
-      const realIpBlock = h('div', { class: 'form-stack' }, realIp, realIpHelp);
-      if (!realIpAvailable()) {
-        realIp.input.disabled = true;
-        realIpBlock.append(h('p', { class: 'field-hint' }, t('realIp.dockerShort')));
-      }
-
       const ppv = select([
         { value: '', label: t('tunnels.fields.ppOff') },
         { value: 'v1', label: 'v1' },
@@ -346,24 +277,12 @@ function editProxy(existing) {
       const encryption = switchRow({ label: t('tunnels.fields.encryption'), description: t('tunnels.fields.encryptionHint'), checked: draft.encryption });
       const compression = switchRow({ label: t('tunnels.fields.compression'), description: t('tunnels.fields.compressionHint'), checked: draft.compression });
 
-      async function installMm() {
-        try {
-          const d = await post('/api/mmproxy/install');
-          toastResult(d, t('realIp.installed'));
-          if (d.log && d.log.length) console.info(`go-mmproxy install :\n${d.log.join('\n')}`);
-          await loadMm();
-          if (S.mm.installed) { realIpHelp.hidden = true; realIp.input.checked = true; sync(); }
-        } catch (e) { toastError(e); }
-      }
-
       function sync() {
         const tp = type.value;
         typeHint.textContent = t(`tunnels.types.${tp}`);
         remoteField.hidden = !hasRemotePort(tp);
         domainsField.hidden = !hasDomains(tp);
         secretField.hidden = !hasSecret(tp);
-        realIpBlock.hidden = !supportsRealIp(tp);
-        ppField.hidden = supportsRealIp(tp) && realIp.input.checked;
       }
       sync();
 
@@ -376,15 +295,12 @@ function editProxy(existing) {
           localPort: localPort.value.trim(),
           remotePort: remotePort.value.trim(),
         };
-        const useRealIp = supportsRealIp(tp) && realIp.input.checked;
-        if (useRealIp && values.localIP === 'localhost') values.localIP = '127.0.0.1';
 
         let ok = true;
         const check = (ctrl, msg) => { setFieldError(ctrl, msg); if (msg) ok = false; };
         check(name, !values.name ? t('validation.required')
           : S.proxies.some((p) => p.uid !== draft.uid && p.name === values.name) ? t('validation.nameTaken') : '');
-        check(localIP, !values.localIP ? t('validation.required')
-          : useRealIp && !/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(values.localIP) ? t('realIp.loopbackOnly') : '');
+        check(localIP, !values.localIP ? t('validation.required') : '');
         check(localPort, !validPort(values.localPort) ? t('validation.port') : '');
         check(remotePort, hasRemotePort(tp) && values.remotePort && !validPort(values.remotePort) ? t('validation.port') : '');
         if (!ok) { draftDialogFocusError(); return; }
@@ -393,10 +309,9 @@ function editProxy(existing) {
           type: tp,
           domains: domains.value.trim(),
           secretKey: secret.input.value,
-          proxyProtocol: useRealIp ? '' : ppv.value,
+          proxyProtocol: ppv.value,
           encryption: encryption.input.checked,
           compression: compression.input.checked,
-          realIp: useRealIp,
         });
         if (existing) S.proxies = S.proxies.map((p) => (p.uid === draft.uid ? draft : p));
         else S.proxies = [...S.proxies, draft];
@@ -420,9 +335,9 @@ function editProxy(existing) {
           h('fieldset', { class: 'fieldset' },
             h('legend', { class: 'fieldset-title' }, t('tunnels.fields.publicAccess')),
             remoteField, domainsField, secretField),
-          h('details', { class: 'fieldset disclosure-inline', open: draft.realIp || draft.encryption || draft.compression || !!draft.proxyProtocol || null },
+          h('details', { class: 'fieldset disclosure-inline', open: draft.encryption || draft.compression || !!draft.proxyProtocol || null },
             h('summary', null, icon('chevron-down'), t('tunnels.fields.options')),
-            h('div', { class: 'form-stack', style: { paddingTop: '12px' } }, realIpBlock, ppField, encryption, compression)),
+            h('div', { class: 'form-stack', style: { paddingTop: '12px' } }, ppField, encryption, compression)),
           draft.extras.length ? h('p', { class: 'field-hint' }, t('tunnels.extrasKept', { keys: draft.extras.map(([k]) => k).join(', ') })) : null)],
         foot: [
           button(t('common.cancel'), { onClick: () => close(false) }),
@@ -498,35 +413,18 @@ function editVisitor(existing) {
 // ── Enregistrement ─────────────────────────────────────────────────────────
 
 async function save(restart) {
-  const realIpTunnels = S.proxies
-    .filter((p) => supportsRealIp(p.type) && p.realIp)
-    .map((p) => ({ name: p.name, target_ip: p.localIP || '127.0.0.1', target_port: +p.localPort, proto: p.type }));
-  if (realIpTunnels.length && !realIpAvailable()) { toast(t('realIp.dockerShort'), 'error'); return; }
-
   try {
-    // 1. Relais go-mmproxy (appelé aussi sans tunnel pour nettoyer les anciens)
-    let relayPorts = {};
-    if (realIpAvailable()) {
-      try {
-        const d = await post('/api/mmproxy/sync', { iid: S.iid, tunnels: realIpTunnels });
-        if (!d.ok) { toast(d.msg || t('realIp.syncError'), 'error'); return; }
-        relayPorts = d.ports || {};
-      } catch (e) {
-        if (realIpTunnels.length) throw e;
-      }
-    }
-
-    // 2. Config frpc : on relit la partie connexion au dernier moment
+    // Config frpc : on relit la partie connexion au dernier moment
     const current = await api(`/api/config/${encodeURIComponent(S.iid)}`).catch(() => null);
     const base = current && current.ok ? current.content || '' : S.baseText;
-    const content = composeClientConfig(base, S.proxies, S.visitors, relayPorts);
+    const content = composeClientConfig(base, S.proxies, S.visitors);
     const d = await post(`/api/config/${encodeURIComponent(S.iid)}`, { content });
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
     S.baseText = content;
     S.snapshot = snapshotOf();
     toast(t('tunnels.saved'), 'success');
 
-    // 3. Redémarrage (la réponse peut ne jamais arriver si le panel passe par ce tunnel)
+    // Redémarrage (la réponse peut ne jamais arriver si le panel passe par ce tunnel)
     if (restart) {
       toast(t('tunnels.restarting', { name: displayName(S.iid) }), 'info');
       post(`/api/service/${encodeURIComponent(S.iid)}/restart`).catch(() => {});

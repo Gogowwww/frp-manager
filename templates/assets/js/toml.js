@@ -173,7 +173,6 @@ export const VISITOR_TYPES = ['stcp', 'xtcp'];
 export const hasRemotePort = (type) => type === 'tcp' || type === 'udp';
 export const hasDomains = (type) => type === 'http' || type === 'https';
 export const hasSecret = (type) => type === 'stcp' || type === 'xtcp';
-export const supportsRealIp = (type) => type === 'tcp' || type === 'udp';
 
 const PROXY_KEYS = new Set([
   'name', 'type', 'localIP', 'localPort', 'remotePort', 'customDomains', 'secretKey',
@@ -188,22 +187,20 @@ function extrasOf(block, known) {
   return block.order.filter((k) => !known.has(k)).map((k) => [k, block.raw[k]]);
 }
 
-/** mm = relais go-mmproxy existant pour ce tunnel (affiche la vraie cible). */
-export function proxyFromBlock(block, mm) {
+export function proxyFromBlock(block) {
   const v = block.values;
   return {
     uid: uid(),
     name: v.name || '',
     type: PROXY_TYPES.includes(v.type) ? v.type : (v.type || 'tcp'),
-    localIP: mm ? mm.target_ip : (v.localIP || '127.0.0.1'),
-    localPort: String(mm ? mm.target_port : (v.localPort || '')),
+    localIP: v.localIP || '127.0.0.1',
+    localPort: String(v.localPort || ''),
     remotePort: v.remotePort || '',
     domains: (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', '),
     secretKey: v.secretKey || '',
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',
     compression: v['transport.useCompression'] === 'true',
     encryption: v['transport.useEncryption'] === 'true',
-    realIp: !!mm,
     extras: extrasOf(block, PROXY_KEYS),
   };
 }
@@ -211,7 +208,7 @@ export function proxyFromBlock(block, mm) {
 export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',
-    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, realIp: false, extras: [],
+    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [],
   };
 }
 
@@ -233,18 +230,10 @@ export function newVisitor() {
   return { uid: uid(), name: '', type: 'stcp', serverName: '', secretKey: '', bindAddr: '127.0.0.1', bindPort: '', extras: [] };
 }
 
-/** relayPorts = { nomTunnel: portRelais } renvoyé par /api/mmproxy/sync. */
-export function generateProxy(p, relayPorts = {}) {
+export function generateProxy(p) {
   const L = ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
-  const relay = supportsRealIp(p.type) && p.realIp && relayPorts[p.name];
-  if (relay) {
-    // frpc pointe vers le relais go-mmproxy, qui transmet au vrai service
-    L.push('localIP = "127.0.0.1"');
-    L.push(`localPort = ${relay} # relais go-mmproxy vers ${p.localIP || '127.0.0.1'}:${p.localPort}`);
-  } else {
-    if (p.localIP) L.push(`localIP = ${str(p.localIP)}`);
-    if (p.localPort) L.push(`localPort = ${p.localPort}`);
-  }
+  if (p.localIP) L.push(`localIP = ${str(p.localIP)}`);
+  if (p.localPort) L.push(`localPort = ${p.localPort}`);
   if (hasRemotePort(p.type) && p.remotePort) L.push(`remotePort = ${p.remotePort}`);
   if (hasDomains(p.type) && p.domains) {
     const list = p.domains.split(',').map((s) => s.trim()).filter(Boolean);
@@ -253,8 +242,7 @@ export function generateProxy(p, relayPorts = {}) {
   if (hasSecret(p.type) && p.secretKey) L.push(`secretKey = ${str(p.secretKey)}`);
   if (p.compression) L.push('transport.useCompression = true');
   if (p.encryption) L.push('transport.useEncryption = true');
-  if (relay) L.push('transport.proxyProtocolVersion = "v2"');
-  else if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
+  if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
   for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   return L.join('\n');
 }
@@ -270,9 +258,9 @@ export function generateVisitor(v) {
 }
 
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */
-export function composeClientConfig(baseText, proxies, visitors, relayPorts) {
+export function composeClientConfig(baseText, proxies, visitors) {
   const blocks = [
-    ...proxies.map((p) => generateProxy(p, relayPorts)),
+    ...proxies.map((p) => generateProxy(p)),
     ...visitors.filter((v) => v.name).map(generateVisitor),
   ];
   const base = stripBlocks(baseText);

@@ -139,7 +139,6 @@ export default {
     local: 'Service local',
     unnamed: 'sans nom',
     flags: {
-      realIp: 'IP réelle',
       proxyProtocol: 'PROXY {v}',
       encrypted: 'Chiffré',
       compressed: 'Compressé',
@@ -215,29 +214,6 @@ export default {
       bindPort: 'Port local',
       bindHint: 'Connectez-vous à cette adresse sur cette machine pour atteindre le service partagé.',
     },
-  },
-
-  realIp: {
-    label: 'Transmettre l’IP réelle des visiteurs',
-    hint: 'Le service voit l’adresse de chaque visiteur au lieu de 127.0.0.1, sans rien configurer de son côté. Utilise go-mmproxy.',
-    install: 'Installer go-mmproxy',
-    installed: 'go-mmproxy installé',
-    notInstalledTitle: 'go-mmproxy n’est pas installé',
-    notInstalledText: 'Cette option en a besoin. L’installation prend quelques secondes.',
-    dockerTitle: 'Option « IP réelle » indisponible',
-    dockerText: 'Le conteneur frpc doit utiliser le réseau « host » (actuellement : {mode}). Recréez-le avec network_mode: host, ou utilisez frpc en service systemd.',
-    dockerShort: 'Indisponible : le conteneur frpc doit être en network_mode: host.',
-    inactiveTitle: 'Transmission de l’IP réelle interrompue',
-    inactiveText: 'Un relais go-mmproxy ou ses règles de routage ne tournent pas. Enregistrez les tunnels pour les relancer.',
-    loopbackOnly: 'Avec l’IP réelle, le service doit tourner sur cette machine (adresse 127.x.x.x).',
-    relayTitle: 'Relais go-mmproxy sur le port {port}',
-    routesOn: 'actif',
-    routesOff: 'inactif',
-    status: {
-      one: 'IP réelle : go-mmproxy{version} installé, routage {routes}, {count} relais.',
-      other: 'IP réelle : go-mmproxy{version} installé, routage {routes}, {count} relais.',
-    },
-    syncError: 'Impossible de configurer les relais go-mmproxy.',
   },
 
   validation: {

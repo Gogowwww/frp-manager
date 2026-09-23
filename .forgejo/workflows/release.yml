@@ -12,8 +12,7 @@
 #   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
 #
-# Fichiers joints : frp-manager.zip, go-mmproxy_linux_{amd64,arm64,arm}.tar.gz
-# (noms attendus par install.sh, le README et l'installation go-mmproxy du panel).
+# Fichier joint : frp-manager.zip (nom attendu par le README et l'auto-update du panel).
 #
 # Prérequis :
 #   - runner Forgejo avec le label « docker » et container.valid_volumes: [/var/run/docker.sock]
@@ -51,7 +50,7 @@ jobs:
           VERSION="${TAG#v}"
           [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
 
-          rm -rf src dist mm
+          rm -rf src dist
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
           git -C src checkout --quiet "$TAG"
@@ -74,7 +73,7 @@ jobs:
           set -eu
           mkdir -p dist/frp-manager
           cd src
-          cp -r app.py frp-autoupdate.py install.sh requirements.txt templates mmproxy-patch \
+          cp -r app.py frp-autoupdate.py install.sh requirements.txt templates \
                 README.md LICENSE docker-compose.yml ../dist/frp-manager/
           cd ../dist
           # Version affichée par les installations via install.sh (hors Docker)
@@ -82,35 +81,6 @@ jobs:
           grep -q "_PANEL_VERSION_FALLBACK = \"$VERSION\"" frp-manager/app.py
           zip -qr frp-manager.zip frp-manager
           ls -l frp-manager.zip
-
-      - name: Binaires go-mmproxy (patch UDP)
-        run: |
-          set -eu
-          # Compilation dans un conteneur golang via le démon de l'hôte ; le binaire
-          # est ensuite récupéré par docker cp (pas de montage de chemin).
-          cat > /tmp/Dockerfile.mmproxy <<'EOF'
-          FROM golang:1.22-bookworm AS build
-          COPY mmproxy-patch/ /mmproxy-patch/
-          ARG GOARCH
-          ARG GOARM=
-          RUN GOOS=linux GOARCH=$GOARCH GOARM=$GOARM sh /mmproxy-patch/build.sh /out/go-mmproxy
-          FROM scratch
-          COPY --from=build /out/go-mmproxy /go-mmproxy
-          EOF
-          for spec in amd64: arm64: arm:7; do
-            ARCH="${spec%%:*}"; ARM="${spec#*:}"
-            IMG="frp-manager-mmproxy-build:$ARCH"
-            docker build --quiet --network=host -f /tmp/Dockerfile.mmproxy \
-              --build-arg GOARCH="$ARCH" --build-arg GOARM="$ARM" -t "$IMG" src >/dev/null
-            CID=$(docker create "$IMG" /go-mmproxy)
-            mkdir -p "mm/$ARCH"
-            docker cp "$CID:/go-mmproxy" "mm/$ARCH/go-mmproxy"
-            docker rm "$CID" >/dev/null
-            docker rmi "$IMG" >/dev/null
-            chmod 755 "mm/$ARCH/go-mmproxy"
-            tar -czf "dist/go-mmproxy_linux_$ARCH.tar.gz" -C "mm/$ARCH" go-mmproxy
-          done
-          ls -l dist/*.tar.gz
 
       - name: Image Docker
         run: |
@@ -152,7 +122,7 @@ jobs:
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)
-          for f in dist/frp-manager.zip dist/go-mmproxy_linux_*.tar.gz; do
+          for f in dist/frp-manager.zip; do
             NAME=$(basename "$f")
             case "$NAME" in *.zip) TYPE=application/zip ;; *) TYPE=application/gzip ;; esac
             curl -sf -X POST -H "Authorization: token $GH_TOKEN" -H "Content-Type: $TYPE" \
