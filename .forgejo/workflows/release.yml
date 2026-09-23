@@ -129,16 +129,8 @@ jobs:
           echo "EXTRA_TAG=$EXTRA" >> "$GITHUB_ENV"
 
       # ── Publication : tout est construit, on pousse ────────────────────────
-      - name: Pousser l'image
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          set -eu
-          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          docker push --quiet "$IMAGE:$VERSION"
-          docker push --quiet "$IMAGE:$EXTRA_TAG"
-
+      # Le code d'abord : s'il est refusé (protection e-mail, avance rapide…),
+      # rien n'est publié. En cas d'échec plus loin, relancer le job est sans risque.
       - name: Pousser le code sur GitHub
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -151,6 +143,16 @@ jobs:
           else
             git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main" "refs/tags/$TAG"
           fi
+
+      - name: Pousser l'image
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -eu
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          docker push --quiet "$IMAGE:$VERSION"
+          docker push --quiet "$IMAGE:$EXTRA_TAG"
 
       - name: Créer la release GitHub
         env:
