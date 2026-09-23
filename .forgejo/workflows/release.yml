@@ -14,7 +14,7 @@
 #
 # Prérequis :
 #   - runner Forgejo avec le label « docker » et container.valid_volumes: [/var/run/docker.sock]
-#   - secret de dépôt GH_TOKEN : token GitHub *classic*, scopes « repo » et « write:packages »
+#   - secret de dépôt GHCR_TOKEN : token GitHub *classic*, scopes « repo » et « write:packages »
 
 name: Release
 
@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Préparer
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           apk add --no-cache --quiet git zip curl jq
@@ -47,7 +47,7 @@ jobs:
             || { echo "Tag invalide : $TAG (attendu vX.Y.Z ou vX.Y.Z-dev.N)"; exit 1; }
           VERSION="${TAG#v}"
           case "$VERSION" in *-*) PRERELEASE=true ;; *) PRERELEASE=false ;; esac
-          [ -n "$GH_TOKEN" ] || { echo "Secret GH_TOKEN manquant"; exit 1; }
+          [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
 
           # Historique complet : nécessaire pour vérifier l'avance rapide du main public
           rm -rf src dist
@@ -133,7 +133,7 @@ jobs:
       # rien n'est publié. En cas d'échec plus loin, relancer le job est sans risque.
       - name: Pousser le code sur GitHub
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
@@ -146,7 +146,7 @@ jobs:
 
       - name: Pousser l'image
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
@@ -156,7 +156,7 @@ jobs:
 
       - name: Créer la release GitHub
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           API="https://api.github.com/repos/$GH_REPO"
