@@ -135,7 +135,10 @@ def get_ssl_context():
         return None
 
 # ── Flask ─────────────────────────────────────────────────────────────────────
-app = Flask(__name__)
+# Les assets (CSS/JS/traductions) vivent dans templates/assets/ : l'auto-update
+# du panel recopie déjà tout le dossier templates/, y compris depuis les
+# anciennes versions qui ne connaissent pas de dossier static/.
+app = Flask(__name__, static_folder="templates/assets", static_url_path="/assets")
 app.secret_key = MGR_CFG.get("secret_key") or secrets.token_hex(32)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
