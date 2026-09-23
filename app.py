@@ -499,6 +499,11 @@ class LiveLog:
             for line in lines:
                 yield line.rstrip("\r")
 
+def _docker_container_running(container):
+    """Le container tourne-t-il ? (False s'il est introuvable ou Docker injoignable)"""
+    status, data = _docker_api("GET", f"/containers/{container}/json")
+    return bool(status == 200 and isinstance(data, dict) and (data.get("State") or {}).get("Running"))
+
 def _resolve_container(container):
     """Nom du container, ou son id court s'il n'est pas trouvé sous ce nom."""
     status, _ = _docker_api("GET", f"/containers/{container}/json")
@@ -668,9 +673,17 @@ def detect_frp(force=False):
         if not force and _detect_cache and (now - _detect_cache_time) < DETECT_CACHE_TTL:
             result = {}
             for iid, inst in _detect_cache.items():
-                exists = Path(inst["binary_path"]).exists()
-                st = service_status(inst["service"]) if exists else {
-                    "active": "not-installed", "enabled": False, "running": False}
+                if inst.get("source") == "docker":
+                    # Un container n'a pas de binaire sur le disque (binary_path
+                    # vaut « docker:<nom> ») : son état vient de Docker. L'ancien
+                    # test de fichier le donnait « not-installed » entre deux
+                    # détections complètes, d'où un état qui clignotait.
+                    running = _docker_container_running(inst["container_name"])
+                    st = {"active": "active" if running else "inactive", "enabled": False, "running": running}
+                else:
+                    exists = Path(inst["binary_path"]).exists()
+                    st = service_status(inst["service"]) if exists else {
+                        "active": "not-installed", "enabled": False, "running": False}
                 result[iid] = {**inst, "status": st}
             return result
 
