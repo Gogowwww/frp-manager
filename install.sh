@@ -72,8 +72,8 @@ cp "$SCRIPT_DIR/app.py"            "$INSTALL_DIR/app.py"
 cp "$SCRIPT_DIR/frp-autoupdate.py" "$INSTALL_DIR/frp-autoupdate.py"
 chmod +x "$INSTALL_DIR/frp-autoupdate.py"
 
-cp "$SCRIPT_DIR/templates/index.html" "$INSTALL_DIR/templates/index.html"
-cp "$SCRIPT_DIR/templates/login.html" "$INSTALL_DIR/templates/login.html"
+rm -rf "$INSTALL_DIR/templates"
+cp -r "$SCRIPT_DIR/templates" "$INSTALL_DIR/templates"
 
 # Patch go-mmproxy (option IP réelle, dont UDP par session)
 if [[ -d "$SCRIPT_DIR/mmproxy-patch" ]]; then
