@@ -423,9 +423,10 @@ class LiveLog:
     close() peut être appelé depuis un autre thread : il arrête le processus
     lu / coupe la connexion Docker, ce qui termine lines()."""
 
-    def __init__(self, inst, source="journal"):
+    def __init__(self, inst, source="journal", history=50):
         self.inst = inst
         self.source = "file" if source == "file" else "journal"
+        self.history = history   # lignes déjà écrites à renvoyer d'abord (0 à la reconnexion)
         self._proc = None
         self._conn = None
 
@@ -451,10 +452,10 @@ class LiveLog:
                     yield "[frp-manager] aucun fichier de log connu pour cette instance"
                     return
                 # -F : suit le fichier même après une rotation des logs
-                yield from self._command_lines(["tail", "-n50", "-F", str(path)])
+                yield from self._command_lines(["tail", f"-n{self.history}", "-F", str(path)])
             else:
                 yield from self._command_lines(["journalctl", "-u", self.inst.get("service", ""),
-                                                "-f", "-n50", "--no-pager", "-o", "short-iso"])
+                                                "-f", f"-n{self.history}", "--no-pager", "-o", "short-iso"])
         except Exception:
             pass
         finally:
@@ -477,7 +478,7 @@ class LiveLog:
             return
         self._conn = _UnixHTTPConn(str(_DOCKER_SOCK))
         self._conn.request("GET",
-            f"/v1.41/containers/{container}/logs?stdout=1&stderr=1&follow=1&tail=50")
+            f"/v1.41/containers/{container}/logs?stdout=1&stderr=1&follow=1&tail={self.history}")
         resp = self._conn.getresponse()
         if resp.status != 200:
             yield f"[frp-manager] logs Docker indisponibles (HTTP {resp.status})"
@@ -1040,6 +1041,33 @@ def api_logs(iid):
                              "-n200", "--no-pager", "-o", "short-iso"])
     return jsonify({"ok": True, "content": out if ok else err})
 
+# Un reverse proxy coupe une connexion qu'il juge inactive (nginx : 60 s par
+# défaut) : sans nouvelle ligne ni changement d'état, on envoie un petit message
+# applicatif — le ping WebSocket de bas niveau n'est pas compté par tous.
+KEEPALIVE_SECONDS  = 20
+WS_KEEPALIVE_LOGS  = "\x00"                  # ignoré par l'interface
+WS_KEEPALIVE_STATE = '{"keepalive": true}'
+
+def _live_log_from_request(inst):
+    try:
+        history = max(0, min(200, int(request.args.get("history", 50))))
+    except (TypeError, ValueError):
+        history = 50
+    return LiveLog(inst, request.args.get("source", "journal"), history)
+
+def _pump(live):
+    """Lit le journal dans un thread : le consommateur peut attendre avec un délai
+    (maintien de connexion, détection de la fermeture) même si rien n'arrive."""
+    q = queue.Queue()
+    def run():
+        try:
+            for line in live.lines():
+                q.put(line)
+        finally:
+            q.put(None)
+    threading.Thread(target=run, daemon=True).start()
+    return q
+
 @app.route("/api/logs/stream/<iid>")
 @login_required
 def api_logs_stream(iid):
@@ -1048,10 +1076,18 @@ def api_logs_stream(iid):
     inst = INSTANCES.get(iid)
     if not inst:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
-    live = LiveLog(inst, request.args.get("source", "journal"))
+    live = _live_log_from_request(inst)
+    lines = _pump(live)
     def generate():
         try:
-            for line in live.lines():
+            while True:
+                try:
+                    line = lines.get(timeout=KEEPALIVE_SECONDS)
+                except queue.Empty:
+                    yield ": keepalive\n\n"          # commentaire SSE, ignoré par le navigateur
+                    continue
+                if line is None:
+                    break
                 yield f"data: {line}\n\n"
         finally:
             live.close()
@@ -1072,7 +1108,7 @@ if sock:
         Remplace l'appel périodique de /api/status par l'interface."""
         if not _ws_authenticated(ws):
             return
-        last = None
+        last, last_sent = None, time.time()
         try:
             while ws.connected:
                 try:
@@ -1082,7 +1118,10 @@ if sock:
                     payload = None
                 if payload and payload != last:
                     ws.send(payload)
-                    last = payload
+                    last, last_sent = payload, time.time()
+                elif time.time() - last_sent >= KEEPALIVE_SECONDS:
+                    ws.send(WS_KEEPALIVE_STATE)
+                    last_sent = time.time()
                 with _status_changed:
                     _status_changed.wait(timeout=2)
         except Exception:
@@ -1098,17 +1137,9 @@ if sock:
         if not inst:
             ws.close(reason=1008, message="Instance inconnue")
             return
-        live = LiveLog(inst, request.args.get("source", "journal"))
-        lines = queue.Queue()
-
-        def pump():
-            try:
-                for line in live.lines():
-                    lines.put(line)
-            finally:
-                lines.put(None)
-        threading.Thread(target=pump, daemon=True).start()
-
+        live = _live_log_from_request(inst)
+        lines = _pump(live)
+        last_sent = time.time()
         try:
             # Attente avec délai : on s'aperçoit de la fermeture de l'onglet
             # même quand le journal reste silencieux.
@@ -1116,10 +1147,14 @@ if sock:
                 try:
                     line = lines.get(timeout=1)
                 except queue.Empty:
+                    if time.time() - last_sent >= KEEPALIVE_SECONDS:
+                        ws.send(WS_KEEPALIVE_LOGS)
+                        last_sent = time.time()
                     continue
                 if line is None:
                     break
                 ws.send(line)
+                last_sent = time.time()
         except Exception:
             pass
         finally:

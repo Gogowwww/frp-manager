@@ -71,8 +71,10 @@ export async function detect() {
 // retente la connexion avec un délai croissant.
 
 const POLL_MS = 12000;
+const MAX_FAILED_OPENINGS = 3;   // proxy qui refuse le WebSocket : on n'insiste pas
 let statusSocket = null;
 let statusRetries = 0;
+let failedOpenings = 0;
 let pollTimer = null;
 
 const statusLive = () => !!statusSocket && statusSocket.readyState === WebSocket.OPEN;
@@ -93,11 +95,12 @@ export function connectStatus() {
   if (!('WebSocket' in window)) { startPolling(); return; }
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${scheme}://${location.host}/ws/status`);
+  let opened = false;
   statusSocket = ws;
-  ws.onopen = () => { statusRetries = 0; stopPolling(); };
+  ws.onopen = () => { opened = true; statusRetries = 0; failedOpenings = 0; stopPolling(); };
   ws.onmessage = (e) => {
     try {
-      const d = JSON.parse(e.data);
+      const d = JSON.parse(e.data);   // {"keepalive": true} : maintien de connexion, rien à faire
       if (d.instances) store.set({ instances: d.instances });
     } catch { /* message illisible : ignoré */ }
   };
@@ -105,8 +108,14 @@ export function connectStatus() {
     if (statusSocket !== ws) return;
     statusSocket = null;
     startPolling();
+    if (!opened) {
+      // Jamais ouvert : le reverse proxy ne laisse sans doute pas passer le
+      // WebSocket. Après quelques essais, on reste sur la vérification périodique.
+      failedOpenings += 1;
+      if (failedOpenings >= MAX_FAILED_OPENINGS) return;
+    }
     statusRetries += 1;
-    setTimeout(connectStatus, Math.min(30000, 2000 * statusRetries));
+    setTimeout(connectStatus, Math.min(30000, 1000 * 2 ** (statusRetries - 1)));
   };
 }
 

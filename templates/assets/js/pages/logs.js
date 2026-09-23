@@ -117,53 +117,82 @@ async function load() {
   out.scrollTop = out.scrollHeight;
 }
 
+const KEEPALIVE = '\u0000';        // message de maintien de connexion du serveur
+const MAX_RECONNECTS = 5;
+
 function appendLive(text) {
   const out = S.els.out;
-  if (!out) return;
+  if (!out || text === KEEPALIVE) return;
   const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 24;
   out.append(lineEl(text));
   while (out.children.length > MAX_LINES) out.firstChild.remove();
   if (stick) out.scrollTop = out.scrollHeight;
 }
 
-/** Source du direct : journal systemd ou fichier (les conteneurs n'ont que leurs logs Docker). */
-function liveQuery() {
+/** Source du direct (journal systemd ou fichier ; logs Docker pour un conteneur).
+ *  history = lignes déjà écrites à renvoyer : 50 au départ, 0 à la reconnexion. */
+function liveQuery(history) {
   const src = isDocker(store.instances[S.iid]) ? 'docker' : S.source;
-  return `?source=${encodeURIComponent(src)}`;
+  return `?source=${encodeURIComponent(src)}&history=${history}`;
 }
 
-/** WebSocket (wss:// en HTTPS) ; s'il ne s'ouvre pas, repli sur le flux SSE. */
-function openWebSocket(iid, query) {
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${scheme}://${location.host}/ws/logs/${encodeURIComponent(iid)}${query}`);
-  let opened = false;
-  const live = { close: () => ws.close(), transport: 'websocket' };
-  ws.onopen = () => { opened = true; };
-  ws.onmessage = (e) => appendLive(e.data);
-  ws.onclose = () => {
-    if (S.live !== live) return;               // arrêt demandé par l'utilisateur
-    if (!opened) { S.live = openEventSource(iid, query); return; }
-    stopLive();
-    toast(t('logs.liveEnded'), 'info');
-  };
-  return live;
-}
+/**
+ * Direct robuste derrière un reverse proxy : WebSocket (wss:// en HTTPS), repli
+ * sur SSE s'il ne s'ouvre jamais, reconnexion silencieuse si la connexion tombe
+ * (sans renvoyer les lignes déjà affichées), abandon après quelques échecs.
+ */
+function createLive(iid) {
+  const live = { stopped: false, transport: 'WebSocket' in window ? 'websocket' : 'sse', conn: null, failures: 0 };
 
-function openEventSource(iid, query) {
-  const es = new EventSource(`/api/logs/stream/${encodeURIComponent(iid)}${query}`);
-  const live = { close: () => es.close(), transport: 'sse' };
-  es.onmessage = (e) => appendLive(e.data);
-  es.onerror = () => {
-    if (S.live === live && es.readyState === EventSource.CLOSED) stopLive();
+  const retry = () => {
+    if (live.stopped || S.live !== live) return;
+    live.failures += 1;
+    if (live.failures > MAX_RECONNECTS) { stopLive(); toast(t('logs.liveEnded'), 'info'); return; }
+    // Déjà connecté une fois : les lignes précédentes sont affichées, on ne les redemande pas
+    setTimeout(() => connect(live.everOpened ? 0 : 50), Math.min(8000, 500 * 2 ** live.failures));
   };
+
+  const connect = (history) => {
+    if (live.stopped) return;
+    const query = liveQuery(history);
+    if (live.transport === 'websocket') {
+      const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${scheme}://${location.host}/ws/logs/${encodeURIComponent(iid)}${query}`);
+      let opened = false;
+      live.conn = ws;
+      ws.onopen = () => { opened = true; live.failures = 0; live.everOpened = true; };
+      ws.onmessage = (e) => appendLive(e.data);
+      ws.onclose = () => {
+        if (live.stopped || live.conn !== ws) return;
+        // Jamais ouvert dès le départ : le proxy bloque le WebSocket → SSE
+        if (!opened && !live.everOpened) { live.transport = 'sse'; connect(history); return; }
+        retry();
+      };
+    } else {
+      const es = new EventSource(`/api/logs/stream/${encodeURIComponent(iid)}${query}`);
+      live.conn = es;
+      es.onopen = () => { live.failures = 0; live.everOpened = true; };
+      es.onmessage = (e) => appendLive(e.data);
+      es.onerror = () => {
+        if (live.stopped || live.conn !== es) return;
+        // EventSource se reconnecterait seul avec la même URL et renverrait
+        // l'historique : on reprend la main pour repartir sans doublons.
+        es.close();
+        retry();
+      };
+    }
+  };
+
+  live.close = () => { live.stopped = true; if (live.conn) live.conn.close(); };
+  live.start = () => connect(50);
   return live;
 }
 
 function startLive() {
   loadSeq += 1;   // un chargement encore en cours n'écrasera pas le direct
   S.els.out.replaceChildren();
-  const query = liveQuery();
-  S.live = 'WebSocket' in window ? openWebSocket(S.iid, query) : openEventSource(S.iid, query);
+  S.live = createLive(S.iid);
+  S.live.start();
   S.els.livePill.hidden = false;
   S.els.liveBtn.replaceChildren(icon('stop'), t('logs.stopLive'));
 }
