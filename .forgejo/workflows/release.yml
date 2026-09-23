@@ -4,7 +4,7 @@
 #
 # Toute release sort d'abord en pré-release, pour la tester avant de la déployer :
 #   - pré-release GitHub (le bouton « Mettre à jour » du panel ne la voit pas) ;
-#   - image :X.Y.Z (+ :dev pour un tag vX.Y.Z-quelquechose) ; :latest ne bouge pas ;
+#   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
 # Une fois testée : Actions → « Promouvoir une release » (promote.yml) la rend
 # définitive : release normale, :latest, main public avancé.
@@ -112,11 +112,9 @@ jobs:
       - name: Image Docker
         run: |
           set -eu
-          # :latest n'est posé qu'à la promotion ; un tag vX.Y.Z-… met aussi à jour :dev
-          case "$VERSION" in *-*) EXTRA="$IMAGE:dev" ;; *) EXTRA="" ;; esac
+          # :dev suit la dernière pré-release ; :latest n'est posé qu'à la promotion
           docker build --network=host --pull --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:$VERSION" ${EXTRA:+-t "$EXTRA"} src
-          echo "EXTRA_TAG=$EXTRA" >> "$GITHUB_ENV"
+            -t "$IMAGE:$VERSION" -t "$IMAGE:dev" src
 
       # ── Publication : tout est construit, on pousse ────────────────────────
       # Le tag d'abord : s'il est refusé (protection e-mail…), rien n'est publié.
@@ -139,7 +137,7 @@ jobs:
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           docker push --quiet "$IMAGE:$VERSION"
-          if [ -n "$EXTRA_TAG" ]; then docker push --quiet "$EXTRA_TAG"; fi
+          docker push --quiet "$IMAGE:dev"
 
       - name: Créer la pré-release GitHub
         env:

@@ -1,13 +1,14 @@
 # Forgejo Actions (dépôt de dev sur le homelab) : chaque push sur main
-# construit ghcr.io/gogowwww/frp-manager:dev (+ :dev-<sha>). Jamais :latest,
-# qui reste réservé aux releases stables (.forgejo/workflows/release.yml).
+# construit un instantané ghcr.io/gogowwww/frp-manager:dev-<sha>.
+# Ni :dev (= dernière pré-release) ni :latest (= dernière release) : ceux-là
+# sont posés par release.yml et promote.yml.
 #
 # Prérequis :
 #   - un forgejo-runner avec le label « docker », dont le config.yml contient :
 #       container:
 #         valid_volumes:
 #           - /var/run/docker.sock
-#   - un secret de dépôt GHCR_TOKEN : token GitHub *classic* (repo + write:packages), partagé avec release.yml (scopes repo + write:packages).
+#   - un secret de dépôt GHCR_TOKEN : token GitHub *classic* (repo + write:packages), partagé avec release.yml.
 
 name: Image Docker dev
 
@@ -50,7 +51,6 @@ jobs:
           # --network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
           docker build --network=host --pull \
             --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:dev" -t "$IMAGE:$VERSION" src
+            -t "$IMAGE:$VERSION" src
           docker push --quiet "$IMAGE:$VERSION"
-          docker push --quiet "$IMAGE:dev"
-          echo "OK : $IMAGE:dev = $VERSION"
+          echo "OK : $IMAGE:$VERSION"
