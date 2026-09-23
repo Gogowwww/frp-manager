@@ -1047,6 +1047,32 @@ def version_newer(candidate, current):
     a, b = _version_key(candidate), _version_key(current)
     return bool(a and b and a > b)
 
+_release_status_cache = {}   # version → (horodatage, True/False/None)
+
+def github_release_is_prerelease(version):
+    """Statut de la release GitHub v<version> : True/False, ou None si inconnu
+    (pas de release, GitHub injoignable). Mis en cache 10 minutes."""
+    now = time.time()
+    cached = _release_status_cache.get(version)
+    if cached and now - cached[0] < 600:
+        return cached[1]
+    status = None
+    try:
+        r = req.get(f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/tags/v{version}",
+                    timeout=8, headers={"Accept": "application/vnd.github.v3+json"})
+        if r.status_code == 200:
+            status = bool(r.json().get("prerelease"))
+    except Exception:
+        pass
+    _release_status_cache[version] = (now, status)
+    return status
+
+def panel_is_prerelease():
+    """Pré-release si le numéro l'indique (dev-<sha>, X.Y.Z-suffixe) ou si la release
+    GitHub de cette version est marquée pré-release. Après promotion en release
+    définitive, les mises à jour redeviennent possibles sans rien réinstaller."""
+    return is_prerelease_version(PANEL_VERSION) or github_release_is_prerelease(PANEL_VERSION) is True
+
 @app.route("/api/panel/version")
 @login_required
 def api_panel_version():
@@ -1054,7 +1080,7 @@ def api_panel_version():
     Une pré-release (Docker ou installation classique) ne propose jamais de mise à jour."""
     latest_ver, release_url = fetch_panel_latest()
     repo_configured = "VOTRE_USER" not in PANEL_GITHUB_REPO
-    prerelease = is_prerelease_version(PANEL_VERSION)
+    prerelease = panel_is_prerelease()
     update_available = bool(latest_ver and repo_configured and not prerelease
                             and version_newer(latest_ver, PANEL_VERSION))
     return jsonify({
@@ -1082,7 +1108,7 @@ def api_panel_update():
     """Télécharge la dernière release du panel et relance frp-manager."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
         return jsonify({"ok": False, "msg": "Repo GitHub du panel non configuré."})
-    if is_prerelease_version(PANEL_VERSION):
+    if panel_is_prerelease():
         return jsonify({"ok": False, "msg": "Version de pré-release : mise à jour automatique désactivée."})
     if not panel_update_lock.acquire(blocking=False):
         return jsonify({"ok": False, "msg": "Mise à jour du panel déjà en cours."})

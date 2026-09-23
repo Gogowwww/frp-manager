@@ -389,7 +389,7 @@ export default {
     releaseNotes: 'Notes de version',
     repoMissing: 'Dépôt non configuré',
     prerelease: 'Pré-release',
-    prereleaseText: 'Version de test : aucune mise à jour n’est proposée. Installez la prochaine version à la main.',
+    prereleaseText: 'Version de test : aucune mise à jour n’est proposée tant qu’elle n’est pas publiée en version définitive.',
   },
 
   settings: {

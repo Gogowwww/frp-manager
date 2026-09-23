@@ -1,20 +1,16 @@
-# Forgejo Actions : publication sur GitHub à partir d'un tag.
+# Forgejo Actions : publication d'une PRÉ-RELEASE sur GitHub à partir d'un tag.
 #
-# Numérotation (un chiffre de plus à chaque publication) :
-#   v0.1.1-pre.1, v0.1.1-pre.2, …   pré-releases successives de la 0.1.1
-#   v0.1.1                          release définitive (sur le commit de la dernière pré-release validée)
+# Numérotation : chaque pré-release prend le numéro suivant (v0.1.0, v0.1.1,
+# v0.1.2, …). Quand une pré-release est validée, promote.yml la rend définitive
+# telle quelle (pas de rebuild).
 #
-#   git tag -a v0.1.1-pre.1 -m "…" && git push origin v0.1.1-pre.1
+#   git tag -a v0.1.1 -m "…" && git push origin v0.1.1
 #
-# Pré-release (tag vX.Y.Z-suffixe) :
-#   - pré-release GitHub ; le panel installé ne propose jamais de mise à jour
-#     vers une pré-release, ni depuis une pré-release ;
-#   - image :X.Y.Z-suffixe + :dev (:dev = toujours la dernière pré-release) ;
+# Pré-release :
+#   - pré-release GitHub ; un panel installé en pré-release ne propose aucune
+#     mise à jour (il interroge GitHub sur le statut de sa propre version) ;
+#   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
-# Release (tag vX.Y.Z) :
-#   - release GitHub « latest » → proposée par le bouton « Mettre à jour » des panels ;
-#   - image :X.Y.Z + :latest ;
-#   - main public avancé jusqu'au tag (avance rapide uniquement).
 #
 # Fichiers joints : frp-manager.zip, go-mmproxy_linux_{amd64,arm64,arm}.tar.gz
 # (noms attendus par install.sh, le README et l'installation go-mmproxy du panel).
@@ -51,9 +47,8 @@ jobs:
 
           TAG="${{ github.ref_name }}"
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
-            || { echo "Tag invalide : $TAG (attendu vX.Y.Z ou vX.Y.Z-pre.N)"; exit 1; }
+            || { echo "Tag invalide : $TAG (attendu vX.Y.Z)"; exit 1; }
           VERSION="${TAG#v}"
-          case "$VERSION" in *-*) PRERELEASE=true; CHANNEL=dev ;; *) PRERELEASE=false; CHANNEL=latest ;; esac
           [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
 
           rm -rf src dist mm
@@ -67,22 +62,12 @@ jobs:
             "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG")
           [ "$CODE" = 404 ] || { echo "Une release $TAG existe déjà sur GitHub (HTTP $CODE)"; exit 1; }
 
-          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git -C src remote add public "https://github.com/$GH_REPO.git"
-          git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
-          if [ "$PRERELEASE" = false ] && ! git -C src merge-base --is-ancestor public/main "$SHA"; then
-            echo "Le main public a des commits absents de $TAG : publication impossible en avance rapide."
-            exit 1
-          fi
-
           {
             echo "TAG=$TAG"
             echo "VERSION=$VERSION"
-            echo "PRERELEASE=$PRERELEASE"
-            echo "CHANNEL=$CHANNEL"
             echo "SHA=$SHA"
           } >> "$GITHUB_ENV"
-          echo "$TAG ($SHA) — pré-release : $PRERELEASE, image :$CHANNEL"
+          echo "Pré-release $TAG ($SHA)"
 
       - name: Archive frp-manager.zip
         run: |
@@ -131,23 +116,20 @@ jobs:
         run: |
           set -eu
           docker build --network=host --pull --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:$CHANNEL" src
+            -t "$IMAGE:$VERSION" -t "$IMAGE:dev" src
 
       # ── Publication : tout est construit, on pousse ────────────────────────
-      # Le code d'abord : s'il est refusé (protection e-mail, avance rapide…),
-      # rien n'est publié. En cas d'échec plus loin, relancer le job est sans risque.
-      - name: Pousser le code sur GitHub
+      # Le tag d'abord : s'il est refusé (protection e-mail…), rien n'est publié.
+      # En cas d'échec plus loin, relancer le job est sans risque.
+      - name: Pousser le tag sur GitHub
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          if [ "$PRERELEASE" = true ]; then
-            # Pré-release : seulement le tag, le main public ne bouge pas
-            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "refs/tags/$TAG"
-          else
-            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main" "refs/tags/$TAG"
-          fi
+          git -C src remote add public "https://github.com/$GH_REPO.git" 2>/dev/null || true
+          # Seulement le tag : le main public n'avance qu'à la promotion
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "refs/tags/$TAG"
 
       - name: Pousser l'image
         env:
@@ -157,17 +139,16 @@ jobs:
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           docker push --quiet "$IMAGE:$VERSION"
-          docker push --quiet "$IMAGE:$CHANNEL"
+          docker push --quiet "$IMAGE:dev"
 
-      - name: Créer la release GitHub
+      - name: Créer la pré-release GitHub
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           API="https://api.github.com/repos/$GH_REPO"
-          if [ "$PRERELEASE" = true ]; then LATEST=false; else LATEST=true; fi
-          BODY=$(jq -n --arg tag "$TAG" --argjson pre "$PRERELEASE" --arg latest "$LATEST" \
-            '{tag_name: $tag, name: $tag, prerelease: $pre, make_latest: $latest, generate_release_notes: true}')
+          BODY=$(jq -n --arg tag "$TAG" \
+            '{tag_name: $tag, name: $tag, prerelease: true, make_latest: "false", generate_release_notes: true}')
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)
@@ -178,4 +159,4 @@ jobs:
               --data-binary "@$f" "https://uploads.github.com/repos/$GH_REPO/releases/$ID/assets?name=$NAME" >/dev/null
             echo "Joint : $NAME"
           done
-          echo "Publiée : $(echo "$REL" | jq -r .html_url)"
+          echo "Pré-release publiée : $(echo "$REL" | jq -r .html_url)"
