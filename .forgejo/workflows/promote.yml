@@ -1,0 +1,99 @@
+# Forgejo Actions : promotion d'une pré-release en release définitive.
+#
+# Lancement : Actions → « Promouvoir une release » → Run workflow (tag : v0.1.0),
+# ou via l'API Forgejo (POST …/actions/workflows/promote.yml/dispatches).
+#
+# Effets, dans cet ordre :
+#   1. main public avancé jusqu'au commit du tag (avance rapide uniquement) ;
+#   2. image :X.Y.Z re-taguée en :latest (même image, pas de rebuild) ;
+#   3. release GitHub passée de pré-release à release normale, marquée « latest »
+#      → visible par le bouton « Mettre à jour » des panels installés.
+#
+# Prérequis : pré-release créée par release.yml, secret GHCR_TOKEN (repo + write:packages).
+
+name: Promouvoir une release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag à promouvoir (ex. v0.1.0)"
+        required: true
+
+env:
+  GH_REPO: Gogowwww/frp-manager
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  GH_USER: Gogowwww
+
+jobs:
+  promote:
+    runs-on: docker
+    container:
+      image: docker:27-cli
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    steps:
+      - name: Vérifier
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          apk add --no-cache --quiet git curl jq
+
+          TAG="${{ inputs.tag }}"
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "Seul un tag vX.Y.Z peut être promu (reçu : $TAG)"; exit 1; }
+          VERSION="${TAG#v}"
+          [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
+
+          REL=$(curl -sf -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG") \
+            || { echo "Aucune release $TAG sur GitHub : lancer d'abord release.yml (push du tag)"; exit 1; }
+          [ "$(echo "$REL" | jq -r .prerelease)" = true ] || { echo "$TAG est déjà une release définitive"; exit 1; }
+
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
+          SHA="$(git -C src rev-parse "$TAG^{commit}")"
+
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git -C src remote add public "https://github.com/$GH_REPO.git"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
+          git -C src merge-base --is-ancestor public/main "$SHA" \
+            || { echo "Le main public a des commits absents de $TAG : promotion impossible en avance rapide"; exit 1; }
+
+          {
+            echo "TAG=$TAG"
+            echo "VERSION=$VERSION"
+            echo "SHA=$SHA"
+            echo "REL_ID=$(echo "$REL" | jq -r .id)"
+          } >> "$GITHUB_ENV"
+          echo "Promotion de $TAG ($SHA)"
+
+      - name: Avancer le main public
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main"
+
+      - name: Image :latest
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          docker pull --quiet "$IMAGE:$VERSION"
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push --quiet "$IMAGE:latest"
+
+      - name: Release définitive
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          curl -sf -X PATCH -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            -d '{"prerelease": false, "make_latest": "true"}' \
+            "https://api.github.com/repos/$GH_REPO/releases/$REL_ID" | jq -r '"Release publiée : " + .html_url'

@@ -1,13 +1,13 @@
-# Forgejo Actions : publication d'une release sur GitHub à partir d'un tag.
+# Forgejo Actions : publication d'une PRÉ-RELEASE sur GitHub à partir d'un tag.
 #
-#   git tag v0.1.0        && git push origin v0.1.0         # release stable
-#   git tag v0.1.0-dev.1  && git push origin v0.1.0-dev.1   # tag de dev (pré-release)
+#   git tag v0.1.0 && git push origin v0.1.0
 #
-# Tag stable (vX.Y.Z)            : release GitHub, image :X.Y.Z + :latest,
-#                                  main public avancé jusqu'au tag (avance rapide uniquement).
-# Tag de dev (vX.Y.Z-quelquechose) : pré-release GitHub, image :X.Y.Z-… + :dev.
-#                                  Ni :latest, ni main public : le bouton « Mettre à jour »
-#                                  du panel ne voit que la dernière release stable.
+# Toute release sort d'abord en pré-release, pour la tester avant de la déployer :
+#   - pré-release GitHub (le bouton « Mettre à jour » du panel ne la voit pas) ;
+#   - image :X.Y.Z (+ :dev pour un tag vX.Y.Z-quelquechose) ; :latest ne bouge pas ;
+#   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
+# Une fois testée : Actions → « Promouvoir une release » (promote.yml) la rend
+# définitive : release normale, :latest, main public avancé.
 #
 # Fichiers joints : frp-manager.zip, go-mmproxy_linux_{amd64,arm64,arm}.tar.gz
 # (noms attendus par install.sh, le README et l'installation go-mmproxy du panel).
@@ -44,38 +44,27 @@ jobs:
 
           TAG="${{ github.ref_name }}"
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
-            || { echo "Tag invalide : $TAG (attendu vX.Y.Z ou vX.Y.Z-dev.N)"; exit 1; }
+            || { echo "Tag invalide : $TAG (attendu vX.Y.Z ou vX.Y.Z-rc1)"; exit 1; }
           VERSION="${TAG#v}"
-          case "$VERSION" in *-*) PRERELEASE=true ;; *) PRERELEASE=false ;; esac
           [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
 
-          # Historique complet : nécessaire pour vérifier l'avance rapide du main public
-          rm -rf src dist
+          rm -rf src dist mm
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
           git -C src checkout --quiet "$TAG"
           SHA="$(git -C src rev-parse HEAD)"
 
-          # Vérifications GitHub AVANT de construire quoi que ce soit
-          API="https://api.github.com/repos/$GH_REPO"
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $GH_TOKEN" "$API/releases/tags/$TAG")
+          # Vérification GitHub AVANT de construire quoi que ce soit
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG")
           [ "$CODE" = 404 ] || { echo "Une release $TAG existe déjà sur GitHub (HTTP $CODE)"; exit 1; }
-
-          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git -C src remote add public "https://github.com/$GH_REPO.git"
-          git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
-          if [ "$PRERELEASE" = false ] && ! git -C src merge-base --is-ancestor public/main "$SHA"; then
-            echo "Le main public a des commits absents de $TAG : publication impossible en avance rapide."
-            exit 1
-          fi
 
           {
             echo "TAG=$TAG"
             echo "VERSION=$VERSION"
-            echo "PRERELEASE=$PRERELEASE"
             echo "SHA=$SHA"
           } >> "$GITHUB_ENV"
-          echo "Release $TAG ($SHA) — pré-release : $PRERELEASE"
+          echo "Pré-release $TAG ($SHA)"
 
       - name: Archive frp-manager.zip
         run: |
@@ -123,26 +112,24 @@ jobs:
       - name: Image Docker
         run: |
           set -eu
-          if [ "$PRERELEASE" = true ]; then EXTRA=dev; else EXTRA=latest; fi
+          # :latest n'est posé qu'à la promotion ; un tag vX.Y.Z-… met aussi à jour :dev
+          case "$VERSION" in *-*) EXTRA="$IMAGE:dev" ;; *) EXTRA="" ;; esac
           docker build --network=host --pull --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:$EXTRA" src
+            -t "$IMAGE:$VERSION" ${EXTRA:+-t "$EXTRA"} src
           echo "EXTRA_TAG=$EXTRA" >> "$GITHUB_ENV"
 
       # ── Publication : tout est construit, on pousse ────────────────────────
-      # Le code d'abord : s'il est refusé (protection e-mail, avance rapide…),
-      # rien n'est publié. En cas d'échec plus loin, relancer le job est sans risque.
-      - name: Pousser le code sur GitHub
+      # Le tag d'abord : s'il est refusé (protection e-mail…), rien n'est publié.
+      # En cas d'échec plus loin, relancer le job est sans risque.
+      - name: Pousser le tag sur GitHub
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          if [ "$PRERELEASE" = true ]; then
-            # Pré-release : seulement le tag, le main public ne bouge pas
-            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "refs/tags/$TAG"
-          else
-            git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main" "refs/tags/$TAG"
-          fi
+          git -C src remote add public "https://github.com/$GH_REPO.git" 2>/dev/null || true
+          # Seulement le tag : le main public n'avance qu'à la promotion
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "refs/tags/$TAG"
 
       - name: Pousser l'image
         env:
@@ -152,16 +139,16 @@ jobs:
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           docker push --quiet "$IMAGE:$VERSION"
-          docker push --quiet "$IMAGE:$EXTRA_TAG"
+          if [ -n "$EXTRA_TAG" ]; then docker push --quiet "$EXTRA_TAG"; fi
 
-      - name: Créer la release GitHub
+      - name: Créer la pré-release GitHub
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
           API="https://api.github.com/repos/$GH_REPO"
-          BODY=$(jq -n --arg tag "$TAG" --argjson pre "$PRERELEASE" \
-            '{tag_name: $tag, name: $tag, prerelease: $pre, generate_release_notes: true}')
+          BODY=$(jq -n --arg tag "$TAG" \
+            '{tag_name: $tag, name: $tag, prerelease: true, make_latest: "false", generate_release_notes: true}')
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)
@@ -172,4 +159,4 @@ jobs:
               --data-binary "@$f" "https://uploads.github.com/repos/$GH_REPO/releases/$ID/assets?name=$NAME" >/dev/null
             echo "Joint : $NAME"
           done
-          echo "Release publiée : $(echo "$REL" | jq -r .html_url)"
+          echo "Pré-release publiée : $(echo "$REL" | jq -r .html_url)"
