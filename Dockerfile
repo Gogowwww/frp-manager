@@ -5,8 +5,11 @@ RUN apt-get update \
         python3 \
         python3-flask \
         python3-requests \
+        python3-pip \
         openssl \
         util-linux \
+    && pip3 install --no-cache-dir --break-system-packages flask-sock \
+    && apt-get purge -y python3-pip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/frp-manager

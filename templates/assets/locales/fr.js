@@ -308,6 +308,7 @@ export default {
     live: 'En direct',
     stopLive: 'Arrêter',
     liveOn: 'En direct',
+    liveEnded: 'Flux en direct interrompu. Relancez-le avec « En direct ».',
     toBottom: 'Aller en bas',
     none: '(aucune ligne)',
   },

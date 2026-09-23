@@ -81,7 +81,9 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 
 ### 📜 Journaux
 - 📂 Source **journal systemd**, **fichier de log** ou **conteneur Docker** (avec ou sans `tty`)
-- 📡 **Flux en direct**, coloration des erreurs et avertissements, **filtre** de lignes
+- 📡 **Flux en direct par WebSocket** (`wss://` sur le panel en HTTPS), avec repli automatique sur SSE si le WebSocket ne passe pas ; coloration des erreurs et avertissements, **filtre** de lignes
+
+> 🔀 Derrière un reverse proxy, autorisez la mise à niveau WebSocket sur `/ws/` (nginx : `proxy_http_version 1.1;` + en-têtes `Upgrade` et `Connection`). Sans ça, le panel retombe simplement sur SSE.
 
 ### ⬆️ Mises à jour
 - **frp** : vérification de la dernière version, installation en un clic avec **miroirs de secours** (ghproxy, ghfast, gh-proxy), **upload manuel** d'une archive si GitHub est inaccessible, test d'accès aux sources

@@ -1,9 +1,9 @@
-// ── Journaux : 200 dernières lignes ou flux en direct (SSE) ──────────────
+// ── Journaux : 200 dernières lignes ou flux en direct (WebSocket, repli SSE) ──
 
 import { t } from '../i18n.js';
 import { api } from '../api.js';
 import { store, instanceIds, displayName, isDocker } from '../store.js';
-import { h, icon, button, busy, select, segmented, emptyState, pageHeader, toastError } from '../ui.js';
+import { h, icon, button, busy, select, segmented, emptyState, pageHeader, toast, toastError } from '../ui.js';
 import { navigate, replaceParams } from '../router.js';
 
 const MAX_LINES = 2000;
@@ -89,44 +89,77 @@ function syncSource() {
   S.els.source.hidden = isDocker(store.instances[S.iid]);
 }
 
+let loadSeq = 0;
+
 async function load() {
   stopLive();
   const out = S.els.out;
   if (!out) return;
+  const seq = ++loadSeq;
   out.textContent = t('common.loading');
   const src = isDocker(store.instances[S.iid]) ? 'docker' : S.source;
   try {
     const d = await api(`/api/logs/${encodeURIComponent(S.iid)}?source=${src}`);
+    // Réponse obsolète : le direct a été lancé ou un autre chargement est parti entre-temps
+    if (seq !== loadSeq || S.live) return;
     const lines = (d.content || '').split('\n');
     out.replaceChildren(...lines.map(lineEl));
     if (!d.content) out.textContent = t('logs.none');
   } catch (e) {
+    if (seq !== loadSeq || S.live) return;
     out.textContent = '';
     toastError(e);
   }
   out.scrollTop = out.scrollHeight;
 }
 
+function appendLive(text) {
+  const out = S.els.out;
+  if (!out) return;
+  const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 24;
+  out.append(lineEl(text));
+  while (out.children.length > MAX_LINES) out.firstChild.remove();
+  if (stick) out.scrollTop = out.scrollHeight;
+}
+
+/** WebSocket (wss:// en HTTPS) ; s'il ne s'ouvre pas, repli sur le flux SSE. */
+function openWebSocket(iid) {
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/logs/${encodeURIComponent(iid)}`);
+  let opened = false;
+  const live = { close: () => ws.close(), transport: 'websocket' };
+  ws.onopen = () => { opened = true; };
+  ws.onmessage = (e) => appendLive(e.data);
+  ws.onclose = () => {
+    if (S.live !== live) return;               // arrêt demandé par l'utilisateur
+    if (!opened) { S.live = openEventSource(iid); return; }
+    stopLive();
+    toast(t('logs.liveEnded'), 'info');
+  };
+  return live;
+}
+
+function openEventSource(iid) {
+  const es = new EventSource(`/api/logs/stream/${encodeURIComponent(iid)}`);
+  const live = { close: () => es.close(), transport: 'sse' };
+  es.onmessage = (e) => appendLive(e.data);
+  es.onerror = () => {
+    if (S.live === live && es.readyState === EventSource.CLOSED) stopLive();
+  };
+  return live;
+}
+
 function toggleLive() {
   if (S.live) { stopLive(); return; }
-  const out = S.els.out;
-  out.replaceChildren();
-  S.live = new EventSource(`/api/logs/stream/${encodeURIComponent(S.iid)}`);
-  S.live.onmessage = (e) => {
-    const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 24;
-    out.append(lineEl(e.data));
-    while (out.children.length > MAX_LINES) out.firstChild.remove();
-    if (stick) out.scrollTop = out.scrollHeight;
-  };
-  S.live.onerror = () => {
-    if (S.live && S.live.readyState === EventSource.CLOSED) stopLive();
-  };
+  loadSeq += 1;   // un chargement encore en cours n'écrasera pas le direct
+  S.els.out.replaceChildren();
+  S.live = 'WebSocket' in window ? openWebSocket(S.iid) : openEventSource(S.iid);
   S.els.livePill.hidden = false;
   S.els.liveBtn.replaceChildren(icon('stop'), t('logs.stopLive'));
 }
 
 function stopLive() {
-  if (S.live) { S.live.close(); S.live = null; }
+  if (S.live) { const live = S.live; S.live = null; live.close(); }
   if (S.els.livePill) {
     S.els.livePill.hidden = true;
     S.els.liveBtn.replaceChildren(icon('radio'), t('logs.live'));

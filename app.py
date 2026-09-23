@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FRP Manager — backend Flask multi-instances"""
 
-import os, re, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl
+import os, re, sys, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl, queue
 import socket as _socket, http.client as _http_client
 from pathlib import Path
 from datetime import datetime
@@ -9,6 +9,14 @@ from functools import wraps
 
 from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for
 import requests as req
+
+try:
+    # Journaux en direct par WebSocket (wss:// en HTTPS). Facultatif : sans ce
+    # module (ancienne installation pas encore mise à jour), l'interface
+    # retombe sur le flux SSE /api/logs/stream.
+    from flask_sock import Sock
+except ImportError:
+    Sock = None
 
 # ── Version du panel ─────────────────────────────────────────────────────────
 _PANEL_VERSION_FALLBACK = "0.0.23"   # Version hardcodée — écrasée par state.json
@@ -140,6 +148,14 @@ def get_ssl_context():
 # anciennes versions qui ne connaissent pas de dossier static/.
 app = Flask(__name__, static_folder="templates/assets", static_url_path="/assets")
 app.secret_key = MGR_CFG.get("secret_key") or secrets.token_hex(32)
+# Les modules JS importés par main.js n'ont pas de ?v=version dans leur URL :
+# max-age=0 force le navigateur à les revalider (304 si inchangés), sans quoi
+# il pourrait garder d'anciens modules en cache après une mise à jour du panel.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+# Ping toutes les 25 s : évite qu'un reverse proxy ou un tunnel frp ne coupe
+# une connexion WebSocket restée silencieuse (journal sans nouvelle ligne).
+app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
+sock = Sock(app) if Sock else None
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 FRP_BIN_DIR    = Path("/usr/local/bin")
@@ -401,20 +417,60 @@ def _docker_logs_raw(container_name, tail=200):
     except Exception:
         return ""
 
-def _docker_logs_stream_gen(container_name):
-    """Générateur SSE qui streame les logs d'un container Docker (follow mode).
-    http.client décode le « chunked encoding » de la réponse ; l'ancienne
-    lecture brute du socket mélangeait ces en-têtes aux trames de logs."""
-    if not _DOCKER_SOCK.exists():
-        return
-    conn = None
-    try:
-        conn = _UnixHTTPConn(str(_DOCKER_SOCK))
-        conn.request("GET",
-            f"/v1.41/containers/{container_name}/logs?stdout=1&stderr=1&follow=1&tail=50")
-        resp = conn.getresponse()
+class LiveLog:
+    """Journal en direct d'une instance (journalctl -f ou logs Docker en follow),
+    ligne par ligne. close() peut être appelé depuis un autre thread : il arrête
+    journalctl / coupe la connexion Docker, ce qui termine lines()."""
+
+    def __init__(self, inst):
+        self.inst = inst
+        self._proc = None
+        self._conn = None
+
+    def close(self):
+        if self._proc:
+            try: self._proc.terminate()
+            except Exception: pass
+        if self._conn:
+            try:
+                if self._conn.sock:
+                    self._conn.sock.shutdown(_socket.SHUT_RDWR)   # débloque le recv en cours
+            except Exception: pass
+            try: self._conn.close()
+            except Exception: pass
+
+    def lines(self):
+        try:
+            if self.inst.get("source") == "docker":
+                yield from self._docker_lines(_resolve_container(self.inst["container_name"]))
+            else:
+                yield from self._journal_lines(self.inst.get("service", ""))
+        except Exception:
+            pass
+        finally:
+            self.close()
+
+    def _journal_lines(self, svc):
+        cmd = ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"]
+        if _IN_DOCKER:
+            # Comme run_cmd : le journal systemd est celui de l'hôte
+            cmd = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd
+        self._proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in self._proc.stdout:
+            yield line.rstrip("\n")
+
+    def _docker_lines(self, container):
+        """http.client décode le « chunked encoding » de la réponse Docker ;
+        les trames multiplexées (ou le texte brut si tty) sont ensuite découpées."""
+        if not _DOCKER_SOCK.exists():
+            yield "[frp-manager] socket Docker indisponible"
+            return
+        self._conn = _UnixHTTPConn(str(_DOCKER_SOCK))
+        self._conn.request("GET",
+            f"/v1.41/containers/{container}/logs?stdout=1&stderr=1&follow=1&tail=50")
+        resp = self._conn.getresponse()
         if resp.status != 200:
-            yield f"data: [frp-manager] logs Docker indisponibles (HTTP {resp.status})\n\n"
+            yield f"[frp-manager] logs Docker indisponibles (HTTP {resp.status})"
             return
         buf, tty, pending = b"", None, ""
         while True:
@@ -430,15 +486,20 @@ def _docker_logs_stream_gen(container_name):
             pending += text
             *lines, pending = pending.split("\n")
             for line in lines:
-                yield f"data: {line.rstrip(chr(13))}\n\n"
-    except GeneratorExit:
-        pass
-    except Exception:
-        pass
-    finally:
-        if conn:
-            try: conn.close()
-            except: pass
+                yield line.rstrip("\r")
+
+def _resolve_container(container):
+    """Nom du container, ou son id court s'il n'est pas trouvé sous ce nom."""
+    status, _ = _docker_api("GET", f"/containers/{container}/json")
+    if status == 200:
+        return container
+    s2, data2 = _docker_api("GET", "/containers/json?all=true")
+    if s2 == 200 and isinstance(data2, list):
+        for c in data2:
+            names = [n.lstrip("/") for n in (c.get("Names") or [])]
+            if container in names:
+                return (c.get("Id") or container)[:12]
+    return container
 
 def _detect_docker_frp_containers():
     """Détecte les containers frpc/frps via le socket Docker."""
@@ -967,40 +1028,59 @@ def api_logs(iid):
 @app.route("/api/logs/stream/<iid>")
 @login_required
 def api_logs_stream(iid):
+    """Journal en direct en SSE — repli quand le WebSocket n'est pas disponible."""
     detect_frp(force=False)
-    inst = INSTANCES.get(iid, {})
-    # ── Container Docker ──────────────────────────────────────────────────────
-    if inst.get("source") == "docker":
-        container = inst["container_name"]
-        # Vérifier que le container existe avant de streamer
-        status, _ = _docker_api("GET", f"/containers/{container}/json")
-        if status != 200:
-            # Essayer avec l'id court
-            s2, data2 = _docker_api("GET", f"/containers/json?all=true")
-            if s2 == 200 and isinstance(data2, list):
-                for c in data2:
-                    names = [n.lstrip("/") for n in (c.get("Names") or [])]
-                    if container in names:
-                        container = (c.get("Id") or container)[:12]
-                        break
-        return Response(_docker_logs_stream_gen(container),
-                        mimetype="text/event-stream",
-                        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
-    # ── Instance systemd ──────────────────────────────────────────────────────
-    svc = inst.get("service", iid)
-    cmd = ["journalctl", "-u", svc, "-f", "-n50", "--no-pager", "-o", "short-iso"]
-    if _IN_DOCKER:
-        # Comme run_cmd : le journal systemd est celui de l'hôte
-        cmd = ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd
+    inst = INSTANCES.get(iid)
+    if not inst:
+        return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
+    live = LiveLog(inst)
     def generate():
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
-            for line in proc.stdout:
-                yield f"data: {line.rstrip()}\n\n"
+            for line in live.lines():
+                yield f"data: {line}\n\n"
         finally:
-            proc.terminate()
+            live.close()
     return Response(generate(), mimetype="text/event-stream",
-                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+if sock:
+    @sock.route("/ws/logs/<iid>")
+    def ws_logs(ws, iid):
+        """Journal en direct par WebSocket : une ligne par message texte."""
+        if MGR_CFG.get("password_hash") and not session.get("authenticated"):
+            ws.close(reason=1008, message="Non authentifié")
+            return
+        detect_frp(force=False)
+        inst = INSTANCES.get(iid)
+        if not inst:
+            ws.close(reason=1008, message="Instance inconnue")
+            return
+        live = LiveLog(inst)
+        lines = queue.Queue()
+
+        def pump():
+            try:
+                for line in live.lines():
+                    lines.put(line)
+            finally:
+                lines.put(None)
+        threading.Thread(target=pump, daemon=True).start()
+
+        try:
+            # Attente avec délai : on s'aperçoit de la fermeture de l'onglet
+            # même quand le journal reste silencieux.
+            while ws.connected:
+                try:
+                    line = lines.get(timeout=1)
+                except queue.Empty:
+                    continue
+                if line is None:
+                    break
+                ws.send(line)
+        except Exception:
+            pass
+        finally:
+            live.close()
 
 @app.route("/api/manager/config", methods=["GET"])
 @login_required
@@ -1231,6 +1311,21 @@ def api_panel_update():
                             elif src.is_file():
                                 shutil.copy2(str(src), str(dst))
                                 _panel_log(f"[INFO] Mis à jour : {item}")
+
+                        # Dépendances Python de la nouvelle version, dans le même
+                        # environnement que le panel (venv de l'installation classique)
+                        reqs = src_dir / "requirements.txt"
+                        if reqs.exists():
+                            _panel_log("[INFO] Installation des dépendances Python…")
+                            try:
+                                rc = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(reqs)],
+                                                    capture_output=True, text=True, timeout=300)
+                                if rc.returncode == 0:
+                                    _panel_log("[INFO] Dépendances à jour")
+                                else:
+                                    _panel_log(f"[WARN] pip : {(rc.stderr or rc.stdout).strip()[-300:]} — le panel démarrera quand même")
+                            except Exception as e:
+                                _panel_log(f"[WARN] pip indisponible ({e}) — le panel démarrera quand même")
             except Exception as e:
                 _panel_log(f"[ERROR] Extraction : {e}")
                 return
