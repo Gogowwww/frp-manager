@@ -327,6 +327,17 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 .callout-success > .icon { color: var(--accent); }
 .callout-neutral { background: var(--surface-2); }
 .callout-neutral > .icon { color: var(--text-3); }
+/* Variante discrète (rappels « mode Docker ») : fine bordure orange, pas de fond */
+.callout.callout-compact {
+  align-items: center; gap: 8px; padding: 6px 12px;
+  background: transparent; border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  font-size: 12.5px; color: var(--text-2);
+}
+.callout.callout-compact > .icon { margin-top: 0; width: 14px; height: 14px; color: var(--warn); }
+.callout-compact strong { color: var(--warn-text); font-weight: 600; }
+.callout.callout-compact.callout-info { border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+.callout.callout-compact.callout-info > .icon { color: var(--info); }
+.callout-inline-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
 
 /* ── Forms ──────────────────────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-4) var(--space-5); }

@@ -1024,25 +1024,46 @@ def api_nickname_set(iid):
     MGR_CFG = cfg
     return jsonify({"ok": True, "msg": "Surnom mis à jour"})
 
+_VERSION_RE = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$')
+
+def _version_key(v):
+    """'0.1.0' → ((0,1,0), 1, ()) ; '0.1.0-pre.2' → ((0,1,0), 0, …) ; None si non reconnue.
+    Une pré-release passe avant la release du même numéro (semver)."""
+    m = _VERSION_RE.match(str(v or "").strip())
+    if not m:
+        return None
+    core = tuple(int(x) for x in m.group(1, 2, 3))
+    if not m.group(4):
+        return (core, 1, ())
+    parts = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in m.group(4).split("."))
+    return (core, 0, parts)
+
+def is_prerelease_version(v):
+    """Tout ce qui n'est pas une release X.Y.Z : 0.1.0-pre.2, dev-abc1234, inconnue…"""
+    k = _version_key(v)
+    return k is None or k[1] == 0
+
+def version_newer(candidate, current):
+    a, b = _version_key(candidate), _version_key(current)
+    return bool(a and b and a > b)
+
 @app.route("/api/panel/version")
 @login_required
 def api_panel_version():
-    """Retourne la version actuelle du panel et vérifie si une mise à jour est dispo."""
+    """Retourne la version actuelle du panel et vérifie si une mise à jour est dispo.
+    Une pré-release (Docker ou installation classique) ne propose jamais de mise à jour."""
     latest_ver, release_url = fetch_panel_latest()
     repo_configured = "VOTRE_USER" not in PANEL_GITHUB_REPO
-    update_available = False
-    if latest_ver and repo_configured:
-        try:
-            from packaging.version import Version
-            update_available = Version(latest_ver) > Version(PANEL_VERSION)
-        except Exception:
-            update_available = latest_ver != PANEL_VERSION
+    prerelease = is_prerelease_version(PANEL_VERSION)
+    update_available = bool(latest_ver and repo_configured and not prerelease
+                            and version_newer(latest_ver, PANEL_VERSION))
     return jsonify({
         "ok":               True,
         "current":          PANEL_VERSION,
         "latest":           latest_ver,
         "release_url":      release_url,
         "update_available": update_available,
+        "prerelease":       prerelease,
         "repo":             PANEL_GITHUB_REPO,
         "repo_configured":  repo_configured,
         "in_docker":        IN_DOCKER,
@@ -1061,6 +1082,8 @@ def api_panel_update():
     """Télécharge la dernière release du panel et relance frp-manager."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
         return jsonify({"ok": False, "msg": "Repo GitHub du panel non configuré."})
+    if is_prerelease_version(PANEL_VERSION):
+        return jsonify({"ok": False, "msg": "Version de pré-release : mise à jour automatique désactivée."})
     if not panel_update_lock.acquire(blocking=False):
         return jsonify({"ok": False, "msg": "Mise à jour du panel déjà en cours."})
 

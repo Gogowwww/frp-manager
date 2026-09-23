@@ -1,5 +1,9 @@
 # Forgejo Actions : promotion d'une pré-release en release définitive.
 #
+# Cas particulier : sert aux pré-releases publiées avec un tag vX.Y.Z sans suffixe
+# (v0.1.0). Le cas normal est désormais un tag vX.Y.Z-pre.N (pré-release), puis un
+# tag vX.Y.Z (release), tous deux gérés par release.yml.
+#
 # Lancement : Actions → « Promouvoir une release » → Run workflow (tag : v0.1.0),
 # ou via l'API Forgejo (POST …/actions/workflows/promote.yml/dispatches).
 #

@@ -217,7 +217,7 @@ async function load() {
   if (isDocker(inst)) {
     S.snapshot = '';
     S.els.body.replaceChildren(callout({
-      type: 'neutral', iconName: 'box', title: t('config.dockerTitle'), text: t('config.dockerText'),
+      type: 'warn', compact: true, iconName: 'box', title: t('config.dockerTitle'), text: t('config.dockerText'),
       actions: inst.type === 'frpc' ? [button(t('nav.tunnels'), { size: 'sm', onClick: () => navigate('tunnels', { iid: S.iid }) })] : [],
     }));
     return;

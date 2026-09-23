@@ -67,7 +67,7 @@ function renderAlerts(host) {
     }));
   }
   if (store.inDocker) {
-    items.push(callout({ type: 'neutral', iconName: 'box', title: t('dashboard.dockerTitle'), text: t('dashboard.dockerText') }));
+    items.push(callout({ type: 'warn', compact: true, iconName: 'box', title: t('dashboard.dockerTitle'), text: t('dashboard.dockerText') }));
   }
   host.replaceChildren(...items);
   host.hidden = !items.length;

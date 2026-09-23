@@ -388,6 +388,8 @@ export default {
     panelDockerText: 'Téléchargez la nouvelle image, puis recréez le conteneur (par exemple depuis Portainer).',
     releaseNotes: 'Notes de version',
     repoMissing: 'Dépôt non configuré',
+    prerelease: 'Pré-release',
+    prereleaseText: 'Version de test : aucune mise à jour n’est proposée. Installez la prochaine version à la main.',
   },
 
   settings: {

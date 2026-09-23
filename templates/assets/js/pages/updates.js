@@ -21,7 +21,7 @@ export default {
     view.append(page);
 
     if (store.inDocker) {
-      page.append(callout({ type: 'neutral', iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }));
+      page.append(callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }));
     } else {
       page.append(frpCard(), manualCard(), connectivityCard());
     }
@@ -242,16 +242,21 @@ function panelCard() {
         return;
       }
       cells.latest.dd.textContent = `v${d.latest}`;
-      if (d.update_available) {
+      if (d.prerelease) {
+        // Pré-release (Docker ou installation classique) : jamais de mise à jour proposée
+        setStatus(cells.status, 'info', t('updates.prerelease'));
+        extra.append(callout({ type: 'info', compact: true, text: t('updates.prereleaseText') }));
+        releaseLink.hidden = true;
+        updateBtn.hidden = true;
+      } else if (d.update_available) {
         setStatus(cells.status, 'warn', t('updates.available'));
         releaseLink.href = d.release_url || `https://github.com/${d.repo}/releases`;
         releaseLink.hidden = false;
         updateBtn.hidden = !!d.in_docker;
         if (d.in_docker) {
-          extra.append(callout({
-            type: 'neutral', iconName: 'box', title: t('updates.panelDockerTitle'), text: t('updates.panelDockerText'),
-            actions: [h('div', { class: 'code-block', style: { flex: '1' } }, h('code', null, DOCKER_PULL), copyButton(DOCKER_PULL))],
-          }));
+          extra.append(
+            callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.panelDockerTitle'), text: t('updates.panelDockerText') }),
+            h('div', { class: 'code-block' }, h('code', null, DOCKER_PULL), copyButton(DOCKER_PULL)));
         }
       } else {
         setStatus(cells.status, 'success', t('updates.upToDate'));

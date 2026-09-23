@@ -294,7 +294,15 @@ export function segmented(options, value, onChange, { label } = {}) {
 // ── Blocs ──────────────────────────────────────────────────────────────────
 const CALLOUT_ICONS = { info: 'info', warn: 'alert', danger: 'alert', success: 'check-circle', neutral: 'info' };
 
-export function callout({ type = 'info', title, text, actions, iconName }) {
+/** compact : une ligne discrète (ex. rappels « mode Docker »), titre et texte à la suite. */
+export function callout({ type = 'info', title, text, actions, iconName, compact = false }) {
+  if (compact) {
+    return h('div', { class: `callout callout-compact callout-${type}` },
+      icon(iconName || CALLOUT_ICONS[type]),
+      h('div', { class: 'callout-body' },
+        title && h('strong', null, title), title && text ? ' ' : null, text),
+      actions && actions.length ? h('div', { class: 'callout-inline-actions' }, actions) : null);
+  }
   return h('div', { class: `callout callout-${type}`, role: type === 'danger' ? 'alert' : null },
     icon(iconName || CALLOUT_ICONS[type]),
     h('div', { class: 'callout-body' },

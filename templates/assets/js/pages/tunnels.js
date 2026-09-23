@@ -166,7 +166,7 @@ function renderNotices() {
   const items = [];
   const inst = store.instances[S.iid];
   if (isDocker(inst) && inst.network_mode !== 'host' && S.proxies.some((p) => supportsRealIp(p.type))) {
-    items.push(callout({ type: 'neutral', title: t('realIp.dockerTitle'), text: t('realIp.dockerText', { mode: inst.network_mode || 'bridge' }) }));
+    items.push(callout({ type: 'warn', compact: true, iconName: 'box', title: t('realIp.dockerTitle'), text: t('realIp.dockerText', { mode: inst.network_mode || 'bridge' }) }));
   }
   const relays = Object.values(S.mm.entries || {});
   if (S.mm.installed && relays.length && (!S.mm.routes_active || relays.some((e) => !e.active))) {
