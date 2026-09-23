@@ -11,7 +11,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Runner auto-hébergé (homelab) : les runners hébergés par GitHub sont
+    # bloqués tant que le compte a un souci de facturation.
+    # Prérequis sur la machine : Docker, et l'utilisateur du runner dans le groupe docker.
+    runs-on: [self-hosted, linux]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,3 +52,8 @@ jobs:
         run: |
           docker push ghcr.io/gogowwww/frp-manager:latest
           docker push ghcr.io/gogowwww/frp-manager:${{ steps.version.outputs.version }}
+
+      # Ne pas laisser le jeton GHCR sur la machine du runner
+      - name: Log out of GitHub Container Registry
+        if: always()
+        run: docker logout ghcr.io
