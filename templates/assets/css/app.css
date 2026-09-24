@@ -523,15 +523,16 @@ legend.fieldset-title + * { clear: both; }
 .route { display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr); align-items: center; min-width: 0; }
 .route-end { display: flex; flex-direction: column; min-width: 0; }
 .route-end small { font-size: 11.5px; color: var(--text-3); }
-.route-end .mono { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.route-end:last-child { padding-left: 4px; }
-.route-line { position: relative; height: 2px; margin: 14px 8px 0 4px; background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 9px); opacity: .8; }
+.route-end .mono { max-width: 100%; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Extrémité publique calée à droite : la flèche est centrée entre les deux adresses */
+.route-end:first-child { align-items: flex-end; text-align: right; }
+.route-line { position: relative; height: 2px; margin: 14px 12px 0 10px; background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 9px); opacity: .8; }
 .route-line::before { content: ""; position: absolute; left: -3px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .route-line::after { content: ""; position: absolute; right: -2px; top: -4px; border: 5px solid transparent; border-left: 7px solid var(--accent); border-right: 0; }
 .row:hover .route-line { animation: flow .8s linear infinite; }
 @keyframes flow { to { background-position: 9px 0; } }
 .row-flags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.route-end .route-text { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-end .route-text { max-width: 100%; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-actions { display: flex; gap: 2px; }
 .row.is-new .row-name::after, .row.is-changed .row-name::after {
   content: attr(data-state); font-size: 11px; font-weight: 550; color: var(--warn-text);

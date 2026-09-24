@@ -1,6 +1,6 @@
 # 🌐 FRP Manager
 
-> 🚀 Panel web auto-hébergé pour piloter [frp](https://github.com/fatedier/frp) (**frps** & **frpc**) sans ligne de commande : services, tunnels, configuration, journaux et mises à jour, dans une interface claire, en clair ou en sombre, sur ordinateur comme sur mobile.
+> 🚀 Panel web auto-hébergé pour piloter [frp](https://github.com/fatedier/frp) (**frps** & **frpc**) sans ligne de commande : services, ports ouverts, configuration, journaux et mises à jour, dans une interface claire, en clair ou en sombre, sur ordinateur comme sur mobile.
 
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
@@ -31,11 +31,11 @@
 
 ## 🖥️ Aperçu
 
-| Tableau de bord | Tunnels |
+| Tableau de bord | Ports |
 |:---:|:---:|
-| ![Tableau de bord](panel/home.png) | ![Tunnels](panel/tunnels.png) |
-| **Éditeur de tunnel** | **Journaux en direct** |
-| ![Éditeur de tunnel](panel/tunnel-editor.png) | ![Journaux](panel/logs.png) |
+| ![Tableau de bord](panel/home.png) | ![Ports](panel/tunnels.png) |
+| **Ouverture d'un port** | **Journaux en direct** |
+| ![Ouverture d'un port](panel/tunnel-editor.png) | ![Journaux](panel/logs.png) |
 
 <details>
 <summary>⚙️ Réglages</summary>
@@ -63,22 +63,22 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 - 🔍 **Détection automatique** des services frps/frpc (units systemd, binaires, configs) et des conteneurs Docker frp
 - 🪪 **Une carte par instance** : état en clair (*En marche*, *Arrêté*, *Introuvable*), version, fichier de config, service
 - ▶️ **Démarrer / Arrêter / Redémarrer** en un clic, **démarrage automatique** en interrupteur, rechargement de la config
-- 🛑 **Confirmation avant d'arrêter** un frpc : si vous accédez au panel à travers l'un de ses tunnels, vous êtes prévenu
-- ✏️ **Surnoms** d'instances (*« Serveur maison »*, *« Tunnel bureau »*…)
+- 🛑 **Confirmation avant d'arrêter** un frpc : si vous accédez au panel à travers l'un de ses ports, vous êtes prévenu
+- ✏️ **Surnoms** d'instances (*« Serveur maison »*, *« Accès bureau »*…)
 - 🔔 Alertes utiles en haut de page : panel sans mot de passe, mise à jour disponible
 - ⚡ **État en direct** : poussé par WebSocket dès qu'un service change (repli sur une vérification toutes les 12 s si le WebSocket ne passe pas)
 
-### 🔌 Tunnels (frpc)
-- 🗺️ **Liste lisible** : chaque tunnel montre son chemin `vps.exemple.net:25565 → 127.0.0.1:25565`
+### 🔌 Ports (frpc)
+- 🗺️ **Liste lisible** : chaque port montre son chemin `vps.exemple.net:25565 → 127.0.0.1:25565`
 - 📝 **Éditeur guidé** : `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp`, avec une explication pour chaque type ; port public, domaines ou clé secrète selon le type ; options PROXY protocol v1/v2, chiffrement, compression
-- 🔐 **Visiteurs** (`[[visitors]]`) : accès local à un tunnel STCP/XTCP partagé par une autre machine
+- 🔐 **Visiteurs** (`[[visitors]]`) : accès local à un port privé STCP/XTCP partagé par une autre machine
 - 💾 **Brouillon puis enregistrement** : les modifications s'accumulent, une barre propose *Enregistrer* ou *Enregistrer et redémarrer frpc* ; avertissement si vous quittez sans enregistrer
 - 🧷 **Rien n'est perdu** : les réglages que l'interface ne gère pas (`subdomain`, `plugin`, `[proxies.healthCheck]`…) sont conservés tels quels
 
 ### ⚙️ Configuration (frps / frpc)
 - 🧩 **Formulaire par sections** : l'essentiel visible (connexion, authentification, tableau de bord frp), le reste replié dans *Réglages avancés* (TLS, ports KCP/QUIC/vhost, limites, journalisation)
 - 🏷️ Chaque champ affiche sa **clé TOML** et une aide courte
-- 🛡️ Les tunnels d'un frpc sont **préservés** quand vous enregistrez sa configuration
+- 🛡️ Les ports d'un frpc sont **préservés** quand vous enregistrez sa configuration
 
 ### 📜 Journaux
 - 📂 Source **journal systemd**, **fichier de log** ou **conteneur Docker** (avec ou sans `tty`)
@@ -97,7 +97,7 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 
 ### 🐳 Docker
 - Le panel peut tourner **dans un conteneur** et piloter frp **sur l'hôte** (via `nsenter`, sans systemd dans l'image)
-- Il détecte et contrôle aussi les **conteneurs frpc/frps** d'autres stacks (démarrer, arrêter, redémarrer, journaux, tunnels)
+- Il détecte et contrôle aussi les **conteneurs frpc/frps** d'autres stacks (démarrer, arrêter, redémarrer, journaux, ports)
 
 ---
 
@@ -222,7 +222,7 @@ Tout se règle depuis la page **Réglages**. Le fichier sous-jacent est `/etc/fr
     assets/
       css/app.css          # Design system (thèmes clair/sombre)
       js/                  # Application (modules ES, sans étape de build)
-        pages/             # Tableau de bord, Tunnels, Configuration, Journaux…
+        pages/             # Tableau de bord, Ports, Configuration, Journaux…
       locales/fr.js        # Textes de l'interface
 
 📁 /opt/frp-manager/        # Panel installé (méthode script)
