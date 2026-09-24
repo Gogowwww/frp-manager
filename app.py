@@ -626,6 +626,16 @@ def _find_all_configs(bin_type):
                     found.append(p)
     return found
 
+_SERVER_ADDR_RE = re.compile(r"""^\s*(?:serverAddr|server_addr)\s*[=:]\s*["']?([^"'\s#]+)""", re.MULTILINE)
+
+def _frpc_configured(cfg):
+    """Un serveur est-il renseigné ? install.sh crée partout un frpc.toml avec
+    serverAddr = "" : sans ça, un frpc jamais utilisé compterait comme un vrai."""
+    try:
+        return bool(cfg and cfg.exists() and _SERVER_ADDR_RE.search(cfg.read_text()))
+    except Exception:
+        return False
+
 def _build_instances():
     instances = {}
     for bin_type in ("frps", "frpc"):
@@ -720,6 +730,7 @@ def detect_frp(force=False):
                         "running": running,
                     },
                     "log_path": None,
+                    "configured": True,
                 }
                 continue
             # ── Instance systemd ──────────────────────────────────────────────
@@ -737,6 +748,7 @@ def detect_frp(force=False):
                 "config_exists": cfg.exists() if cfg else False,
                 "service": inst["service"], "status": st,
                 "log_path": str(inst["log"]),
+                "configured": _frpc_configured(cfg) if inst["type"] == "frpc" else bool(cfg and cfg.exists()),
             }
         _detect_cache = result
         _detect_cache_time = now

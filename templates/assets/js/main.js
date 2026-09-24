@@ -3,7 +3,7 @@
 import { initI18n, applyI18n, t } from './i18n.js';
 import { api } from './api.js';
 import {
-  store, frpcIds, frpsIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
+  store, usedFrpcIds, frpsIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
 } from './store.js';
 import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
@@ -30,10 +30,10 @@ function setupShell() {
     try { await api('/api/logout', { method: 'POST' }); } finally { location.href = '/login'; }
   });
 
-  // Navigation : Ports seulement s'il existe un frpc, Pare-feu seulement s'il
-  // existe un frps ; pastille de mise à jour
+  // Navigation : Ports seulement s'il existe un frpc réellement utilisé,
+  // Pare-feu seulement s'il existe un frps ; pastille de mise à jour
   store.subscribe(() => {
-    document.querySelector('[data-route="ports"]').hidden = store.ready && !frpcIds().length;
+    document.querySelector('[data-route="ports"]').hidden = !store.ready || !usedFrpcIds().length;
     document.querySelector('[data-route="firewall"]').hidden = !store.ready || !frpsIds().length;
     const upd = store.updates.frp || store.updates.panel;
     document.getElementById('updates-badge').hidden = !upd;
