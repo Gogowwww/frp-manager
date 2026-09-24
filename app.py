@@ -19,7 +19,8 @@ except ImportError:
     Sock = None
 
 # ── Version du panel ─────────────────────────────────────────────────────────
-_PANEL_VERSION_FALLBACK = "0.0.23"   # Version hardcodée — écrasée par state.json
+# Gravée dans le zip de chaque release par release.yml ; vide dans les sources.
+_PANEL_VERSION_FALLBACK = ""
 PANEL_GITHUB_REPO = "Gogowwww/frp-manager"
 PANEL_GITHUB_API  = f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/latest"
 
@@ -27,24 +28,28 @@ def _load_panel_version():
     """
     Priorité :
     1. Variable d'env PANEL_DOCKER_VERSION (injectée au build Docker via ARG)
-    2. state.json panel_version (mis à jour par auto-update hors Docker)
-    3. Fallback hardcodé
+    2. Version gravée dans ce code par release.yml : c'est celle des fichiers
+       réellement installés, même posés à la main (install.sh ne touche pas
+       à state.json, qui garderait sinon l'ancienne version)
+    3. state.json panel_version (lancement depuis les sources, sans gravure)
     """
     # 1. Version injectée dans l'image Docker au build
     docker_ver = os.environ.get("PANEL_DOCKER_VERSION", "").strip()
     if docker_ver and docker_ver != "unknown":
         return docker_ver
-    # 2. Version sauvegardée dans state.json (auto-update hors Docker)
+    # 2. Version gravée dans le zip de la release
+    if _PANEL_VERSION_FALLBACK:
+        return _PANEL_VERSION_FALLBACK
+    # 3. Version notée par la mise à jour automatique
     try:
         p = Path("/var/lib/frp-manager/state.json")
         if p.exists():
-            d = json.loads(p.read_text())
-            v = d.get("panel_version")
+            v = json.loads(p.read_text()).get("panel_version")
             if v:
                 return v
     except Exception:
         pass
-    return _PANEL_VERSION_FALLBACK
+    return "0.0.0"
 
 PANEL_VERSION = _load_panel_version()
 
