@@ -646,8 +646,11 @@ def _build_instances():
                     "service": iid, "log": FRP_LOG_DIR / f"{iid}.log",
                 }
         elif binary:
-            if not configs:
-                configs = [FRP_CONF_DIR / f"{bin_type}.toml"]
+            # Programme sans service systemd : une instance par config existante,
+            # sauf celles dont le service a été supprimé depuis le tableau de bord
+            # (sinon la carte réapparaîtrait aussitôt). Pas d'instance sans fichier.
+            dismissed = set(MGR_CFG.get("dismissed_configs", []))
+            configs = [c for c in configs if str(c) not in dismissed]
             for i, cfg in enumerate(configs):
                 iid = bin_type if i == 0 else f"{bin_type}{i+1}"
                 instances[iid] = {
@@ -949,13 +952,125 @@ def api_service_action(iid, action):
 # (/usr/lib, /lib) seraient réinstallées à la prochaine mise à jour.
 _UNIT_DIR = "/etc/systemd/system/"
 
-def _forget_nickname(iid):
+def _forget_instance(iid, kept_config=None):
+    """Oublie le surnom d'une instance supprimée ; une config conservée est
+    écartée de la détection (voir _build_instances)."""
     global MGR_CFG
-    nicks = dict(MGR_CFG.get("nicknames", {}))
-    if nicks.pop(iid, None) is not None:
-        cfg = {**MGR_CFG, "nicknames": nicks}
+    cfg = dict(MGR_CFG)
+    nicks = dict(cfg.get("nicknames", {}))
+    changed = nicks.pop(iid, None) is not None
+    cfg["nicknames"] = nicks
+    dismissed = list(cfg.get("dismissed_configs", []))
+    if kept_config and kept_config not in dismissed:
+        dismissed.append(kept_config)
+        changed = True
+    cfg["dismissed_configs"] = dismissed
+    if changed:
         save_manager_config(cfg)
         MGR_CFG = cfg
+
+_CONFIG_SUFFIXES = (".toml", ".ini", ".yaml", ".yml")
+
+def _docker_mounted_config(inspect, bin_type):
+    """
+    Chemin HÔTE du fichier de config monté dans un container, ou None.
+    Volontairement strict (contrairement à _get_docker_frpc_config) : il sert
+    à supprimer le fichier, donc seul un fichier réellement monté compte.
+    """
+    mounts = [m for m in (inspect.get("Mounts") or [])
+              if m.get("Type") == "bind" and m.get("Source") and m.get("Destination")]
+    # 1. Le -c/--config du container, traduit via ses montages
+    args = list((inspect.get("Config") or {}).get("Cmd") or []) + list(inspect.get("Args") or [])
+    for i, arg in enumerate(args):
+        target = None
+        if arg in ("-c", "--config") and i + 1 < len(args):
+            target = args[i + 1]
+        elif arg.startswith("--config="):
+            target = arg.split("=", 1)[1]
+        if not target:
+            continue
+        for m in sorted(mounts, key=lambda m: len(m["Destination"]), reverse=True):
+            dest = m["Destination"].rstrip("/")
+            if target == dest:
+                return m["Source"]
+            if target.startswith(dest + "/"):
+                return m["Source"].rstrip("/") + target[len(dest):]
+    # 2. Un fichier monté seul, au nom du type (frpc.toml, frps.ini…)
+    for m in mounts:
+        name = Path(m["Source"]).name.lower()
+        if name.startswith(bin_type) and name.endswith(_CONFIG_SUFFIXES):
+            return m["Source"]
+    return None
+
+def _config_users(path, except_iid):
+    """Autres instances frp qui utilisent ce fichier de config."""
+    users = []
+    for o, other in INSTANCES.items():
+        if o == except_iid:
+            continue
+        if other.get("source") == "docker":
+            st, ins = _docker_api("GET", f"/containers/{other['container_name']}/json")
+            if st == 200 and isinstance(ins, dict) and _docker_mounted_config(ins, other["type"]) == path:
+                users.append(o)
+        elif other.get("config") and str(other["config"]) == path:
+            users.append(o)
+    return users
+
+@app.route("/api/instance/<iid>/delete-info")
+@login_required
+def api_instance_delete_info(iid):
+    """Ce que la suppression d'un container emporterait (affiché dans la confirmation)."""
+    detect_frp(force=False)
+    inst = INSTANCES.get(iid)
+    if not inst:
+        return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+    if inst.get("source") != "docker":
+        return jsonify({"ok": True, "image": None, "config_path": None})
+    st, ins = _docker_api("GET", f"/containers/{inst['container_name']}/json")
+    if st != 200 or not isinstance(ins, dict):
+        return jsonify({"ok": False, "msg": f"Conteneur introuvable (HTTP {st})"}), 404
+    return jsonify({"ok": True,
+                    "image": (ins.get("Config") or {}).get("Image") or inst.get("image"),
+                    "config_path": _docker_mounted_config(ins, inst["type"])})
+
+def _delete_container(iid, inst, delete_image, delete_config):
+    container = inst["container_name"]
+    st, ins = _docker_api("GET", f"/containers/{container}/json")
+    if st != 200 or not isinstance(ins, dict):
+        return False, f"Conteneur introuvable (HTTP {st})", 404
+    image_id = ins.get("Image")
+    image_name = (ins.get("Config") or {}).get("Image") or image_id
+    cfg = _docker_mounted_config(ins, inst["type"]) if delete_config else None
+    if delete_config and not cfg:
+        return False, "Aucun fichier de configuration monté n'a été trouvé pour ce conteneur.", 400
+    if cfg:
+        shared = _config_users(cfg, iid)
+        if shared:
+            return False, f"{cfg} est aussi utilisé par {', '.join(shared)} : rien n'a été supprimé.", 400
+
+    status, data = _docker_api("DELETE", f"/containers/{container}?force=true")
+    if status not in (204, 404):
+        detail = data.get("message") if isinstance(data, dict) else data
+        return False, f"Erreur Docker (HTTP {status}) : {detail or ''}".strip(), 500
+    done, notes = [f"conteneur {container}"], []
+
+    if delete_image and image_id:
+        status, data = _docker_api("DELETE", f"/images/{image_id}", timeout=60)
+        if status == 200:
+            done.append(f"image {image_name}")
+        elif status == 409:
+            notes.append(f"image {image_name} conservée : un autre conteneur l'utilise")
+        elif status != 404:
+            notes.append(f"image {image_name} non supprimée (HTTP {status})")
+    if cfg:
+        if host_remove_file(cfg):
+            done.append(cfg)
+        else:
+            notes.append(f"impossible de supprimer {cfg}")
+    msg = f"Supprimé : {', '.join(done)}"
+    if notes:
+        msg += " — " + " ; ".join(notes)
+    return True, msg, 200
 
 @app.route("/api/instance/<iid>", methods=["DELETE"])
 @login_required
@@ -964,18 +1079,16 @@ def api_instance_delete(iid):
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
     inst = INSTANCES[iid]
-    delete_config = bool((request.get_json(silent=True) or {}).get("delete_config"))
+    opts = request.get_json(silent=True) or {}
+    delete_config = bool(opts.get("delete_config"))
 
-    # ── Container Docker : arrêt + suppression (la config montée est conservée)
+    # ── Container Docker : suppression, image et config montée en option ─────
     if inst.get("source") == "docker":
-        container = inst["container_name"]
-        status, data = _docker_api("DELETE", f"/containers/{container}?force=true")
+        ok, msg, code = _delete_container(iid, inst, bool(opts.get("delete_image")), delete_config)
         _invalidate_cache()
-        if status not in (204, 404):
-            detail = data.get("message") if isinstance(data, dict) else data
-            return jsonify({"ok": False, "msg": f"Erreur Docker (HTTP {status}) : {detail or ''}".strip()}), 500
-        _forget_nickname(iid)
-        return jsonify({"ok": True, "msg": f"Conteneur {container} supprimé"})
+        if ok:
+            _forget_instance(iid)
+        return jsonify({"ok": ok, "msg": msg}), code
 
     # ── Instance systemd ──────────────────────────────────────────────────────
     unit = f"{inst['service']}.service"
@@ -987,15 +1100,10 @@ def api_instance_delete(iid):
 
     cfg = Path(inst["config"]) if inst.get("config") else None
     if cfg and delete_config:
-        shared = [o for o, other in INSTANCES.items()
-                  if o != iid and other.get("config") and Path(other["config"]) == cfg]
+        shared = _config_users(str(cfg), iid)
         if shared:
             return jsonify({"ok": False,
                 "msg": f"{cfg} est aussi utilisé par {', '.join(shared)} : il n'a pas été supprimé."}), 400
-    if not fragment and not (delete_config and cfg and cfg.exists()):
-        return jsonify({"ok": False,
-            "msg": "Aucun service systemd pour cette instance : cochez la suppression du fichier de configuration."}), 400
-
     done = []
     if fragment:
         run_cmd(["systemctl", "disable", "--now", unit], timeout=30)
@@ -1013,7 +1121,10 @@ def api_instance_delete(iid):
         except Exception as e:
             _invalidate_cache()
             return jsonify({"ok": False, "msg": f"Service supprimé, mais pas {cfg} : {e}"}), 500
-    _forget_nickname(iid)
+    kept = str(cfg) if cfg and cfg.exists() else None
+    if kept and not done:
+        done.append(f"{iid} retiré du tableau de bord ({kept} conservé)")
+    _forget_instance(iid, kept_config=kept)
     _invalidate_cache()
     return jsonify({"ok": True, "msg": f"Supprimé : {', '.join(done)}"})
 

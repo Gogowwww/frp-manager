@@ -211,6 +211,18 @@ async function deleteInstance(iid) {
   const inst = store.instances[iid];
   const docker = isDocker(inst);
   const name = displayName(iid);
+
+  // Container : l'image et la config montée ne sont connues que de Docker
+  let image = null;
+  let configPath = docker ? null : (inst.config_exists ? inst.config_path : null);
+  if (docker) {
+    try {
+      const info = await api(`/api/instance/${encodeURIComponent(iid)}/delete-info`);
+      if (!info.ok) { toastResult(info); return; }
+      ({ image, config_path: configPath } = info);
+    } catch (e) { toastError(e); return; }
+  }
+
   const result = await openDialog({
     title: t('dashboard.deleteTitle', { name }),
     size: 'sm',
@@ -218,11 +230,20 @@ async function deleteInstance(iid) {
       const body = [h('p', { style: { color: 'var(--text-2)' } },
         docker ? t('dashboard.deleteTextDocker', { container: inst.container_name || iid })
           : t('dashboard.deleteTextService', { service: inst.service }))];
+      let imageRow = null;
+      if (image) {
+        imageRow = switchRow({
+          label: t('dashboard.deleteImage'),
+          description: t('dashboard.deleteImageHint', { image }),
+          checked: true,
+        });
+        body.push(imageRow);
+      }
       let cfgRow = null;
-      if (!docker && inst.config_exists) {
+      if (configPath) {
         cfgRow = switchRow({
           label: t('dashboard.deleteConfig'),
-          description: t('dashboard.deleteConfigHint', { path: inst.config_path }),
+          description: t('dashboard.deleteConfigHint', { path: configPath }),
         });
         body.push(cfgRow);
       }
@@ -233,7 +254,10 @@ async function deleteInstance(iid) {
           button(t('common.cancel'), { onClick: () => close(undefined), autofocus: true }),
           button(t('common.delete'), {
             variant: 'danger', iconName: 'trash',
-            onClick: () => close({ delete_config: !!(cfgRow && cfgRow.input.checked) }),
+            onClick: () => close({
+              delete_image: !!(imageRow && imageRow.input.checked),
+              delete_config: !!(cfgRow && cfgRow.input.checked),
+            }),
           }),
         ],
       };
@@ -243,7 +267,12 @@ async function deleteInstance(iid) {
   try {
     const d = await api(`/api/instance/${encodeURIComponent(iid)}`, { method: 'DELETE', body: result });
     toastResult(d, t('dashboard.deleted', { name }));
-    if (d.ok) await loadNicknames();
+    if (d.ok) {
+      // Retirer la carte tout de suite, sans attendre la nouvelle détection
+      const { [iid]: _gone, ...rest } = store.instances;
+      store.set({ instances: rest });
+      await loadNicknames();
+    }
   } catch (e) { toastError(e); }
   await detect().catch(() => {});
 }
