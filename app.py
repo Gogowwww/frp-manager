@@ -945,6 +945,78 @@ def api_service_action(iid, action):
     _invalidate_cache()
     return jsonify({"ok": ok, "msg": msg or f"{action} {'OK' if ok else 'FAILED'}"})
 
+# Seules les unités créées par l'admin sont supprimées ; celles d'un paquet
+# (/usr/lib, /lib) seraient réinstallées à la prochaine mise à jour.
+_UNIT_DIR = "/etc/systemd/system/"
+
+def _forget_nickname(iid):
+    global MGR_CFG
+    nicks = dict(MGR_CFG.get("nicknames", {}))
+    if nicks.pop(iid, None) is not None:
+        cfg = {**MGR_CFG, "nicknames": nicks}
+        save_manager_config(cfg)
+        MGR_CFG = cfg
+
+@app.route("/api/instance/<iid>", methods=["DELETE"])
+@login_required
+def api_instance_delete(iid):
+    detect_frp(force=True)
+    if iid not in INSTANCES:
+        return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+    inst = INSTANCES[iid]
+    delete_config = bool((request.get_json(silent=True) or {}).get("delete_config"))
+
+    # ── Container Docker : arrêt + suppression (la config montée est conservée)
+    if inst.get("source") == "docker":
+        container = inst["container_name"]
+        status, data = _docker_api("DELETE", f"/containers/{container}?force=true")
+        _invalidate_cache()
+        if status not in (204, 404):
+            detail = data.get("message") if isinstance(data, dict) else data
+            return jsonify({"ok": False, "msg": f"Erreur Docker (HTTP {status}) : {detail or ''}".strip()}), 500
+        _forget_nickname(iid)
+        return jsonify({"ok": True, "msg": f"Conteneur {container} supprimé"})
+
+    # ── Instance systemd ──────────────────────────────────────────────────────
+    unit = f"{inst['service']}.service"
+    _, fragment, _ = run_cmd(["systemctl", "show", unit, "--property=FragmentPath", "--value"])
+    fragment = fragment.strip()
+    if fragment and not fragment.startswith(_UNIT_DIR):
+        return jsonify({"ok": False,
+            "msg": f"{fragment} appartient à un paquet système : supprimez-le avec le gestionnaire de paquets."}), 400
+
+    cfg = Path(inst["config"]) if inst.get("config") else None
+    if cfg and delete_config:
+        shared = [o for o, other in INSTANCES.items()
+                  if o != iid and other.get("config") and Path(other["config"]) == cfg]
+        if shared:
+            return jsonify({"ok": False,
+                "msg": f"{cfg} est aussi utilisé par {', '.join(shared)} : il n'a pas été supprimé."}), 400
+    if not fragment and not (delete_config and cfg and cfg.exists()):
+        return jsonify({"ok": False,
+            "msg": "Aucun service systemd pour cette instance : cochez la suppression du fichier de configuration."}), 400
+
+    done = []
+    if fragment:
+        run_cmd(["systemctl", "disable", "--now", unit], timeout=30)
+        if not host_remove_file(fragment):
+            _invalidate_cache()
+            return jsonify({"ok": False, "msg": f"Service arrêté, mais impossible de supprimer {fragment}"}), 500
+        run_host(["rm", "-rf", f"{_UNIT_DIR}{unit}.d"])
+        run_cmd(["systemctl", "daemon-reload"])
+        run_cmd(["systemctl", "reset-failed", unit])
+        done.append(f"service {unit}")
+    if delete_config and cfg and cfg.exists():
+        try:
+            cfg.unlink()
+            done.append(str(cfg))
+        except Exception as e:
+            _invalidate_cache()
+            return jsonify({"ok": False, "msg": f"Service supprimé, mais pas {cfg} : {e}"}), 500
+    _forget_nickname(iid)
+    _invalidate_cache()
+    return jsonify({"ok": True, "msg": f"Supprimé : {', '.join(done)}"})
+
 @app.route("/api/config/<iid>", methods=["GET"])
 @login_required
 def api_config_get(iid):

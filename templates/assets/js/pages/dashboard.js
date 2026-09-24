@@ -7,7 +7,7 @@ import {
 } from '../store.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, confirmDialog, promptDialog, menuButton,
-  switchControl, callout, emptyState, pageHeader,
+  switchControl, switchRow, openDialog, callout, emptyState, pageHeader,
 } from '../ui.js';
 import { navigate } from '../router.js';
 
@@ -173,6 +173,7 @@ function serviceCard(iid) {
       menuItems.push('sep', { label: t('dashboard.reload'), icon: 'refresh', onSelect: () => serviceAction(iid, 'reload') });
     }
   }
+  menuItems.push('sep', { label: t('common.delete'), icon: 'trash', danger: true, onSelect: () => deleteInstance(iid) });
 
   return h('article', { class: `card svc${running ? ' is-running' : ''}`, 'aria-label': displayName(iid) },
     h('div', { class: 'svc-head' },
@@ -204,6 +205,47 @@ async function stopService(iid, btn) {
     danger: true,
   });
   if (ok) await serviceAction(iid, 'stop', btn);
+}
+
+async function deleteInstance(iid) {
+  const inst = store.instances[iid];
+  const docker = isDocker(inst);
+  const name = displayName(iid);
+  const result = await openDialog({
+    title: t('dashboard.deleteTitle', { name }),
+    size: 'sm',
+    build: ({ close }) => {
+      const body = [h('p', { style: { color: 'var(--text-2)' } },
+        docker ? t('dashboard.deleteTextDocker', { container: inst.container_name || iid })
+          : t('dashboard.deleteTextService', { service: inst.service }))];
+      let cfgRow = null;
+      if (!docker && inst.config_exists) {
+        cfgRow = switchRow({
+          label: t('dashboard.deleteConfig'),
+          description: t('dashboard.deleteConfigHint', { path: inst.config_path }),
+        });
+        body.push(cfgRow);
+      }
+      body.push(callout({ type: 'danger', compact: true, text: t('dashboard.deleteWarning') }));
+      return {
+        body: [h('div', { class: 'form-stack' }, body)],
+        foot: [
+          button(t('common.cancel'), { onClick: () => close(undefined), autofocus: true }),
+          button(t('common.delete'), {
+            variant: 'danger', iconName: 'trash',
+            onClick: () => close({ delete_config: !!(cfgRow && cfgRow.input.checked) }),
+          }),
+        ],
+      };
+    },
+  }).result;
+  if (!result) return;
+  try {
+    const d = await api(`/api/instance/${encodeURIComponent(iid)}`, { method: 'DELETE', body: result });
+    toastResult(d, t('dashboard.deleted', { name }));
+    if (d.ok) await loadNicknames();
+  } catch (e) { toastError(e); }
+  await detect().catch(() => {});
 }
 
 async function rename(iid) {

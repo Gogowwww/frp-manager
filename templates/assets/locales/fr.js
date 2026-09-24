@@ -122,6 +122,13 @@ export default {
     renameHint: 'Laissez vide pour revenir au nom d’origine ({id}).',
     renamePlaceholder: 'Ex. : Serveur maison',
     renamed: 'Nom mis à jour',
+    deleteTitle: 'Supprimer {name} ?',
+    deleteTextService: 'Le service {service} sera arrêté, désactivé et son fichier d’unité systemd supprimé. Le programme frp reste installé.',
+    deleteTextDocker: 'Le conteneur {container} sera arrêté et supprimé. Son image et la configuration montée sont conservées.',
+    deleteConfig: 'Supprimer aussi la configuration',
+    deleteConfigHint: 'Efface {path} et tous les tunnels ou réglages qu’il contient.',
+    deleteWarning: 'Cette action est irréversible.',
+    deleted: '{name} supprimé',
   },
 
   tunnels: {
