@@ -75,6 +75,15 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 - 💾 **Brouillon puis enregistrement** : les modifications s'accumulent, une barre propose *Enregistrer* ou *Enregistrer et redémarrer frpc* ; avertissement si vous quittez sans enregistrer
 - 🧷 **Rien n'est perdu** : les réglages que l'interface ne gère pas (`subdomain`, `plugin`, `[proxies.healthCheck]`…) sont conservés tels quels
 
+### 🛡️ Pare-feu (frps)
+- 🚦 **Qui peut se connecter** aux ports qu'ouvre frps : règles *Autoriser seulement* (liste blanche) ou *Bloquer* (liste noire), sur des ports choisis ou sur **tous les ports frp**
+- 🔎 **Ports détectés tout seuls** : `bindPort`, ports vhost, KCP/QUIC, `allowPorts`, et les ports ouverts par les clients (via le tableau de bord de frps, s'il est activé) ; la liste est suivie automatiquement
+- 🧱 **Filtrage par le noyau** (nftables, table dédiée `inet frp_manager`), avant le NAT de Docker : un frps en conteneur est filtré aussi, et **le filtrage continue si le panel s'arrête**
+- 🙅 Le pare-feu **ne fait que bloquer** : il n'ouvre jamais un port et ne touche ni à ufw ni aux règles de Docker ; le port du panel et la boucle locale ne sont jamais filtrés
+- 🧪 **Tester une adresse** avant d'appliquer, **alerte** si vos règles bloqueraient votre propre IP, **compteur** de blocages par règle et **dernières connexions bloquées**
+
+> ℹ️ Nécessite `nftables` sur la machine (`apt install nftables`). La page n'apparaît que si un frps tourne sur la machine.
+
 ### ⚙️ Configuration (frps / frpc)
 - 🧩 **Formulaire par sections** : l'essentiel visible (connexion, authentification, tableau de bord frp), le reste replié dans *Réglages avancés* (TLS, ports KCP/QUIC/vhost, limites, journalisation)
 - 🏷️ Chaque champ affiche sa **clé TOML** et une aide courte

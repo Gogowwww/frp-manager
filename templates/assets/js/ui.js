@@ -343,8 +343,8 @@ export function badge(text, variant = '', attrs = {}) {
 }
 
 /** Barre « modifications non enregistrées », fixée en bas de l'écran. */
-export function saveBar({ onDiscard, onSave, onSaveRestart, restartLabel }) {
-  const saveBtn = button(t('common.save'), { variant: 'secondary', onClick: () => busy(saveBtn, onSave) });
+export function saveBar({ onDiscard, onSave, onSaveRestart, restartLabel, saveLabel }) {
+  const saveBtn = button(saveLabel || t('common.save'), { variant: 'secondary', onClick: () => busy(saveBtn, onSave) });
   const restartBtn = onSaveRestart
     ? button(restartLabel || t('common.saveAndRestart'), { variant: 'primary', onClick: () => busy(restartBtn, onSaveRestart) })
     : null;

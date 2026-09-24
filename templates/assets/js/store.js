@@ -39,6 +39,7 @@ export function instanceIds(filter) {
 
 export const isDocker = (inst) => inst && inst.source === 'docker';
 export const frpcIds = () => instanceIds((i) => i.type === 'frpc');
+export const frpsIds = () => instanceIds((i) => i.type === 'frps');
 
 export function displayName(iid) {
   const inst = store.instances[iid];

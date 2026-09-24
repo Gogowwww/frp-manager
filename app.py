@@ -2068,6 +2068,393 @@ def migrate_away_from_mmproxy():
             pass
     print("[OK] go-mmproxy retiré (relais, règles de routage, binaire et état)")
 
+# ── Pare-feu frps (nftables) ─────────────────────────────────────────────────
+# Filtre, dans le noyau de la machine frps, qui peut se connecter aux ports
+# qu'ouvre frps. Tout vit dans une table dédiée, remplacée d'un bloc à chaque
+# application (nft -f est atomique : une erreur ne change rien) :
+#   - hook prerouting, priorité -150 : avant le DNAT de Docker, donc un frps en
+#     container est filtré aussi, et on voit la vraie IP du client ;
+#   - la table ne fait que JETER des connexions, elle n'en autorise aucune :
+#     ufw/Docker restent seuls juges de ce qui est ouvert ;
+#   - seules les nouvelles connexions vers une adresse de la machine sont
+#     examinées ; la boucle locale ne l'est jamais, le port du panel non plus.
+# Une connexion doit passer chaque règle active qui concerne son port.
+# Si le panel s'arrête, la table reste en place ; au démarrage il la réapplique.
+import ipaddress
+try:
+    import tomllib as _tomllib
+except ImportError:          # Python < 3.11 (installation classique ancienne)
+    _tomllib = None
+
+FW_TABLE        = "frp_manager"
+FW_LOG_PREFIX   = "frpm-fw "
+FW_SYNC_SECONDS = 60
+FW_MODES        = ("allow", "block")
+_fw_lock        = threading.Lock()
+_fw_applied     = None       # dernier jeu de règles chargé avec succès
+
+def _fw_cfg():
+    fw = MGR_CFG.get("firewall") or {}
+    return {"enabled": bool(fw.get("enabled")), "rules": list(fw.get("rules") or [])}
+
+def _frps_instances():
+    return {iid: inst for iid, inst in INSTANCES.items() if inst.get("type") == "frps"}
+
+def _fw_panel_port():
+    try:
+        return int(MGR_CFG.get("bind_port") or 8765)
+    except (TypeError, ValueError):
+        return 8765
+
+def _frps_config_text(inst):
+    if inst.get("source") == "docker":
+        st, ins = _docker_api("GET", f"/containers/{inst['container_name']}/json")
+        path = _docker_mounted_config(ins, "frps") if st == 200 and isinstance(ins, dict) else None
+        return host_read_file(path) if path else None
+    cfg = inst.get("config")
+    try:
+        return Path(cfg).read_text() if cfg and Path(cfg).exists() else None
+    except Exception:
+        return None
+
+def _frps_active_proxies(conf):
+    """Proxys connectés, via l'API du tableau de bord frps (si webServer est configuré)."""
+    ws = conf.get("webServer") or {}
+    port = ws.get("port")
+    if not port:
+        return []
+    addr = ws.get("addr") or "127.0.0.1"
+    if addr in ("0.0.0.0", "::", ""):
+        addr = "127.0.0.1"
+    auth = (ws["user"], ws.get("password", "")) if ws.get("user") else None
+    found = []
+    for ptype in ("tcp", "udp"):
+        try:
+            r = req.get(f"http://{addr}:{port}/api/proxy/{ptype}", auth=auth, timeout=2)
+            proxies = r.json().get("proxies") or [] if r.ok else []
+        except Exception:
+            continue
+        for p in proxies:
+            rp = (p.get("conf") or {}).get("remotePort") or p.get("remotePort")
+            if rp:
+                found.append({"port": int(rp), "proto": ptype, "name": p.get("name", ""),
+                              "online": p.get("status") == "online"})
+    return found
+
+def _fw_known_ports():
+    """Ports ouverts par le(s) frps de la machine : [{start, end, proto, label, kind, online}]."""
+    known, seen = [], set()
+    def add(start, end, proto, label, kind, online=None):
+        key = (start, end, proto)
+        if key in seen or not (1 <= start <= end <= 65535):
+            return
+        seen.add(key)
+        known.append({"start": start, "end": end, "proto": proto, "label": label,
+                      "kind": kind, "online": online})
+    for inst in _frps_instances().values():
+        text = _frps_config_text(inst)
+        if text is None:
+            continue
+        conf = None
+        if _tomllib:
+            try:
+                conf = _tomllib.loads(text)
+            except Exception:
+                conf = None
+        if conf is None:
+            # Ancienne installation sans tomllib, ou config illisible : lecture simple
+            for p in _extract_ports_from_config(text, "frps"):
+                add(p["port"], p["port"], p["proto"], p["label"], "config")
+            continue
+        add(int(conf.get("bindPort") or 7000), int(conf.get("bindPort") or 7000), "tcp", "Connexion des clients frpc", "config")
+        for key, proto, label in (("kcpBindPort", "udp", "KCP"), ("quicBindPort", "udp", "QUIC"),
+                                  ("vhostHTTPPort", "tcp", "Sites HTTP (vhost)"),
+                                  ("vhostHTTPSPort", "tcp", "Sites HTTPS (vhost)"),
+                                  ("tcpmuxHTTPConnectPort", "tcp", "TCP mux")):
+            if conf.get(key):
+                add(int(conf[key]), int(conf[key]), proto, label, "config")
+        ws = conf.get("webServer") or {}
+        if ws.get("port") and ws.get("addr", "127.0.0.1") not in ("127.0.0.1", "localhost", "::1"):
+            add(int(ws["port"]), int(ws["port"]), "tcp", "Tableau de bord frps", "config")
+        for rng in conf.get("allowPorts") or []:
+            if rng.get("single"):
+                add(int(rng["single"]), int(rng["single"]), "any", "Port réservé aux clients", "range")
+            elif rng.get("start") and rng.get("end"):
+                add(int(rng["start"]), int(rng["end"]), "any", "Plage réservée aux clients", "range")
+        for p in _frps_active_proxies(conf):
+            add(p["port"], p["port"], p["proto"], f"Port « {p['name']} »", "proxy", p["online"])
+    known.sort(key=lambda k: (k["start"], k["end"]))
+    return known
+
+def _fw_parse_ports(spec):
+    """'7000, 25565, 30000-30010' → [(7000, 7000), …]. ValueError si invalide."""
+    ranges = []
+    for part in re.split(r"[,\s]+", str(spec).strip()):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d{1,5})(?:-(\d{1,5}))?", part)
+        if not m:
+            raise ValueError(f"« {part} » n'est pas un port ni une plage (ex. 30000-30010)")
+        a, b = int(m.group(1)), int(m.group(2) or m.group(1))
+        if not (1 <= a <= b <= 65535):
+            raise ValueError(f"« {part} » : les ports vont de 1 à 65535, dans l'ordre")
+        ranges.append((a, b))
+    if not ranges:
+        raise ValueError("Indiquez au moins un port")
+    return ranges
+
+def _fw_rule_ranges(rule, known):
+    """Plages de ports d'une règle, sans le port du panel (jamais filtré)."""
+    ranges = ([(k["start"], k["end"]) for k in known] if rule["ports"] == "*"
+              else _fw_parse_ports(rule["ports"]))
+    panel, out = _fw_panel_port(), []
+    for a, b in ranges:
+        if a <= panel <= b:
+            if a < panel:
+                out.append((a, panel - 1))
+            if panel < b:
+                out.append((panel + 1, b))
+        else:
+            out.append((a, b))
+    return out
+
+def _fw_normalize_rule(raw, index):
+    """Valide une règle venue de l'interface. → règle propre, ou ValueError."""
+    where = f"Règle {index + 1}"
+    name = str(raw.get("name") or "").strip()[:60]
+    if name:
+        where = f"Règle « {name} »"
+    mode = raw.get("mode")
+    if mode not in FW_MODES:
+        raise ValueError(f"{where} : action inconnue")
+    ports = str(raw.get("ports") or "").strip()
+    if ports != "*":
+        try:
+            ranges = _fw_parse_ports(ports)
+        except ValueError as e:
+            raise ValueError(f"{where} : {e}")
+        panel = _fw_panel_port()
+        if ranges == [(panel, panel)]:
+            raise ValueError(f"{where} : le port du panel ({panel}) n'est jamais filtré ici")
+        ports = ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
+    sources = []
+    for src in raw.get("sources") or []:
+        text = str(src.get("cidr") or "").strip()
+        if not text:
+            continue
+        try:
+            net = ipaddress.ip_network(text, strict=False)
+        except ValueError:
+            raise ValueError(f"{where} : « {text} » n'est pas une adresse IP ni un réseau (ex. 203.0.113.0/24)")
+        cidr = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
+        sources.append({"cidr": cidr, "note": str(src.get("note") or "").strip()[:60]})
+    if mode == "block" and not sources:
+        raise ValueError(f"{where} : indiquez au moins une adresse à bloquer")
+    return {"id": re.sub(r"[^0-9a-f]", "", str(raw.get("id") or ""))[:12] or secrets.token_hex(4),
+            "name": name, "mode": mode, "ports": ports, "sources": sources,
+            "enabled": raw.get("enabled", True) is not False}
+
+def _fw_ruleset(cfg, known):
+    """Texte nft qui remplace la table (ou la supprime si rien n'est à filtrer)."""
+    head = f"table inet {FW_TABLE}\ndelete table inet {FW_TABLE}\n"
+    rules = [r for r in cfg["rules"] if r.get("enabled", True)] if cfg["enabled"] else []
+    sets, chain = [], []
+    for n, rule in enumerate(rules):
+        try:
+            ranges = _fw_rule_ranges(rule, known)
+        except ValueError:
+            continue
+        if not ranges:
+            continue
+        rid = f"r{n}"
+        nets = [ipaddress.ip_network(s["cidr"], strict=False) for s in rule["sources"]]
+        ports = ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
+        sets.append(f"  set {rid}_ports {{ type inet_service; flags interval; auto-merge; elements = {{ {ports} }} }}")
+        families = []
+        for fam, sel, version, stype in (("ipv4", "ip", 4, "ipv4_addr"), ("ipv6", "ip6", 6, "ipv6_addr")):
+            elems = ", ".join(str(x) for x in nets if x.version == version)
+            body = f"type {stype}; flags interval; auto-merge;" + (f" elements = {{ {elems} }}" if elems else "")
+            sets.append(f"  set {rid}_v{version} {{ {body} }}")
+            if rule["mode"] == "allow":
+                families.append(f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr != @{rid}_v{version}")
+            elif elems:
+                families.append(f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr @{rid}_v{version}")
+        for match in families:
+            chain.append(f'    {match} limit rate 5/second burst 10 packets log prefix "{FW_LOG_PREFIX}{rule["id"]} " level info')
+            chain.append(f'    {match} counter drop comment "{rule["id"]}"')
+    if not chain:
+        return head
+    return head + "\n".join([
+        f"table inet {FW_TABLE} {{",
+        *sets,
+        "  chain filter {",
+        "    type filter hook prerouting priority -150; policy accept;",
+        '    iifname "lo" return',
+        "    ct state != new return",
+        "    fib daddr type != local return",
+        "    meta l4proto != { tcp, udp } return",
+        *chain,
+        "  }",
+        "}",
+    ]) + "\n"
+
+def _fw_apply(cfg=None):
+    """Charge la table nft correspondant à la config. → (ok, message d'erreur)."""
+    global _fw_applied
+    with _fw_lock:
+        cfg = cfg or _fw_cfg()
+        text = _fw_ruleset(cfg, _fw_known_ports())
+        ok, out, err = run_host(["nft", "-f", "-"], input_text=text)
+        if ok:
+            _fw_applied = text
+        return ok, (err or out).strip()
+
+def _fw_table_present():
+    ok, _, _ = run_host(["nft", "list", "table", "inet", FW_TABLE])
+    return ok
+
+def _fw_counters():
+    """{id de règle: paquets jetés depuis la dernière application}."""
+    ok, out, _ = run_host(["nft", "-j", "list", "table", "inet", FW_TABLE])
+    counts = {}
+    if not ok:
+        return counts
+    try:
+        items = json.loads(out).get("nftables", [])
+    except Exception:
+        return counts
+    for item in items:
+        rule = item.get("rule")
+        if not rule or not rule.get("comment"):
+            continue
+        for expr in rule.get("expr", []):
+            if isinstance(expr, dict) and "counter" in expr:
+                counts[rule["comment"]] = counts.get(rule["comment"], 0) + int(expr["counter"].get("packets", 0))
+    return counts
+
+def _fw_verdicts(ip_text, cfg, known):
+    """Pour une adresse : chaque port frp connu, et les règles qui la bloqueraient."""
+    ip = ipaddress.ip_address(ip_text)
+    rules = [r for r in cfg["rules"] if r.get("enabled", True)]
+    result = []
+    for k in known:
+        blocked_by = []
+        for rule in rules:
+            try:
+                ranges = _fw_rule_ranges(rule, known)
+            except ValueError:
+                continue
+            if not any(a <= k["end"] and k["start"] <= b for a, b in ranges):
+                continue
+            listed = any(ip in ipaddress.ip_network(s["cidr"], strict=False) for s in rule["sources"])
+            if (rule["mode"] == "allow") != listed:
+                blocked_by.append(rule.get("name") or rule["id"])
+        result.append({**k, "blocked_by": blocked_by})
+    return result
+
+def _fw_sync_loop():
+    """Garde la table à jour : ports des proxys qui changent, table effacée
+    (rechargement de nftables, redémarrage), démarrage du panel."""
+    time.sleep(5)
+    while True:
+        try:
+            cfg = _fw_cfg()
+            if cfg["enabled"]:
+                detect_frp(force=False)
+                text = _fw_ruleset(cfg, _fw_known_ports())
+                expect_table = "chain filter" in text
+                if text != _fw_applied or (expect_table and not _fw_table_present()):
+                    ok, msg = _fw_apply(cfg)
+                    if not ok:
+                        print(f"[WARN] Pare-feu : application impossible ({msg})")
+        except Exception as e:
+            print(f"[WARN] Pare-feu : {e}")
+        time.sleep(FW_SYNC_SECONDS)
+
+def _client_ip():
+    try:
+        ip = ipaddress.ip_address(request.remote_addr or "")
+    except ValueError:
+        return None
+    return None if ip.is_loopback else str(ip)
+
+@app.route("/api/firewall", methods=["GET"])
+@login_required
+def api_firewall_get():
+    detect_frp(force=False)
+    has_frps = bool(_frps_instances())
+    cfg = _fw_cfg()
+    ok, out, err = run_host(["nft", "--version"]) if has_frps else (False, "", "")
+    known = _fw_known_ports() if has_frps and ok else []
+    client = _client_ip()
+    return jsonify({
+        "ok": True, "has_frps": has_frps,
+        "available": ok, "nft": out.strip() if ok else (err or "nft introuvable").strip(),
+        "enabled": cfg["enabled"], "rules": cfg["rules"], "ports": known,
+        "active": ok and _fw_table_present(),
+        "counters": _fw_counters() if ok else {},
+        "client_ip": client,
+        "client_verdicts": _fw_verdicts(client, cfg, known) if client and known and cfg["enabled"] else [],
+        "panel_port": _fw_panel_port(), "in_docker": IN_DOCKER,
+    })
+
+@app.route("/api/firewall", methods=["POST"])
+@login_required
+def api_firewall_save():
+    global MGR_CFG
+    detect_frp(force=False)
+    if not _frps_instances():
+        return jsonify({"ok": False, "msg": "Le pare-feu ne filtre que les ports d'un frps : aucun frps sur cette machine."}), 400
+    data = request.get_json() or {}
+    try:
+        rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    new = {"enabled": bool(data.get("enabled")), "rules": rules}
+    ok, msg = _fw_apply(new)
+    if not ok:
+        return jsonify({"ok": False, "msg": f"nftables a refusé les règles, rien n'a changé : {msg or 'erreur inconnue'}"}), 500
+    MGR_CFG = {**MGR_CFG, "firewall": new}
+    save_manager_config(MGR_CFG)
+    return jsonify({"ok": True, "rules": rules,
+                    "msg": "Pare-feu appliqué" if new["enabled"] else "Pare-feu désactivé : plus aucun filtrage"})
+
+@app.route("/api/firewall/test", methods=["POST"])
+@login_required
+def api_firewall_test():
+    """Ce que les règles (brouillon compris) feraient d'une adresse."""
+    detect_frp(force=False)
+    data = request.get_json() or {}
+    try:
+        ipaddress.ip_address(str(data.get("ip", "")).strip())
+        rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
+    except ValueError as e:
+        return jsonify({"ok": False, "msg": str(e) if "Règle" in str(e) else "Adresse IP invalide"}), 400
+    verdicts = _fw_verdicts(str(data["ip"]).strip(), {"enabled": True, "rules": rules}, _fw_known_ports())
+    return jsonify({"ok": True, "verdicts": verdicts})
+
+_FW_LOG_RE = re.compile(r"SRC=(?P<src>\S+).*?PROTO=(?P<proto>\S+)(?:.*?DPT=(?P<dpt>\d+))?")
+
+@app.route("/api/firewall/blocked")
+@login_required
+def api_firewall_blocked():
+    """Dernières connexions bloquées (journal du noyau, limité à 5/s par règle)."""
+    ok, out, err = run_cmd(["journalctl", "-k", "-n", "5000", "--no-pager", "-o", "short-iso"], timeout=20)
+    if not ok:
+        return jsonify({"ok": False, "msg": err or "Journal du noyau illisible"}), 500
+    entries = []
+    for line in out.splitlines():
+        pos = line.find(FW_LOG_PREFIX)
+        if pos < 0:
+            continue
+        m = _FW_LOG_RE.search(line, pos)
+        if not m:
+            continue
+        entries.append({"time": line.split(" ", 1)[0], "rule": line[pos + len(FW_LOG_PREFIX):].split(" ", 1)[0],
+                        "src": m.group("src"), "proto": m.group("proto").lower(),
+                        "port": int(m.group("dpt")) if m.group("dpt") else None})
+    return jsonify({"ok": True, "entries": entries[-100:][::-1]})
+
 if __name__ == "__main__":
     host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))
     port = MGR_CFG.get("bind_port", int(os.environ.get("FRP_MANAGER_PORT", 8765)))
@@ -2075,4 +2462,5 @@ if __name__ == "__main__":
     proto = "https" if ssl_ctx else "http"
     print(f"[INFO] FRP Manager démarré sur {proto}://{host}:{port}")
     threading.Thread(target=migrate_away_from_mmproxy, daemon=True).start()
+    threading.Thread(target=_fw_sync_loop, daemon=True).start()
     app.run(host=host, port=port, debug=False, ssl_context=ssl_ctx)

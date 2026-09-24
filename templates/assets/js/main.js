@@ -3,12 +3,13 @@
 import { initI18n, applyI18n, t } from './i18n.js';
 import { api } from './api.js';
 import {
-  store, frpcIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
+  store, frpcIds, frpsIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
 } from './store.js';
 import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
 import dashboard from './pages/dashboard.js';
 import tunnels from './pages/tunnels.js';
+import firewall from './pages/firewall.js';
 import config from './pages/config.js';
 import logs from './pages/logs.js';
 import updates from './pages/updates.js';
@@ -29,9 +30,11 @@ function setupShell() {
     try { await api('/api/logout', { method: 'POST' }); } finally { location.href = '/login'; }
   });
 
-  // Navigation : onglet Tunnels seulement s'il existe un frpc, pastille de mise à jour
+  // Navigation : Ports seulement s'il existe un frpc, Pare-feu seulement s'il
+  // existe un frps ; pastille de mise à jour
   store.subscribe(() => {
     document.querySelector('[data-route="tunnels"]').hidden = store.ready && !frpcIds().length;
+    document.querySelector('[data-route="firewall"]').hidden = !store.ready || !frpsIds().length;
     const upd = store.updates.frp || store.updates.panel;
     document.getElementById('updates-badge').hidden = !upd;
   });
@@ -72,7 +75,7 @@ async function boot() {
   applyI18n();
   setupShell();
 
-  [dashboard, tunnels, config, logs, updates, settings].forEach(registerPage);
+  [dashboard, tunnels, firewall, config, logs, updates, settings].forEach(registerPage);
 
   // Détection d'abord : toutes les pages en dépendent
   await Promise.all([loadNicknames(), loadManagerState()]);
