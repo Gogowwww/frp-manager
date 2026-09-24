@@ -12,13 +12,17 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ panel_version }}">
-<script type="module" src="{{ url_for('static', filename='js/main.js') }}?v={{ panel_version }}"></script>
+<!-- Polices chargées sans bloquer l'affichage : sans accès à Google, la page
+     s'affiche tout de suite avec les polices du système. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+{% for m in preload_modules %}<link rel="modulepreload" href="{{ asset(m) }}">
+{% endfor %}<script type="module" src="{{ asset('js/main.js') }}"></script>
 </head>
 <body>
 
 {% include "partials/icons.html" %}
+<script id="boot" type="application/json">{{ boot|tojson }}</script>
 
 <div class="app" id="app">
   <aside class="sidebar" id="sidebar">

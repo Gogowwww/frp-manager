@@ -75,16 +75,17 @@ function frpCard() {
   const logWrap = h('div', { class: 'field', hidden: true }, h('span', { class: 'field-label' }, t('updates.log')), term);
   frpLog = { term, wrap: logWrap };
 
-  const checkBtn = button(t('updates.check'), { iconName: 'refresh', onClick: () => busy(checkBtn, check) });
+  const checkBtn = button(t('updates.check'), { iconName: 'refresh', onClick: () => busy(checkBtn, () => check(true)) });
   const installBtn = button(t('updates.install'), { variant: 'primary', iconName: 'download', onClick: install });
   installBtn.hidden = true;
 
-  async function check() {
+  /** fresh : redemander à GitHub (bouton « Vérifier »), sinon réponse gardée 10 min. */
+  async function check(fresh = false) {
     cells.installed.dd.textContent = '…';
     cells.latest.dd.textContent = '…';
     setStatus(cells.status, '', t('updates.checking'));
     try {
-      const d = await api('/api/update/check');
+      const d = await api(`/api/update/check${fresh ? '?fresh=1' : ''}`);
       if (!d.ok) {
         cells.installed.dd.textContent = '—';
         cells.latest.dd.textContent = '—';
@@ -116,7 +117,7 @@ function frpCard() {
         const d = await api('/api/update/install', { method: 'POST' });
         if (!d.ok) { toast(d.msg, 'error'); return; }
         toast(t('updates.installing'), 'info');
-        await pollFrpLog(() => check());
+        await pollFrpLog(() => check(true));
       } catch (e) { toastError(e); }
     });
   }
@@ -217,17 +218,18 @@ function panelCard() {
   const logWrap = h('div', { class: 'field', hidden: true }, h('span', { class: 'field-label' }, t('updates.log')), term);
   const extra = h('div', { class: 'form-stack' });
 
-  const checkBtn = button(t('updates.check'), { iconName: 'refresh', onClick: () => busy(checkBtn, check) });
+  const checkBtn = button(t('updates.check'), { iconName: 'refresh', onClick: () => busy(checkBtn, () => check(true)) });
   const updateBtn = button(t('updates.panelUpdate'), { variant: 'primary', iconName: 'download', onClick: update });
   const releaseLink = h('a', { class: 'btn btn-ghost', target: '_blank', rel: 'noopener', hidden: true }, icon('external'), t('updates.releaseNotes'));
   updateBtn.hidden = true;
 
-  async function check() {
+  /** fresh : redemander à GitHub (bouton « Vérifier »), sinon réponse gardée 10 min. */
+  async function check(fresh = false) {
     cells.installed.dd.textContent = '…';
     cells.latest.dd.textContent = '…';
     setStatus(cells.status, '', t('updates.checking'));
     try {
-      const d = await api('/api/panel/version');
+      const d = await api(`/api/panel/version${fresh ? '?fresh=1' : ''}`);
       if (!d.ok) { setStatus(cells.status, 'danger', t('errors.generic')); return; }
       cells.installed.dd.textContent = `v${d.current}`;
       extra.replaceChildren();

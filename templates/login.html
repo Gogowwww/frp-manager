@@ -10,8 +10,12 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<!-- Polices chargées sans bloquer l'affichage : sans accès à Google, la page
+     s'affiche tout de suite avec les polices du système. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="{{ asset('css/app.css') }}">
+<link rel="modulepreload" href="{{ asset('js/i18n.js') }}">
+<link rel="modulepreload" href="{{ asset('locales/fr.js') }}">
 </head>
 <body>
 {% include "partials/icons.html" %}
@@ -41,7 +45,7 @@
 </main>
 
 <script type="module">
-  import { initI18n, applyI18n, t } from "{{ url_for('static', filename='js/i18n.js') }}";
+  import { initI18n, applyI18n, t } from "{{ asset('js/i18n.js') }}";
 
   await initI18n();
   applyI18n();

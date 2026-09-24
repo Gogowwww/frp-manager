@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """FRP Manager — backend Flask multi-instances"""
 
-import os, re, sys, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl, queue
+import os, re, sys, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl, queue, gzip
 import socket as _socket, http.client as _http_client
 from pathlib import Path
 from datetime import datetime
@@ -161,6 +161,76 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 # une connexion WebSocket restée silencieuse (journal sans nouvelle ligne).
 app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
 sock = Sock(app) if Sock else None
+
+# ── Fichiers du site (CSS, JS, traductions) ──────────────────────────────────
+# Servis sous une adresse qui contient leur empreinte (/v/<empreinte>/js/main.js) :
+# le navigateur les garde un an sans rien redemander, et toute modification
+# (mise à jour du panel) change l'empreinte, donc l'adresse. Les imports
+# relatifs entre modules restent sous la même empreinte. Chaque fichier est lu
+# et compressé (gzip) une seule fois, au démarrage.
+# L'ancienne adresse /assets/… reste servie (pages encore ouvertes pendant une
+# mise à jour).
+_ASSETS_DIR   = Path(app.root_path) / "templates" / "assets"
+_ASSET_TYPES  = {".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+                 ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2"}
+_COMPRESSIBLE = {".js", ".css", ".json", ".svg"}
+
+def _load_assets():
+    files, digest = {}, hashlib.sha256()
+    for f in sorted(_ASSETS_DIR.rglob("*")):
+        if not f.is_file() or f.suffix not in _ASSET_TYPES:
+            continue
+        rel, data = f.relative_to(_ASSETS_DIR).as_posix(), f.read_bytes()
+        digest.update(rel.encode() + b"\0" + data)
+        gz = gzip.compress(data, 9, mtime=0) if f.suffix in _COMPRESSIBLE and len(data) > 512 else None
+        files[rel] = (data, gz if gz and len(gz) < len(data) else None, _ASSET_TYPES[f.suffix])
+    return files, digest.hexdigest()[:12]
+
+_ASSETS, ASSETS_VERSION = _load_assets()
+# Modules chargés par la page, annoncés d'un coup (<link rel="modulepreload">) :
+# sans ça, le navigateur les découvre import après import, en cascade.
+_PRELOAD_MODULES = sorted(r for r in _ASSETS if r.startswith("js/") and r.endswith(".js")) + ["locales/fr.js"]
+
+def _accepts_gzip():
+    return "gzip" in request.headers.get("Accept-Encoding", "")
+
+@app.route("/v/<version>/<path:filename>")
+def versioned_asset(version, filename):
+    entry = _ASSETS.get(filename)
+    if not entry:
+        return Response("Introuvable", status=404, mimetype="text/plain")
+    data, gz, mime = entry
+    resp = Response(gz if gz and _accepts_gzip() else data, mimetype=mime)
+    if gz:
+        resp.headers["Vary"] = "Accept-Encoding"
+        if _accepts_gzip():
+            resp.headers["Content-Encoding"] = "gzip"
+    # Une empreinte périmée (page ouverte avant une mise à jour) : pas de cache
+    resp.headers["Cache-Control"] = ("public, max-age=31536000, immutable"
+                                     if version == ASSETS_VERSION else "no-cache")
+    return resp
+
+@app.context_processor
+def _asset_helpers():
+    return {"asset": lambda rel: f"/v/{ASSETS_VERSION}/{rel}", "preload_modules": _PRELOAD_MODULES}
+
+_GZIP_TYPES = {"application/json", "text/html", "text/plain"}
+
+@app.after_request
+def _compress_response(resp):
+    """Réponses de l'API et pages HTML compressées au-delà de 1 Ko (listes de
+    ports, états, journaux…). Flux (SSE, WebSocket) et fichiers laissés tels quels."""
+    if (resp.status_code != 200 or resp.direct_passthrough or resp.is_streamed
+            or resp.mimetype not in _GZIP_TYPES or "Content-Encoding" in resp.headers
+            or request.path.startswith("/ws/") or not _accepts_gzip()):
+        return resp
+    data = resp.get_data()
+    if len(data) < 1024:
+        return resp
+    resp.set_data(gzip.compress(data, 5))
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Vary"] = "Accept-Encoding"
+    return resp
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 FRP_BIN_DIR    = Path("/usr/local/bin")
@@ -339,12 +409,6 @@ def get_arch():
     m = platform.machine().lower()
     return {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "arm"}.get(m, "amd64")
 
-def service_status(name):
-    _, active, _  = run_cmd(["systemctl", "is-active",  name])
-    _, enabled, _ = run_cmd(["systemctl", "is-enabled", name])
-    return {"active": active.strip(), "enabled": enabled.strip() == "enabled",
-            "running": active.strip() == "active"}
-
 def service_action(name, action):
     ok, out, err = run_cmd(["systemctl", action, name])
     return ok, err or out
@@ -504,11 +568,6 @@ class LiveLog:
             for line in lines:
                 yield line.rstrip("\r")
 
-def _docker_container_running(container):
-    """Le container tourne-t-il ? (False s'il est introuvable ou Docker injoignable)"""
-    status, data = _docker_api("GET", f"/containers/{container}/json")
-    return bool(status == 200 and isinstance(data, dict) and (data.get("State") or {}).get("Running"))
-
 def _resolve_container(container):
     """Nom du container, ou son id court s'il n'est pas trouvé sous ce nom."""
     status, _ = _docker_api("GET", f"/containers/{container}/json")
@@ -565,11 +624,24 @@ def _detect_docker_frp_containers():
     return instances
 
 # ── Détection multi-instances ─────────────────────────────────────────────────
+# Deux étages, pour ne pas lancer une douzaine de processus toutes les 2 s :
+#   - la DÉCOUVERTE (services systemd, programmes, configs, containers) change
+#     rarement : refaite toutes les 30 s, ou aussitôt après une action qui la
+#     modifie (installation, suppression, configuration enregistrée) ;
+#   - l'ÉTAT (en marche, démarrage automatique) : un seul « systemctl show »
+#     pour toutes les instances et une seule liste Docker, partagés 1,5 s entre
+#     tous les appelants (onglets ouverts, WebSocket, requêtes).
 INSTANCES          = {}
-_detect_cache      = {}
+_detect_cache      = {}          # résultat de la découverte, sans l'état
 _detect_cache_time = 0
+_status_cache      = {}
+_status_time       = 0
 _detect_lock       = threading.Lock()
-DETECT_CACHE_TTL   = 6
+DISCOVERY_TTL      = 30
+STATUS_TTL         = 1.5
+_version_cache     = {}          # binaire → (mtime, sortie de --version)
+_STOPPED = {"active": "inactive", "enabled": False, "running": False}
+_MISSING = {"active": "not-installed", "enabled": False, "running": False}
 
 def _find_binary(name):
     for d in BINARY_SEARCH_PATHS:
@@ -590,31 +662,56 @@ def _find_binary(name):
     return None
 
 def _read_version(binary_path):
+    """« frps --version », relu seulement si le binaire a changé (mise à jour)."""
+    try:
+        mtime = Path(binary_path).stat().st_mtime
+    except OSError:
+        return None
+    cached = _version_cache.get(str(binary_path))
+    if cached and cached[0] == mtime:
+        return cached[1]
     ok, out, _ = run_cmd([str(binary_path), "--version"])
-    return out.strip() if ok else None
+    ver = out.strip() if ok else None
+    _version_cache[str(binary_path)] = (mtime, ver)
+    return ver
 
-def _find_systemd_units(bin_name):
-    ok, out, _ = run_cmd(["systemctl", "list-unit-files", "--type=service",
-                           "--no-pager", "--plain", "--no-legend"])
-    candidates = []
-    for line in (out or "").splitlines():
-        parts = line.split()
-        if not parts: continue
-        unit = parts[0]
-        if not unit.endswith(".service"): continue
-        stem = unit[:-8]
-        if re.match(rf'^{re.escape(bin_name)}\d*$', stem):
-            candidates.append(unit)
+def _systemctl_show(units, props):
+    """« systemctl show » de plusieurs unités en un seul appel → {unité: {propriété: valeur}}."""
+    if not units:
+        return {}
+    args = ["systemctl", "show", "--no-pager", "-p", "Id"]
+    for prop in props:
+        args += ["-p", prop]
+    _, out, _ = run_cmd(args + list(units))
+    result, block = {}, {}
+    for line in (out or "").splitlines() + [""]:
+        if not line.strip():
+            if block.get("Id"):
+                result[block["Id"]] = block
+            block = {}
+            continue
+        key, _, value = line.partition("=")
+        block[key] = value
+    return result
 
-    units = []
+def _find_systemd_units():
+    """Services frps*/frpc* dont la commande lance vraiment frps/frpc :
+    une liste des unités et un « systemctl show » pour toutes, pas un par unité.
+    → {"frps": [(nom, config)], "frpc": [...]}"""
+    _, out, _ = run_cmd(["systemctl", "list-unit-files", "--type=service",
+                         "--no-pager", "--plain", "--no-legend"])
+    candidates = [line.split()[0] for line in (out or "").splitlines()
+                  if line.split() and re.match(r"^frp[sc]\d*\.service$", line.split()[0])]
+    execs = _systemctl_show(candidates, ["ExecStart"])
+    found = {"frps": [], "frpc": []}
     for unit in candidates:
-        _, prop, _ = run_cmd(["systemctl", "show", unit, "--property=ExecStart", "--value"])
+        bin_name = unit[:4]
+        prop = execs.get(unit, {}).get("ExecStart", "")
         if f"/{bin_name}" not in prop and f" {bin_name}" not in prop:
             continue
-        m = re.search(r'-c\s+(\S+)', prop)
-        cfg = Path(m.group(1)) if m else None
-        units.append((unit[:-8], cfg))
-    return units
+        m = re.search(r"-c\s+([^\s;]+)", prop)
+        found[bin_name].append((unit[:-8], Path(m.group(1)) if m else None))
+    return found
 
 def _find_all_configs(bin_type):
     found = []
@@ -628,6 +725,8 @@ def _find_all_configs(bin_type):
 
 _SERVER_ADDR_RE = re.compile(r"""^\s*(?:serverAddr|server_addr)\s*[=:]\s*["']?([^"'\s#]+)""", re.MULTILINE)
 
+_SERVER_ADDR_RE = re.compile(r"""^\s*(?:serverAddr|server_addr)\s*[=:]\s*["']?([^"'\s#]+)""", re.MULTILINE)
+
 def _frpc_configured(cfg):
     """Un serveur est-il renseigné ? install.sh crée partout un frpc.toml avec
     serverAddr = "" : sans ça, un frpc jamais utilisé compterait comme un vrai."""
@@ -638,10 +737,11 @@ def _frpc_configured(cfg):
 
 def _build_instances():
     instances = {}
+    all_units = _find_systemd_units()
     for bin_type in ("frps", "frpc"):
         binary  = _find_binary(bin_type)
         version = _read_version(binary) if binary else None
-        units   = _find_systemd_units(bin_type)
+        units   = all_units[bin_type]
         configs = _find_all_configs(bin_type)
 
         if units:
@@ -672,93 +772,91 @@ def _build_instances():
                     "type": bin_type, "binary": binary, "version": version,
                     "config": cfg, "service": iid, "log": FRP_LOG_DIR / f"{iid}.log",
                 }
-        else:
-            # Rien trouvé → pas de stub, ni frps ni frpc
-            # En mode Docker, ne pas créer d'instances depuis les binaires hôte
-            # sans service systemd associé — ça crée des fantômes non gérables
-            if not IN_DOCKER and bin_type == "frps":
-                pass  # on ne crée pas de stub non plus
     # Ajouter les containers Docker (sans doublon avec les instances systemd)
     for iid, inst in _detect_docker_frp_containers().items():
         if iid not in instances:
             instances[iid] = inst
     return instances
 
-def detect_frp(force=False):
-    global INSTANCES, _detect_cache, _detect_cache_time
-    now = time.time()
-    with _detect_lock:
-        if not force and _detect_cache and (now - _detect_cache_time) < DETECT_CACHE_TTL:
-            result = {}
-            for iid, inst in _detect_cache.items():
-                if inst.get("source") == "docker":
-                    # Un container n'a pas de binaire sur le disque (binary_path
-                    # vaut « docker:<nom> ») : son état vient de Docker. L'ancien
-                    # test de fichier le donnait « not-installed » entre deux
-                    # détections complètes, d'où un état qui clignotait.
-                    running = _docker_container_running(inst["container_name"])
-                    st = {"active": "active" if running else "inactive", "enabled": False, "running": running}
-                else:
-                    exists = Path(inst["binary_path"]).exists()
-                    st = service_status(inst["service"]) if exists else {
-                        "active": "not-installed", "enabled": False, "running": False}
-                result[iid] = {**inst, "status": st}
-            return result
-
-        instances = _build_instances()
-        INSTANCES = dict(instances)
-        result = {}
-        for iid, inst in instances.items():
-            # ── Container Docker ──────────────────────────────────────────────
-            if inst.get("source") == "docker":
-                running = inst.get("_running", False)
-                result[iid] = {
-                    "id": iid, "type": inst["type"],
-                    "source": "docker",
-                    "container_name": inst["container_name"],
-                    "network_mode": inst.get("network_mode", ""),
-                    "image": inst["image"],
-                    "binary_path": f"docker:{inst['container_name']}",
-                    "binary_found": True,
-                    "version": None,
-                    "config_path": None,
-                    "config_exists": False,
-                    "service": inst["service"],
-                    "status": {
-                        "active": "active" if running else "inactive",
-                        "enabled": False,
-                        "running": running,
-                    },
-                    "log_path": None,
-                    "configured": True,
-                }
-                continue
-            # ── Instance systemd ──────────────────────────────────────────────
-            binary = Path(inst["binary"])
-            exists = binary.exists() and os.access(binary, os.X_OK)
-            st = service_status(inst["service"]) if exists else {
-                "active": "not-installed", "enabled": False, "running": False}
-            cfg = Path(inst["config"]) if inst["config"] else None
+def _discover():
+    """Découverte complète → (INSTANCES, description de chaque instance sans son état)."""
+    instances = _build_instances()
+    result = {}
+    for iid, inst in instances.items():
+        if inst.get("source") == "docker":
             result[iid] = {
-                "id": iid, "type": inst["type"],
-                "source": "systemd",
-                "binary_path": str(binary), "binary_found": exists,
-                "version": inst["version"],
-                "config_path": str(cfg) if cfg else None,
-                "config_exists": cfg.exists() if cfg else False,
-                "service": inst["service"], "status": st,
-                "log_path": str(inst["log"]),
-                "configured": _frpc_configured(cfg) if inst["type"] == "frpc" else bool(cfg and cfg.exists()),
+                "id": iid, "type": inst["type"], "source": "docker",
+                "container_name": inst["container_name"],
+                "network_mode": inst.get("network_mode", ""),
+                "image": inst["image"],
+                "binary_path": f"docker:{inst['container_name']}", "binary_found": True,
+                "version": None, "config_path": None, "config_exists": False,
+                "service": inst["service"], "log_path": None, "configured": True,
             }
-        _detect_cache = result
-        _detect_cache_time = now
-        return result
+            continue
+        binary = Path(inst["binary"])
+        cfg = Path(inst["config"]) if inst["config"] else None
+        result[iid] = {
+            "id": iid, "type": inst["type"], "source": "systemd",
+            "binary_path": str(binary), "binary_found": binary.exists() and os.access(binary, os.X_OK),
+            "version": inst["version"],
+            "config_path": str(cfg) if cfg else None,
+            "config_exists": cfg.exists() if cfg else False,
+            "service": inst["service"], "log_path": str(inst["log"]),
+            "configured": _frpc_configured(cfg) if inst["type"] == "frpc" else bool(cfg and cfg.exists()),
+        }
+    return instances, result
+
+def _read_statuses(found):
+    """État de toutes les instances : un « systemctl show » et une liste Docker en tout."""
+    units = [f"{i['service']}.service" for i in found.values()
+             if i["source"] == "systemd" and i["binary_found"]]
+    shown = _systemctl_show(units, ["ActiveState", "UnitFileState"])
+    containers = {}
+    if any(i["source"] == "docker" for i in found.values()):
+        st, data = _docker_api("GET", "/containers/json?all=true")
+        if st == 200 and isinstance(data, list):
+            for c in data:
+                running = (c.get("State") or "").lower() == "running"
+                for name in c.get("Names") or []:
+                    containers[name.lstrip("/")] = running
+    statuses = {}
+    for iid, inst in found.items():
+        if inst["source"] == "docker":
+            running = containers.get(inst["container_name"], False)
+            statuses[iid] = {"active": "active" if running else "inactive", "enabled": False, "running": running}
+        elif not inst["binary_found"]:
+            statuses[iid] = dict(_MISSING)
+        else:
+            props = shown.get(f"{inst['service']}.service", {})
+            active = props.get("ActiveState", "")
+            statuses[iid] = {"active": active, "enabled": props.get("UnitFileState") == "enabled",
+                             "running": active == "active"}
+    return statuses
+
+def detect_frp(force=False):
+    global INSTANCES, _detect_cache, _detect_cache_time, _status_cache, _status_time
+    with _detect_lock:
+        now = time.time()
+        if force or not _detect_cache_time or now - _detect_cache_time >= DISCOVERY_TTL:
+            INSTANCES, _detect_cache = _discover()
+            _detect_cache_time = now
+            _status_time = 0
+        if now - _status_time >= STATUS_TTL:
+            _status_cache = _read_statuses(_detect_cache)
+            _status_time = time.time()
+        return {iid: {**inst, "status": _status_cache.get(iid, dict(_STOPPED))}
+                for iid, inst in _detect_cache.items()}
 
 _status_changed = threading.Condition()
 
-def _invalidate_cache():
-    global _detect_cache_time
-    _detect_cache_time = 0
+def _invalidate_cache(discovery=False):
+    """État relu au prochain appel ; discovery=True refait aussi la découverte
+    (installation, suppression, configuration modifiée)."""
+    global _detect_cache_time, _status_time
+    _status_time = 0
+    if discovery:
+        _detect_cache_time = 0
     # Réveille les WebSocket /ws/status : l'état est renvoyé tout de suite après une action
     with _status_changed:
         _status_changed.notify_all()
@@ -783,6 +881,20 @@ def fetch_latest_version():
         except Exception:
             continue
     return None, None, "toutes les sources inaccessibles"
+
+# Réponses de GitHub gardées 10 min (1 min en cas d'échec) : l'interface vérifie
+# les mises à jour à chaque ouverture de page, et l'API GitHub n'accepte que 60
+# appels par heure sans compte. Le bouton « Vérifier » passe outre (?fresh=1).
+_github_cache = {}
+
+def _github_cached(key, fetch, fresh=False):
+    now, hit = time.time(), _github_cache.get(key)
+    if hit and not fresh and now - hit[0] < hit[2]:
+        return hit[1]
+    value = fetch()
+    failed = not value or value[0] is None
+    _github_cache[key] = (now, value, 60 if failed else 600)
+    return value
 
 def fetch_panel_release(include_prereleases=False):
     """Release GitHub cible du panel (JSON de l'API), ou None.
@@ -880,7 +992,7 @@ def install_from_archive(tmp_path, version, log_fn):
                       "last_update_check": datetime.now().isoformat(),
                       "last_update_result": f"Installed {version}"})
         save_state(state)
-        _invalidate_cache()
+        _invalidate_cache(discovery=True)
         log_fn(f"[OK] frp {version} installé.")
         return True
     except Exception as e:
@@ -897,7 +1009,12 @@ def install_from_archive(tmp_path, version, log_fn):
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html", panel_version=PANEL_VERSION)
+    # État initial fourni avec la page : l'interface s'affiche sans attendre
+    # d'aller-retour vers l'API (détection en cache, pas une découverte forcée).
+    boot = {"instances": detect_frp(force=False), "in_docker": IN_DOCKER,
+            "nicknames": MGR_CFG.get("nicknames", {}),
+            "has_password": bool(MGR_CFG.get("password_hash"))}
+    return render_template("index.html", panel_version=PANEL_VERSION, boot=boot)
 
 @app.route("/api/detect")
 @login_required
@@ -1102,7 +1219,7 @@ def api_instance_delete(iid):
     # ── Container Docker : suppression, image et config montée en option ─────
     if inst.get("source") == "docker":
         ok, msg, code = _delete_container(iid, inst, bool(opts.get("delete_image")), delete_config)
-        _invalidate_cache()
+        _invalidate_cache(discovery=True)
         if ok:
             _forget_instance(iid)
         return jsonify({"ok": ok, "msg": msg}), code
@@ -1125,7 +1242,7 @@ def api_instance_delete(iid):
     if fragment:
         run_cmd(["systemctl", "disable", "--now", unit], timeout=30)
         if not host_remove_file(fragment):
-            _invalidate_cache()
+            _invalidate_cache(discovery=True)
             return jsonify({"ok": False, "msg": f"Service arrêté, mais impossible de supprimer {fragment}"}), 500
         run_host(["rm", "-rf", f"{_UNIT_DIR}{unit}.d"])
         run_cmd(["systemctl", "daemon-reload"])
@@ -1136,13 +1253,13 @@ def api_instance_delete(iid):
             cfg.unlink()
             done.append(str(cfg))
         except Exception as e:
-            _invalidate_cache()
+            _invalidate_cache(discovery=True)
             return jsonify({"ok": False, "msg": f"Service supprimé, mais pas {cfg} : {e}"}), 500
     kept = str(cfg) if cfg and cfg.exists() else None
     if kept and not done:
         done.append(f"{iid} retiré du tableau de bord ({kept} conservé)")
     _forget_instance(iid, kept_config=kept)
-    _invalidate_cache()
+    _invalidate_cache(discovery=True)
     return jsonify({"ok": True, "msg": f"Supprimé : {', '.join(done)}"})
 
 @app.route("/api/config/<iid>", methods=["GET"])
@@ -1174,6 +1291,8 @@ def api_config_save(iid):
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
     ok, msg = write_instance_config(INSTANCES[iid], (request.get_json() or {}).get("content", ""))
+    if ok:
+        _invalidate_cache(discovery=True)      # serverAddr, fichier créé…
     return jsonify({"ok": ok, "msg": msg}), (200 if ok else 500)
 
 def write_instance_config(inst, content_str):
@@ -1477,7 +1596,9 @@ def api_panel_version():
     (la mise à jour passe par l'image)."""
     repo_configured = "VOTRE_USER" not in PANEL_GITHUB_REPO
     prerelease = panel_is_prerelease()
-    latest_ver, release_url = fetch_panel_latest(include_prereleases=prerelease)
+    latest_ver, release_url = _github_cached(("panel", prerelease),
+                                             lambda: fetch_panel_latest(include_prereleases=prerelease),
+                                             fresh=request.args.get("fresh") == "1")
     update_available = bool(latest_ver and repo_configured
                             and not (prerelease and IN_DOCKER)
                             and version_newer(latest_ver, PANEL_VERSION))
@@ -1673,7 +1794,7 @@ def api_connectivity():
 @app.route("/api/update/check")
 @login_required
 def api_update_check():
-    version, tag, source = fetch_latest_version()
+    version, tag, source = _github_cached("frp", fetch_latest_version, fresh=request.args.get("fresh") == "1")
     if not version:
         return jsonify({"ok": False, "msg": "Toutes les sources inaccessibles."})
     installed = load_state().get("installed_version")
@@ -2108,6 +2229,7 @@ FW_SYNC_SECONDS = 60
 FW_MODES        = ("allow", "block")
 FW_SEEN_TIMEOUT = 86400      # une adresse bloquée reste listée 24 h après sa dernière tentative
 FW_SEEN_SIZE    = 4096       # adresses retenues au plus, par règle et par famille
+FW_LIVE_SECONDS = 1          # connexions bloquées : relecture au plus une fois par seconde
 _fw_lock        = threading.Lock()
 _fw_applied     = None       # dernier jeu de règles chargé avec succès
 _fw_seen_ok     = True       # False si ce nftables refuse les ensembles dynamiques
@@ -2257,8 +2379,19 @@ def _frps_active_proxies(conf):
                               "online": p.get("status") == "online"})
     return found
 
+FW_KNOWN_TTL = 15
+_fw_known = {"at": 0, "ports": []}
+
 def _fw_known_ports():
-    """Ports ouverts par le(s) frps de la machine : [{start, end, proto, label, kind, online}]."""
+    """Ports ouverts par le(s) frps de la machine, gardés 15 s : la liste sert à
+    chaque affichage et à chaque application, et l'API du tableau de bord frps
+    peut mettre jusqu'à 2 s à répondre."""
+    if time.time() - _fw_known["at"] >= FW_KNOWN_TTL:
+        _fw_known.update({"ports": _fw_known_ports_read(), "at": time.time()})
+    return _fw_known["ports"]
+
+def _fw_known_ports_read():
+    """[{start, end, proto, label, kind, online}]."""
     known, seen = [], set()
     def add(start, end, proto, label, kind, online=None):
         key = (start, end, proto)
@@ -2382,8 +2515,22 @@ def _fw_normalize_rule(raw, index):
             "name": name, "mode": mode, "ports": ports, "sources": sources,
             "enabled": raw.get("enabled", True) is not False}
 
+_fw_nets_cache = {}
+
 def _fw_rule_nets(rule):
-    """Réseaux d'une règle : adresses et réseaux saisis, plus les préfixes des AS (cache)."""
+    """Réseaux d'une règle : adresses et réseaux saisis, plus les préfixes des AS.
+    Mis en cache tant que les sources et les préfixes des AS ne changent pas."""
+    key = json.dumps([[s.get("asn"), s.get("cidr"),
+                       (_asn_all().get(str(s["asn"])) or {}).get("fetched") if s.get("asn") else None]
+                      for s in rule["sources"]])
+    cached = _fw_nets_cache.get(key)
+    if cached is None:
+        cached = _fw_nets_cache[key] = _fw_rule_nets_build(rule)
+        if len(_fw_nets_cache) > 64:
+            _fw_nets_cache.pop(next(iter(_fw_nets_cache)))
+    return cached
+
+def _fw_rule_nets_build(rule):
     nets = []
     for s in rule["sources"]:
         if s.get("asn"):
@@ -2464,11 +2611,12 @@ def _fw_apply(cfg=None):
                 print("[WARN] Pare-feu : ensembles dynamiques refusés par nftables, liste des blocages désactivée")
         if ok:
             _fw_applied = text
+            _fw_live_reset()
         return ok, (err or out).strip()
 
 def _fw_table_present():
-    ok, _, _ = run_host(["nft", "list", "table", "inet", FW_TABLE])
-    return ok
+    ok, out, _ = run_host(["nft", "list", "tables", "inet"])
+    return ok and f"table inet {FW_TABLE}" in out
 
 _L4_NAMES = {6: "tcp", 17: "udp"}
 
@@ -2501,37 +2649,77 @@ def _fw_parse_state(items, now):
     seen.sort(key=lambda e: e["last"], reverse=True)
     return counts, seen
 
-def _fw_table_state():
-    ok, out, _ = run_host(["nft", "-j", "list", "table", "inet", FW_TABLE])
+def _nft_json(*args):
+    ok, out, _ = run_host(["nft", "-j", "list", *args])
     if not ok:
-        return {}, []
+        return None
     try:
-        return _fw_parse_state(json.loads(out).get("nftables", []), time.time())
+        return json.loads(out).get("nftables", [])
     except Exception:
-        return {}, []
+        return None
 
 def _fw_counters():
-    return _fw_table_state()[0]
+    """{id de règle: paquets jetés} : lecture de la seule chaîne, sans les ensembles
+    (ceux des AS peuvent compter des milliers de préfixes)."""
+    items = _nft_json("chain", "inet", FW_TABLE, "filter")
+    return _fw_parse_state(items, time.time())[0] if items else {}
+
+# Lecture « en direct », partagée par tous les onglets ouverts. Les adresses
+# retenues ne changent que si des paquets sont jetés : on ne relit les ensembles
+# d'une règle que quand son compteur a bougé, et tous une fois par minute (pour
+# les expirations au bout de 24 h).
+FW_SEEN_FULL_EVERY = 60
+_fw_live = {"at": 0, "counts": None, "seen": {}, "full_at": 0, "result": ({}, [])}
+_fw_live_lock = threading.Lock()
+
+def _fw_table_state():
+    """→ (compteurs {id: paquets jetés}, adresses bloquées retenues), au plus une
+    lecture par seconde quel que soit le nombre d'appelants."""
+    with _fw_live_lock:
+        now = time.time()
+        live = _fw_live
+        if now - live["at"] < FW_LIVE_SECONDS:
+            return live["result"]
+        live["at"] = now
+        counts = _fw_counters()
+        full = live["counts"] is None or now - live["full_at"] >= FW_SEEN_FULL_EVERY
+        changed = set(counts) if full else {rid for rid, n in counts.items() if live["counts"].get(rid) != n}
+        for key in [k for k in live["seen"] if k[0] not in counts]:
+            del live["seen"][key]          # règle supprimée ou table recréée
+        if _fw_seen_ok:
+            for rid in changed:
+                for version in (4, 6):
+                    items = _nft_json("set", "inet", FW_TABLE, f"seen{version}_{rid}")
+                    live["seen"][(rid, version)] = _fw_parse_state(items, now)[1] if items else []
+        if full:
+            live["full_at"] = now
+        live["counts"] = counts
+        seen = sorted((e for lst in live["seen"].values() for e in lst), key=lambda e: e["last"], reverse=True)
+        live["result"] = (counts, seen)
+        return live["result"]
+
+def _fw_live_reset():
+    """Table remplacée (nouvelles règles) : tout relire au prochain appel."""
+    with _fw_live_lock:
+        _fw_live.update({"at": 0, "counts": None, "seen": {}})
 
 def _fw_verdicts(ip_text, cfg, known):
     """Pour une adresse : chaque port frp connu, et les règles qui la bloqueraient."""
     ip = ipaddress.ip_address(ip_text)
-    rules = [r for r in cfg["rules"] if r.get("enabled", True)]
-    result = []
-    for k in known:
-        blocked_by = []
-        for rule in rules:
-            try:
-                ranges = _fw_rule_ranges(rule, known)
-            except ValueError:
-                continue
-            if not any(a <= k["end"] and k["start"] <= b for a, b in ranges):
-                continue
-            listed = any(ip in net for net in _fw_rule_nets(rule))
-            if (rule["mode"] == "allow") != listed:
-                blocked_by.append(rule.get("name") or rule["id"])
-        result.append({**k, "blocked_by": blocked_by})
-    return result
+    rules = []
+    for rule in cfg["rules"]:
+        if not rule.get("enabled", True):
+            continue
+        try:
+            ranges = _fw_rule_ranges(rule, known)
+        except ValueError:
+            continue
+        listed = any(ip in net for net in _fw_rule_nets(rule) if net.version == ip.version)
+        if (rule["mode"] == "allow") != listed:           # cette règle bloquerait l'adresse
+            rules.append((ranges, rule.get("name") or rule["id"]))
+    return [{**k, "blocked_by": [name for ranges, name in rules
+                                 if any(a <= k["end"] and k["start"] <= b for a, b in ranges)]}
+            for k in known]
 
 def _fw_sync_loop():
     """Garde la table à jour : ports des proxys qui changent, table effacée
@@ -2632,8 +2820,6 @@ def api_firewall_test():
             return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} : {e}"}), 502
     verdicts = _fw_verdicts(str(data["ip"]).strip(), {"enabled": True, "rules": rules}, _fw_known_ports())
     return jsonify({"ok": True, "verdicts": verdicts})
-
-FW_LIVE_SECONDS = 1          # relecture de la table pour le WebSocket /ws/firewall
 
 def _fw_blocked_payload():
     """Adresses bloquées ces dernières 24 h (retenues par nftables), avec leur AS,

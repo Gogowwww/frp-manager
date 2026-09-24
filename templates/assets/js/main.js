@@ -3,7 +3,7 @@
 import { initI18n, applyI18n, t } from './i18n.js';
 import { api } from './api.js';
 import {
-  store, usedFrpcIds, frpsIds, detect, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
+  store, usedFrpcIds, frpsIds, detect, loadBoot, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
 } from './store.js';
 import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
@@ -77,9 +77,12 @@ async function boot() {
 
   [dashboard, tunnels, firewall, config, logs, updates, settings].forEach(registerPage);
 
-  // Détection d'abord : toutes les pages en dépendent
-  await Promise.all([loadNicknames(), loadManagerState()]);
-  try { await detect(); } catch { store.set({ ready: true }); }
+  // Détection d'abord : toutes les pages en dépendent. Elle arrive avec la
+  // page ; sinon (ancienne page en cache), on la demande à l'API.
+  if (!loadBoot()) {
+    await Promise.all([loadNicknames(), loadManagerState()]);
+    try { await detect(); } catch { store.set({ ready: true }); }
+  }
 
   await startRouter({ root: document.getElementById('view'), defaultRoute: 'dashboard', onRouteChange });
   showWelcome();

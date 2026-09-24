@@ -65,6 +65,18 @@ export function statusOf(inst) {
   return inst.status && inst.status.running ? 'running' : 'stopped';
 }
 
+/** État initial intégré à la page (voir index() côté serveur). → false s'il manque. */
+export function loadBoot() {
+  const el = document.getElementById('boot');
+  if (!el) return false;
+  try {
+    const d = JSON.parse(el.textContent);
+    store.nicknames = d.nicknames || {};
+    store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, hasPassword: !!d.has_password, ready: true });
+    return true;
+  } catch { return false; }
+}
+
 export async function detect() {
   const d = await api('/api/detect');
   store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, ready: true });
