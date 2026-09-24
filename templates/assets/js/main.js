@@ -33,7 +33,7 @@ function setupShell() {
   // Navigation : Ports seulement s'il existe un frpc, Pare-feu seulement s'il
   // existe un frps ; pastille de mise à jour
   store.subscribe(() => {
-    document.querySelector('[data-route="tunnels"]').hidden = store.ready && !frpcIds().length;
+    document.querySelector('[data-route="ports"]').hidden = store.ready && !frpcIds().length;
     document.querySelector('[data-route="firewall"]').hidden = !store.ready || !frpsIds().length;
     const upd = store.updates.frp || store.updates.panel;
     document.getElementById('updates-badge').hidden = !upd;

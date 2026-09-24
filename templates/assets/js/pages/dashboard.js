@@ -160,7 +160,7 @@ function serviceCard(iid) {
   }
   actions.push(h('span', { class: 'spacer' }));
   if (inst.type === 'frpc') {
-    actions.push(button(t('nav.tunnels'), { variant: 'ghost', size: 'sm', iconName: 'tunnels', onClick: () => navigate('tunnels', { iid }) }));
+    actions.push(button(t('nav.tunnels'), { variant: 'ghost', size: 'sm', iconName: 'tunnels', onClick: () => navigate('ports', { iid }) }));
   }
 
   const menuItems = [

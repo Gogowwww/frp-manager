@@ -1,9 +1,11 @@
-// ── Routeur par hash : #/tunnels?iid=frpc ─────────────────────────────────
+// ── Routeur par hash : #/ports?iid=frpc ───────────────────────────────────
 // Une page = { id, title(), mount(view, params), unmount?(), canLeave?() }.
 // canLeave() peut renvoyer une promesse (ex. confirmation « modifications
 // non enregistrées ») ; si elle vaut false, la navigation est annulée.
 
 const routes = new Map();
+// Anciennes adresses encore valides (favoris) → page actuelle
+const ALIASES = { tunnels: 'ports' };
 let current = null;
 let currentHash = '';
 let view = null;
@@ -38,7 +40,11 @@ export function replaceParams(params) {
 export function currentPage() { return current; }
 
 async function render() {
-  const { name, params } = parseHash();
+  let { name, params } = parseHash();
+  if (ALIASES[name]) {
+    name = ALIASES[name];
+    history.replaceState(null, '', hrefFor(name, params));
+  }
   if (current && current.canLeave && location.hash !== currentHash) {
     const ok = await current.canLeave();
     if (!ok) { history.replaceState(null, '', currentHash); return; }

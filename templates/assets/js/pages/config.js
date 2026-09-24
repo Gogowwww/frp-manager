@@ -218,7 +218,7 @@ async function load() {
     S.snapshot = '';
     S.els.body.replaceChildren(callout({
       type: 'warn', compact: true, iconName: 'box', title: t('config.dockerTitle'), text: t('config.dockerText'),
-      actions: inst.type === 'frpc' ? [button(t('nav.tunnels'), { size: 'sm', onClick: () => navigate('tunnels', { iid: S.iid }) })] : [],
+      actions: inst.type === 'frpc' ? [button(t('nav.tunnels'), { size: 'sm', onClick: () => navigate('ports', { iid: S.iid }) })] : [],
     }));
     return;
   }
@@ -238,7 +238,7 @@ async function load() {
   if (S.type === 'frpc') {
     top.push(callout({
       type: 'neutral', iconName: 'tunnels', text: t('config.tunnelsElsewhere'),
-      actions: [button(t('nav.tunnels'), { size: 'sm', onClick: () => navigate('tunnels', { iid: S.iid }) })],
+      actions: [button(t('nav.tunnels'), { size: 'sm', onClick: () => navigate('ports', { iid: S.iid }) })],
     }));
   }
 

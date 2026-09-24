@@ -34,7 +34,7 @@ function beforeUnload(e) {
 }
 
 export default {
-  id: 'tunnels',
+  id: 'ports',
   title: () => t('nav.tunnels'),
 
   async mount(view, params) {
