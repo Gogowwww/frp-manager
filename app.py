@@ -2087,11 +2087,110 @@ except ImportError:          # Python < 3.11 (installation classique ancienne)
     _tomllib = None
 
 FW_TABLE        = "frp_manager"
-FW_LOG_PREFIX   = "frpm-fw "
 FW_SYNC_SECONDS = 60
 FW_MODES        = ("allow", "block")
+FW_SEEN_TIMEOUT = 86400      # une adresse bloquée reste listée 24 h après sa dernière tentative
+FW_SEEN_SIZE    = 4096       # adresses retenues au plus, par règle et par famille
 _fw_lock        = threading.Lock()
 _fw_applied     = None       # dernier jeu de règles chargé avec succès
+_fw_seen_ok     = True       # False si ce nftables refuse les ensembles dynamiques
+
+# ── Systèmes autonomes (AS) : préfixes annoncés, via RIPEstat ────────────────
+# Une source « AS16276 » vaut tous les préfixes que cet AS annonce. Ils sont
+# gardés sur disque et rafraîchis chaque jour ; si RIPEstat est injoignable,
+# les derniers préfixes connus restent utilisés.
+FW_ASN_FILE    = Path("/var/lib/frp-manager/asn-cache.json")
+FW_ASN_MAX_AGE = 86400
+RIPESTAT       = "https://stat.ripe.net/data"
+_asn_lock      = threading.Lock()
+_asn_cache     = None        # {"16276": {"holder", "v4": [...], "v6": [...], "fetched"}}
+_ip_asn_cache  = {}          # "1.2.3.4" → {"asn", "holder"}, ou None si l'adresse n'a pas d'AS
+_ip_asn_busy   = threading.Lock()
+
+def _asn_all():
+    global _asn_cache
+    if _asn_cache is None:
+        try:
+            _asn_cache = json.loads(FW_ASN_FILE.read_text())
+        except Exception:
+            _asn_cache = {}
+    return _asn_cache
+
+def _asn_store(asn, entry):
+    with _asn_lock:
+        cache = _asn_all()
+        cache[str(asn)] = entry
+        try:
+            FW_ASN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            FW_ASN_FILE.write_text(json.dumps(cache))
+        except Exception as e:
+            print(f"[WARN] Cache des AS non enregistré : {e}")
+
+def _ripestat(endpoint, resource, timeout=20):
+    r = req.get(f"{RIPESTAT}/{endpoint}/data.json",
+                params={"resource": resource, "sourceapp": "frp-manager"}, timeout=timeout)
+    r.raise_for_status()
+    return r.json().get("data") or {}
+
+def _asn_holder(asn):
+    try:
+        holder = (_ripestat("as-overview", f"AS{asn}", timeout=8).get("holder") or "").strip()
+        return re.sub(r"^AS\d+\s+", "", holder)       # « AS3215 Orange S.A. » → « Orange S.A. »
+    except Exception:
+        return ""
+
+def _asn_fetch(asn):
+    """Préfixes annoncés par un AS (regroupés), et son nom. Exception si RIPEstat échoue."""
+    data = _ripestat("announced-prefixes", f"AS{asn}")
+    nets = []
+    for p in data.get("prefixes") or []:
+        try:
+            nets.append(ipaddress.ip_network(p["prefix"], strict=False))
+        except (KeyError, ValueError):
+            continue
+    v4 = [str(n) for n in ipaddress.collapse_addresses(n for n in nets if n.version == 4)]
+    v6 = [str(n) for n in ipaddress.collapse_addresses(n for n in nets if n.version == 6)]
+    entry = {"holder": _asn_holder(asn), "v4": v4, "v6": v6, "fetched": int(time.time())}
+    _asn_store(asn, entry)
+    return entry
+
+def _asn_get(asn):
+    """Préfixes d'un AS : depuis le cache, sinon chez RIPEstat."""
+    return _asn_all().get(str(asn)) or _asn_fetch(asn)
+
+def _fw_rule_asns(rules):
+    return sorted({s["asn"] for r in rules for s in r.get("sources", []) if s.get("asn")})
+
+def _asn_info(asns):
+    info = {}
+    for asn in asns:
+        e = _asn_all().get(str(asn))
+        info[str(asn)] = ({"holder": e.get("holder", ""), "prefixes": len(e["v4"]) + len(e["v6"]),
+                           "fetched": e.get("fetched")} if e else None)
+    return info
+
+def _ip_asn_lookup(ips):
+    """AS des adresses déjà connues. Les inconnues sont cherchées en arrière-plan
+    (réponse au prochain rafraîchissement) : la page n'attend jamais RIPEstat."""
+    todo = [ip for ip in ips if ip not in _ip_asn_cache]
+    if todo and _ip_asn_busy.acquire(blocking=False):
+        def work(batch):
+            try:
+                for ip in batch:
+                    try:
+                        d = _ripestat("network-info", ip, timeout=6)
+                        asn = int(d["asns"][0]) if d.get("asns") else None
+                        holder = ""
+                        if asn:
+                            known = _asn_all().get(str(asn))
+                            holder = known.get("holder", "") if known else _asn_holder(asn)
+                        _ip_asn_cache[ip] = {"asn": asn, "holder": holder} if asn else None
+                    except Exception:
+                        pass              # réessayé au prochain rafraîchissement
+            finally:
+                _ip_asn_busy.release()
+        threading.Thread(target=work, args=(todo[:25],), daemon=True).start()
+    return {ip: _ip_asn_cache[ip] for ip in ips if ip in _ip_asn_cache}
 
 def _fw_cfg():
     fw = MGR_CFG.get("firewall") or {}
@@ -2239,22 +2338,46 @@ def _fw_normalize_rule(raw, index):
         ports = ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
     sources = []
     for src in raw.get("sources") or []:
-        text = str(src.get("cidr") or "").strip()
+        note = str(src.get("note") or "").strip()[:60]
+        if src.get("asn"):
+            text = f"AS{src['asn']}"
+        else:
+            text = str(src.get("cidr") or "").strip()
         if not text:
+            continue
+        m = re.fullmatch(r"(?i)AS\s*(\d{1,10})", text)
+        if m:
+            asn = int(m.group(1))
+            if not (1 <= asn <= 4294967295):
+                raise ValueError(f"{where} : « {text} » n'est pas un numéro d'AS valide")
+            sources.append({"asn": asn, "note": note})
             continue
         try:
             net = ipaddress.ip_network(text, strict=False)
         except ValueError:
-            raise ValueError(f"{where} : « {text} » n'est pas une adresse IP ni un réseau (ex. 203.0.113.0/24)")
+            raise ValueError(f"{where} : « {text} » n'est ni une adresse IP, ni un réseau "
+                             f"(203.0.113.0/24), ni un AS (AS16276)")
         cidr = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
-        sources.append({"cidr": cidr, "note": str(src.get("note") or "").strip()[:60]})
+        sources.append({"cidr": cidr, "note": note})
     if mode == "block" and not sources:
         raise ValueError(f"{where} : indiquez au moins une adresse à bloquer")
     return {"id": re.sub(r"[^0-9a-f]", "", str(raw.get("id") or ""))[:12] or secrets.token_hex(4),
             "name": name, "mode": mode, "ports": ports, "sources": sources,
             "enabled": raw.get("enabled", True) is not False}
 
-def _fw_ruleset(cfg, known):
+def _fw_rule_nets(rule):
+    """Réseaux d'une règle : adresses et réseaux saisis, plus les préfixes des AS (cache)."""
+    nets = []
+    for s in rule["sources"]:
+        if s.get("asn"):
+            e = _asn_all().get(str(s["asn"]))
+            if e:
+                nets += [ipaddress.ip_network(x) for x in e["v4"] + e["v6"]]
+        else:
+            nets.append(ipaddress.ip_network(s["cidr"], strict=False))
+    return nets
+
+def _fw_ruleset(cfg, known, seen=True):
     """Texte nft qui remplace la table (ou la supprime si rien n'est à filtrer)."""
     head = f"table inet {FW_TABLE}\ndelete table inet {FW_TABLE}\n"
     rules = [r for r in cfg["rules"] if r.get("enabled", True)] if cfg["enabled"] else []
@@ -2267,20 +2390,28 @@ def _fw_ruleset(cfg, known):
         if not ranges:
             continue
         rid = f"r{n}"
-        nets = [ipaddress.ip_network(s["cidr"], strict=False) for s in rule["sources"]]
+        nets = _fw_rule_nets(rule)
         ports = ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
         sets.append(f"  set {rid}_ports {{ type inet_service; flags interval; auto-merge; elements = {{ {ports} }} }}")
         families = []
         for fam, sel, version, stype in (("ipv4", "ip", 4, "ipv4_addr"), ("ipv6", "ip6", 6, "ipv6_addr")):
-            elems = ", ".join(str(x) for x in nets if x.version == version)
+            elems = ", ".join(str(x) for x in ipaddress.collapse_addresses(x for x in nets if x.version == version))
             body = f"type {stype}; flags interval; auto-merge;" + (f" elements = {{ {elems} }}" if elems else "")
             sets.append(f"  set {rid}_v{version} {{ {body} }}")
             if rule["mode"] == "allow":
-                families.append(f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr != @{rid}_v{version}")
+                families.append((version, sel, f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr != @{rid}_v{version}"))
             elif elems:
-                families.append(f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr @{rid}_v{version}")
-        for match in families:
-            chain.append(f'    {match} limit rate 5/second burst 10 packets log prefix "{FW_LOG_PREFIX}{rule["id"]} " level info')
+                families.append((version, sel, f"meta nfproto {fam} th dport @{rid}_ports {sel} saddr @{rid}_v{version}"))
+        for version, sel, match in families:
+            if seen:
+                # Retient l'adresse bloquée (protocole, port, dernière tentative) : c'est la
+                # liste « Connexions bloquées », sans dépendre du journal du noyau. Règle à
+                # part : un ensemble plein ne doit jamais empêcher le blocage.
+                seen_set = f"seen{version}_{rule['id']}"
+                addr = "ipv4_addr" if version == 4 else "ipv6_addr"
+                sets.append(f"  set {seen_set} {{ type {addr} . inet_proto . inet_service; flags dynamic, timeout; "
+                            f"timeout {FW_SEEN_TIMEOUT}s; size {FW_SEEN_SIZE}; }}")
+                chain.append(f"    {match} update @{seen_set} {{ {sel} saddr . meta l4proto . th dport }}")
             chain.append(f'    {match} counter drop comment "{rule["id"]}"')
     if not chain:
         return head
@@ -2300,11 +2431,20 @@ def _fw_ruleset(cfg, known):
 
 def _fw_apply(cfg=None):
     """Charge la table nft correspondant à la config. → (ok, message d'erreur)."""
-    global _fw_applied
+    global _fw_applied, _fw_seen_ok
     with _fw_lock:
         cfg = cfg or _fw_cfg()
-        text = _fw_ruleset(cfg, _fw_known_ports())
+        known = _fw_known_ports()
+        text = _fw_ruleset(cfg, known, seen=_fw_seen_ok)
         ok, out, err = run_host(["nft", "-f", "-"], input_text=text)
+        if not ok and _fw_seen_ok and "flags dynamic" in text:
+            # nftables trop ancien pour les ensembles dynamiques : on filtre quand
+            # même, sans la liste des connexions bloquées.
+            text = _fw_ruleset(cfg, known, seen=False)
+            ok, out, err = run_host(["nft", "-f", "-"], input_text=text)
+            if ok:
+                _fw_seen_ok = False
+                print("[WARN] Pare-feu : ensembles dynamiques refusés par nftables, liste des blocages désactivée")
         if ok:
             _fw_applied = text
         return ok, (err or out).strip()
@@ -2313,24 +2453,48 @@ def _fw_table_present():
     ok, _, _ = run_host(["nft", "list", "table", "inet", FW_TABLE])
     return ok
 
-def _fw_counters():
-    """{id de règle: paquets jetés depuis la dernière application}."""
-    ok, out, _ = run_host(["nft", "-j", "list", "table", "inet", FW_TABLE])
-    counts = {}
-    if not ok:
-        return counts
-    try:
-        items = json.loads(out).get("nftables", [])
-    except Exception:
-        return counts
+_L4_NAMES = {6: "tcp", 17: "udp"}
+
+def _fw_parse_state(items, now):
+    """JSON de « nft -j list table » → (compteurs {id: paquets jetés}, adresses bloquées)."""
+    counts, seen = {}, []
     for item in items:
         rule = item.get("rule")
-        if not rule or not rule.get("comment"):
+        if rule and rule.get("comment"):
+            for expr in rule.get("expr", []):
+                if isinstance(expr, dict) and "counter" in expr:
+                    counts[rule["comment"]] = counts.get(rule["comment"], 0) + int(expr["counter"].get("packets", 0))
+        st = item.get("set")
+        if not st or not re.fullmatch(r"seen[46]_[0-9a-f]+", st.get("name", "")):
             continue
-        for expr in rule.get("expr", []):
-            if isinstance(expr, dict) and "counter" in expr:
-                counts[rule["comment"]] = counts.get(rule["comment"], 0) + int(expr["counter"].get("packets", 0))
-    return counts
+        rid = st["name"].split("_", 1)[1]
+        for el in st.get("elem") or []:
+            # Avec délai d'expiration : {"elem": {"val": {"concat": [...]}, "timeout", "expires"}}
+            meta = el.get("elem", el) if isinstance(el, dict) else {}
+            val = meta.get("val", el) if isinstance(meta, dict) else el
+            parts = val.get("concat") if isinstance(val, dict) else None
+            if not parts or len(parts) != 3:
+                continue
+            src, proto, port = parts
+            proto = _L4_NAMES.get(proto, str(proto)) if isinstance(proto, int) else str(proto)
+            timeout = meta.get("timeout", FW_SEEN_TIMEOUT)
+            expires = meta.get("expires", timeout)
+            seen.append({"src": str(src), "proto": proto, "port": int(port), "rule": rid,
+                         "last": int(now - max(0, timeout - expires))})
+    seen.sort(key=lambda e: e["last"], reverse=True)
+    return counts, seen
+
+def _fw_table_state():
+    ok, out, _ = run_host(["nft", "-j", "list", "table", "inet", FW_TABLE])
+    if not ok:
+        return {}, []
+    try:
+        return _fw_parse_state(json.loads(out).get("nftables", []), time.time())
+    except Exception:
+        return {}, []
+
+def _fw_counters():
+    return _fw_table_state()[0]
 
 def _fw_verdicts(ip_text, cfg, known):
     """Pour une adresse : chaque port frp connu, et les règles qui la bloqueraient."""
@@ -2346,7 +2510,7 @@ def _fw_verdicts(ip_text, cfg, known):
                 continue
             if not any(a <= k["end"] and k["start"] <= b for a, b in ranges):
                 continue
-            listed = any(ip in ipaddress.ip_network(s["cidr"], strict=False) for s in rule["sources"])
+            listed = any(ip in net for net in _fw_rule_nets(rule))
             if (rule["mode"] == "allow") != listed:
                 blocked_by.append(rule.get("name") or rule["id"])
         result.append({**k, "blocked_by": blocked_by})
@@ -2360,6 +2524,13 @@ def _fw_sync_loop():
         try:
             cfg = _fw_cfg()
             if cfg["enabled"]:
+                for asn in _fw_rule_asns(cfg["rules"]):
+                    entry = _asn_all().get(str(asn))
+                    if not entry or time.time() - entry.get("fetched", 0) > FW_ASN_MAX_AGE:
+                        try:
+                            _asn_fetch(asn)
+                        except Exception as e:
+                            print(f"[WARN] Pare-feu : préfixes de AS{asn} non rafraîchis ({e})")
                 detect_frp(force=False)
                 text = _fw_ruleset(cfg, _fw_known_ports())
                 expect_table = "chain filter" in text
@@ -2393,6 +2564,7 @@ def api_firewall_get():
         "enabled": cfg["enabled"], "rules": cfg["rules"], "ports": known,
         "active": ok and _fw_table_present(),
         "counters": _fw_counters() if ok else {},
+        "asns": _asn_info(_fw_rule_asns(cfg["rules"])),
         "client_ip": client,
         "client_verdicts": _fw_verdicts(client, cfg, known) if client and known and cfg["enabled"] else [],
         "panel_port": _fw_panel_port(), "in_docker": IN_DOCKER,
@@ -2410,6 +2582,12 @@ def api_firewall_save():
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e)}), 400
+    for asn in _fw_rule_asns(rules):
+        try:
+            _asn_get(asn)
+        except Exception as e:
+            return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} "
+                                                f"auprès de RIPEstat, rien n'a changé : {e}"}), 502
     new = {"enabled": bool(data.get("enabled")), "rules": rules}
     ok, msg = _fw_apply(new)
     if not ok:
@@ -2430,30 +2608,66 @@ def api_firewall_test():
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e) if "Règle" in str(e) else "Adresse IP invalide"}), 400
+    for asn in _fw_rule_asns(rules):
+        try:
+            _asn_get(asn)
+        except Exception as e:
+            return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} : {e}"}), 502
     verdicts = _fw_verdicts(str(data["ip"]).strip(), {"enabled": True, "rules": rules}, _fw_known_ports())
     return jsonify({"ok": True, "verdicts": verdicts})
 
-_FW_LOG_RE = re.compile(r"SRC=(?P<src>\S+).*?PROTO=(?P<proto>\S+)(?:.*?DPT=(?P<dpt>\d+))?")
+FW_LIVE_SECONDS = 1          # relecture de la table pour le WebSocket /ws/firewall
+
+def _fw_blocked_payload():
+    """Adresses bloquées ces dernières 24 h (retenues par nftables), avec leur AS,
+    et les compteurs de chaque règle."""
+    counts, seen = _fw_table_state()
+    public = []
+    for e in seen:
+        try:
+            if ipaddress.ip_address(e["src"]).is_global:
+                public.append(e["src"])
+        except ValueError:
+            pass
+    asn = _ip_asn_lookup(list(dict.fromkeys(public))[:200])
+    for e in seen:
+        e["as"] = asn.get(e["src"])
+    return {"ok": True, "entries": seen[:200], "total": len(seen), "counters": counts,
+            "available": _fw_seen_ok}
 
 @app.route("/api/firewall/blocked")
 @login_required
 def api_firewall_blocked():
-    """Dernières connexions bloquées (journal du noyau, limité à 5/s par règle)."""
-    ok, out, err = run_cmd(["journalctl", "-k", "-n", "5000", "--no-pager", "-o", "short-iso"], timeout=20)
-    if not ok:
-        return jsonify({"ok": False, "msg": err or "Journal du noyau illisible"}), 500
-    entries = []
-    for line in out.splitlines():
-        pos = line.find(FW_LOG_PREFIX)
-        if pos < 0:
-            continue
-        m = _FW_LOG_RE.search(line, pos)
-        if not m:
-            continue
-        entries.append({"time": line.split(" ", 1)[0], "rule": line[pos + len(FW_LOG_PREFIX):].split(" ", 1)[0],
-                        "src": m.group("src"), "proto": m.group("proto").lower(),
-                        "port": int(m.group("dpt")) if m.group("dpt") else None})
-    return jsonify({"ok": True, "entries": entries[-100:][::-1]})
+    """Repli de /ws/firewall quand le WebSocket ne passe pas."""
+    return jsonify({**_fw_blocked_payload(), "now": int(time.time())})
+
+if sock:
+    @sock.route("/ws/firewall")
+    def ws_firewall(ws):
+        """Connexions bloquées en temps réel. Les ajouts faits par le trafic dans
+        les ensembles nft ne produisent aucun événement (nft monitor ne les voit
+        pas) : la table est relue chaque seconde et l'état n'est envoyé que s'il
+        a changé (nouvelle adresse, nouvelle tentative, AS trouvé, compteur)."""
+        if not _ws_authenticated(ws):
+            return
+        last, last_sent = None, time.time()
+        try:
+            while ws.connected:
+                try:
+                    data = _fw_blocked_payload()
+                    payload = json.dumps(data, sort_keys=True)
+                except Exception:
+                    data = payload = None
+                if payload and payload != last:
+                    # « now » hors comparaison : sinon chaque seconde serait un changement
+                    ws.send(json.dumps({**data, "now": int(time.time())}))
+                    last, last_sent = payload, time.time()
+                elif time.time() - last_sent >= KEEPALIVE_SECONDS:
+                    ws.send(WS_KEEPALIVE_STATE)
+                    last_sent = time.time()
+                time.sleep(FW_LIVE_SECONDS)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))

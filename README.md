@@ -77,10 +77,12 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 
 ### 🛡️ Pare-feu (frps)
 - 🚦 **Qui peut se connecter** aux ports qu'ouvre frps : règles *Autoriser seulement* (liste blanche) ou *Bloquer* (liste noire), sur des ports choisis ou sur **tous les ports frp**
+- 🏢 **Par adresse, réseau ou opérateur entier** : `203.0.113.4`, `198.51.100.0/24` ou un numéro d'AS (`AS16276`), dont les préfixes sont récupérés auprès de RIPEstat et rafraîchis chaque jour
 - 🔎 **Ports détectés tout seuls** : `bindPort`, ports vhost, KCP/QUIC, `allowPorts`, et les ports ouverts par les clients (via le tableau de bord de frps, s'il est activé) ; la liste est suivie automatiquement
 - 🧱 **Filtrage par le noyau** (nftables, table dédiée `inet frp_manager`), avant le NAT de Docker : un frps en conteneur est filtré aussi, et **le filtrage continue si le panel s'arrête**
 - 🙅 Le pare-feu **ne fait que bloquer** : il n'ouvre jamais un port et ne touche ni à ufw ni aux règles de Docker ; le port du panel et la boucle locale ne sont jamais filtrés
-- 🧪 **Tester une adresse** avant d'appliquer, **alerte** si vos règles bloqueraient votre propre IP, **compteur** de blocages par règle et **dernières connexions bloquées**
+- 🧪 **Tester une adresse** avant d'appliquer, **alerte** si vos règles bloqueraient votre propre IP
+- 📡 **Connexions bloquées en temps réel** (WebSocket, repli automatique) : adresse, opérateur (AS), port, règle, compteur par règle ; un clic bloque l'adresse ou tout son AS
 
 > ℹ️ Nécessite `nftables` sur la machine (`apt install nftables`). La page n'apparaît que si un frps tourne sur la machine.
 

@@ -8,6 +8,10 @@ import {
   h, icon, button, busy, toast, toastResult, toastError, openDialog, confirmDialog,
   field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, badge, saveBar,
 } from '../ui.js';
+
+const POLL_MS = 5000;          // repli sans WebSocket
+const AGO_MS = 5000;           // rafraîchit « il y a … » sans rien redemander
+const WS_MAX_FAILS = 3;        // WebSocket jamais ouvert (proxy) : on reste en repli
 import { navigate } from '../router.js';
 
 const S = {
@@ -15,8 +19,14 @@ const S = {
   enabled: false,
   rules: [],
   snapshot: '',
+  live: null,
   els: {},
 };
+
+function stopLive() {
+  if (S.live) S.live.stop();
+  S.live = null;
+}
 
 const snapshotOf = () => JSON.stringify([S.enabled, S.rules]);
 const isDirty = () => S.snapshot !== '' && snapshotOf() !== S.snapshot;
@@ -41,6 +51,7 @@ export default {
 
   unmount() {
     window.removeEventListener('beforeunload', beforeUnload);
+    stopLive();
     S.els = {};
   },
 
@@ -207,16 +218,37 @@ function renderRules() {
       h('span', null, h('small', null, t('firewall.portsLabel')),
         rule.ports === '*' ? h('span', null, t('firewall.allPorts')) : h('span', { class: 'mono' }, rule.ports)),
       h('span', null, h('small', null, t('firewall.sourcesLabel')),
-        h('span', null, rule.sources.length
-          ? rule.sources.slice(0, 2).map((s) => s.cidr).join(', ') + (rule.sources.length > 2 ? ` +${rule.sources.length - 2}` : '')
+        h('span', { title: rule.sources.map(sourceTitle).join('\n') }, rule.sources.length
+          ? rule.sources.slice(0, 2).map(sourceLabel).join(', ') + (rule.sources.length > 2 ? ` +${rule.sources.length - 2}` : '')
           : t('firewall.noSource')))),
-    h('div', { class: 'fw-count', title: t('firewall.countHint') },
+    h('div', { class: 'fw-count', title: t('firewall.countHint'), dataset: { rule: state || !rule.enabled ? '' : rule.id } },
       count != null && !state && rule.enabled ? t('firewall.blockedCount', { count }) : ''),
     h('div', { class: 'row-actions' },
       sw,
       button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
       button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: (e) => { e.stopPropagation(); removeRule(rule); } })));
   })));
+}
+
+/** « AS16276 » ou l'adresse, pour une source de règle. */
+function sourceLabel(src) {
+  return src.asn ? `AS${src.asn}` : src.cidr;
+}
+
+function sourceTitle(src) {
+  if (!src.asn) return src.note ? `${src.cidr} — ${src.note}` : src.cidr;
+  const info = S.data.asns?.[src.asn];
+  const what = info ? t('firewall.asInfo', { holder: info.holder || '?', count: info.prefixes }) : t('firewall.asPending');
+  return `AS${src.asn} — ${what}${src.note ? ` (${src.note})` : ''}`;
+}
+
+/** Compteurs des règles, rafraîchis sans reconstruire la liste. */
+function updateCounts(counters) {
+  S.data.counters = counters;
+  S.els.rules?.querySelectorAll('.fw-count[data-rule]').forEach((el) => {
+    const id = el.dataset.rule;
+    if (id && counters[id] != null) el.textContent = t('firewall.blockedCount', { count: counters[id] });
+  });
 }
 
 function renderPorts() {
@@ -271,56 +303,157 @@ function testSection() {
 
 // ── Connexions bloquées ────────────────────────────────────────────────────
 
+function ago(seconds) {
+  if (seconds < 60) return t('firewall.ago.s', { n: Math.max(1, seconds) });
+  if (seconds < 3600) return t('firewall.ago.m', { n: Math.floor(seconds / 60) });
+  return t('firewall.ago.h', { n: Math.floor(seconds / 3600) });
+}
+
 function blockedSection() {
-  const body = h('div', null, h('p', { class: 'muted', style: { padding: '16px 20px' } }, t('common.loading')));
-  const names = () => Object.fromEntries(S.rules.map((r) => [r.id, ruleTitle(r)]));
-  const loadBlocked = async () => {
-    try {
-      const d = await api('/api/firewall/blocked');
-      if (!d.ok) { body.replaceChildren(h('p', { class: 'muted', style: { padding: '16px 20px' } }, d.msg)); return; }
-      if (!d.entries.length) {
-        body.replaceChildren(h('p', { class: 'muted', style: { padding: '16px 20px' } }, t('firewall.blockedEmpty')));
-        return;
-      }
-      const byId = names();
-      body.replaceChildren(h('div', { class: 'fw-table-wrap' }, h('table', { class: 'fw-table' },
+  stopLive();
+  const body = h('div', null, h('p', { class: 'muted fw-pad' }, t('common.loading')));
+  const pill = h('span', { class: 'badge badge-success fw-live', hidden: true }, h('span', { class: 'dot dot-pulse' }), t('firewall.live'));
+  const note = (text) => body.replaceChildren(h('p', { class: 'muted fw-pad' }, text));
+  let last = null;
+  let skew = 0;                // horloge du serveur − horloge du navigateur (s)
+
+  const show = () => {
+    const d = last;
+    if (!d || !body.isConnected) return;
+    if (!d.ok) { note(d.msg || t('errors.generic')); return; }
+    if (!d.available) { note(t('firewall.blockedUnavailable')); return; }
+    if (!d.entries.length) { note(t('firewall.blockedEmpty')); return; }
+    const now = Date.now() / 1000 + skew;
+    const byId = Object.fromEntries(S.rules.map((r) => [r.id, ruleTitle(r)]));
+    body.replaceChildren(
+      h('div', { class: 'fw-table-wrap' }, h('table', { class: 'fw-table' },
         h('thead', null, h('tr', null,
-          h('th', null, t('firewall.col.time')), h('th', null, t('firewall.col.source')),
-          h('th', null, t('firewall.col.port')), h('th', null, t('firewall.col.rule')))),
+          h('th', null, t('firewall.col.last')), h('th', null, t('firewall.col.source')), h('th', null, t('firewall.col.as')),
+          h('th', null, t('firewall.col.port')), h('th', null, t('firewall.col.rule')), h('th', { 'aria-label': t('common.moreActions') }))),
         h('tbody', null, d.entries.map((e) => h('tr', null,
-          h('td', { class: 'mono muted' }, formatTime(e.time)),
+          h('td', { class: 'muted', title: new Date(e.last * 1000).toLocaleString() }, ago(Math.round(now - e.last))),
           h('td', { class: 'mono' }, e.src),
-          h('td', { class: 'mono' }, e.port ?? '—', h('span', { class: 'muted' }, ` /${e.proto}`)),
-          h('td', null, byId[e.rule] || h('span', { class: 'muted' }, t('firewall.deletedRule')))))))));
-    } catch (err) { toastError(err); }
+          h('td', { class: 'fw-as' }, e.as
+            ? [h('span', { class: 'mono' }, `AS${e.as.asn}`), ' ', h('span', { class: 'muted' }, e.as.holder)]
+            : h('span', { class: 'muted' }, '—')),
+          h('td', { class: 'mono' }, e.port, h('span', { class: 'muted' }, ` /${e.proto}`)),
+          h('td', null, byId[e.rule] || h('span', { class: 'muted' }, t('firewall.deletedRule'))),
+          h('td', { class: 'fw-cell-menu' }, button('', {
+            variant: 'ghost', size: 'sm', iconName: 'shield', title: t('firewall.quickTitle', { ip: e.src }),
+            onClick: () => chooseQuickBlock(e),
+          }))))))),
+      ...(d.total > d.entries.length ? [h('p', { class: 'muted fw-pad' }, t('firewall.blockedMore', { count: d.total }))] : []));
   };
-  const refresh = button(t('common.refresh'), { size: 'sm', iconName: 'refresh', onClick: () => busy(refresh, loadBlocked) });
-  loadBlocked();
+
+  const receive = (d) => {
+    last = d;
+    if (d.now) skew = d.now - Date.now() / 1000;
+    if (d.counters) updateCounts(d.counters);
+    show();
+  };
+
+  // ── WebSocket, repli sur une requête toutes les 5 s ──
+  let ws = null;
+  let pollTimer = null;
+  let retryTimer = null;
+  let fails = 0;
+  let stopped = false;
+  const poll = async () => {
+    if (document.visibilityState !== 'visible') return;
+    try { receive(await api('/api/firewall/blocked')); } catch { /* réessayé au prochain tour */ }
+  };
+  const startPolling = () => {
+    if (!pollTimer) { poll(); pollTimer = setInterval(poll, POLL_MS); }
+  };
+  const connect = () => {
+    if (stopped || !('WebSocket' in window)) { startPolling(); return; }
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const sock = new WebSocket(`${scheme}://${location.host}/ws/firewall`);
+    let opened = false;
+    ws = sock;
+    sock.onopen = () => {
+      opened = true; fails = 0; pill.hidden = false;
+      clearInterval(pollTimer); pollTimer = null;
+    };
+    sock.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (!d.keepalive) receive(d);
+      } catch { /* message illisible : ignoré */ }
+    };
+    sock.onclose = () => {
+      if (ws !== sock || stopped) return;
+      ws = null;
+      pill.hidden = true;
+      startPolling();
+      if (!opened && ++fails >= WS_MAX_FAILS) return;
+      retryTimer = setTimeout(connect, Math.min(30000, 1000 * 2 ** fails));
+    };
+  };
+  const agoTimer = setInterval(show, AGO_MS);
+  S.live = {
+    stop() {
+      stopped = true;
+      clearInterval(agoTimer); clearInterval(pollTimer); clearTimeout(retryTimer);
+      if (ws) { const w = ws; ws = null; w.close(); }
+    },
+  };
+  connect();
+
   return h('section', null,
     h('div', { class: 'section-head' },
       h('div', null,
-        h('h2', { class: 'section-title' }, t('firewall.blockedTitle')),
-        h('p', { class: 'section-desc' }, t('firewall.blockedDesc'))),
-      refresh),
+        h('h2', { class: 'section-title' }, t('firewall.blockedTitle'), ' ', pill),
+        h('p', { class: 'section-desc' }, t('firewall.blockedDesc')))),
     h('div', { class: 'card' }, body));
 }
 
-function formatTime(iso) {
-  const d = new Date(iso.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+/** Bloquer une adresse de la liste : elle seule, ou tout son opérateur. */
+async function chooseQuickBlock(entry) {
+  const choice = await openDialog({
+    title: t('firewall.quickTitle', { ip: entry.src }),
+    description: t('firewall.quickDesc'),
+    size: 'sm',
+    build: ({ close }) => ({
+      body: [h('div', { class: 'form-stack', style: { gap: '8px' } },
+        button(t('firewall.quickIp', { ip: entry.src }), { iconName: 'shield', onClick: () => close({ cidr: entry.src }) }),
+        entry.as && button(t('firewall.quickAs', { asn: entry.as.asn, holder: entry.as.holder }), {
+          iconName: 'shield', onClick: () => close({ asn: entry.as.asn, note: entry.as.holder }),
+        }))],
+      foot: [button(t('common.cancel'), { onClick: () => close(undefined) })],
+    }),
+  }).result;
+  if (choice) quickBlock(choice);
+}
+
+/** Ajoute une adresse ou un AS à la règle « Blocages rapides » (créée au besoin). */
+function quickBlock(source) {
+  const name = t('firewall.quickRule');
+  let rule = S.rules.find((r) => r.mode === 'block' && r.ports === '*' && r.name === name);
+  if (!rule) {
+    rule = { id: Math.random().toString(16).slice(2, 10), name, mode: 'block', ports: '*', sources: [], enabled: true };
+    S.rules.push(rule);
+  }
+  const label = sourceLabel(source);
+  if (!rule.sources.some((x) => sourceLabel(x) === label)) rule.sources.push({ note: '', ...source });
+  rule.enabled = true;
+  render();
+  toast(t('firewall.quickAdded', { what: label, rule: name }), 'info', 6000);
 }
 
 // ── Édition ────────────────────────────────────────────────────────────────
 
 function sourcesToText(sources) {
-  return sources.map((s) => (s.note ? `${s.cidr}  # ${s.note}` : s.cidr)).join('\n');
+  return sources.map((s) => (s.note ? `${sourceLabel(s)}  # ${s.note}` : sourceLabel(s))).join('\n');
 }
 
 function textToSources(text) {
   return text.split('\n').map((line) => {
     const [addr, ...note] = line.split('#');
-    return { cidr: addr.trim(), note: note.join('#').trim() };
-  }).filter((s) => s.cidr);
+    const value = addr.trim();
+    const as = value.match(/^AS\s*(\d+)$/i);
+    return as ? { asn: Number(as[1]), note: note.join('#').trim() } : { cidr: value, note: note.join('#').trim() };
+  }).filter((s) => s.asn || s.cidr);
 }
 
 async function editRule(existing) {
@@ -356,13 +489,13 @@ async function editRule(existing) {
 
       const sources = h('textarea', {
         class: 'input input-mono fw-textarea', rows: 6, spellcheck: 'false',
-        placeholder: '203.0.113.4  # maison\n198.51.100.0/24  # bureau\n2001:db8::/32',
+        placeholder: '203.0.113.4  # maison\n198.51.100.0/24  # bureau\nAS16276  # OVH\n2001:db8::/32',
       });
       sources.value = sourcesToText(draft.sources);
       const addMe = S.data.client_ip && button(t('firewall.addMyIp', { ip: S.data.client_ip }), {
         size: 'sm', iconName: 'plus',
         onClick: () => {
-          if (!textToSources(sources.value).some((s) => s.cidr === S.data.client_ip)) {
+          if (!textToSources(sources.value).some((x) => x.cidr === S.data.client_ip)) {
             sources.value = `${sources.value.trim()}\n${S.data.client_ip}  # ${t('firewall.myIpNote')}`.trim();
           }
         },
