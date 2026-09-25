@@ -2608,8 +2608,41 @@ def _fw_known_ports_read():
                 add(int(rng["start"]), int(rng["end"]), "any", "Plage réservée aux clients", "range")
         for p in _frps_active_proxies(conf):
             add(p["port"], p["port"], p["proto"], f"Port « {p['name']} »", "proxy", p["online"])
+    # Ports réellement ouverts : sans tableau de bord frps ni allowPorts, ceux
+    # des clients ne sont connus que par là.
+    for port, proto in _frps_listening_ports():
+        if not any(k["start"] <= port <= k["end"] and k["proto"] in (proto, "any") for k in known):
+            add(port, port, proto, "Port ouvert par frps", "listen")
     known.sort(key=lambda k: (k["start"], k["end"]))
     return known
+
+def _frps_listening_ports():
+    """{(port, proto)} sur lesquels frps écoute : sockets du processus frps de
+    l'hôte (installation classique ou conteneur en réseau « host »), et ports
+    publiés par les conteneurs frps en réseau bridge."""
+    ports = set()
+    ok, out, _ = run_host(["ss", "-H", "-lntup"])
+    for line in out.splitlines() if ok else []:
+        cols = line.split()
+        if len(cols) < 6 or '(("frps"' not in line:
+            continue
+        addr, _, port = cols[4].rpartition(":")
+        if addr.strip("[]") in ("127.0.0.1", "::1", "localhost") or addr.startswith("127."):
+            continue                       # joignable seulement depuis la machine
+        if port.isdigit():
+            ports.add((int(port), "udp" if cols[0] == "udp" else "tcp"))
+    for inst in _frps_instances().values():
+        if inst.get("source") != "docker":
+            continue
+        st, ins = _docker_api("GET", f"/containers/{inst['container_name']}/json")
+        if st != 200 or not isinstance(ins, dict):
+            continue
+        for spec, binds in ((ins.get("NetworkSettings") or {}).get("Ports") or {}).items():
+            proto = "udp" if spec.endswith("/udp") else "tcp"
+            for b in binds or []:
+                if str(b.get("HostPort", "")).isdigit() and not str(b.get("HostIp", "")).startswith(("127.", "::1")):
+                    ports.add((int(b["HostPort"]), proto))
+    return ports
 
 def _fw_parse_ports(spec):
     """'7000, 25565, 30000-30010' → [(7000, 7000), …]. ValueError si invalide."""
