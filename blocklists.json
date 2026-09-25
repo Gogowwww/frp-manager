@@ -1,4 +1,20 @@
 {
   "version": 1,
-  "lists": []
+  "lists": [
+    {
+      "id": "fai",
+      "name": "FAI 🇫🇷",
+      "mode": "allow",
+      "description": "Autorise seulement les FAI Français.",
+      "author": "Gogow_",
+      "updated": "2026-09-25",
+      "sources": [
+        "AS5410  # Bouygues",
+        "AS12322  # Free SAS",
+        "AS15557  # SFR",
+        "AS3215  # Orange"
+      ],
+      "github": "Gogowwww"
+    }
+  ]
 }
