@@ -18,8 +18,14 @@ MAX_SOURCES, MAX_ASNS = 20000, 50
 
 def check_list(lst):
     """→ liste des problèmes (vide si la liste est acceptable)."""
+    if not isinstance(lst, dict):
+        return ["l'entrée doit être un objet JSON { \"id\": …, \"name\": …, \"sources\": [...] }"]
     where = f"liste « {lst.get('id', '?')} »"
     errors = []
+    if lst.get("mode", "block") not in ("block", "allow"):
+        errors.append(f"{where} : mode « {lst.get('mode')} » inconnu (block ou allow)")
+    if len(str(lst.get("author") or "")) > 40:
+        errors.append(f"{where} : auteur trop long (40 caractères au plus)")
     if not LIST_ID.fullmatch(str(lst.get("id") or "")):
         errors.append(f"{where} : id invalide (minuscules, chiffres, tirets, 40 caractères au plus)")
     if not str(lst.get("name") or "").strip():
