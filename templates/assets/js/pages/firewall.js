@@ -231,7 +231,7 @@ function renderRules() {
       count != null && !state && rule.enabled ? t('firewall.blockedCount', { count }) : ''),
     h('div', { class: 'row-actions' },
       sw,
-      rule.mode === 'block' && rule.sources.length ? button('', {
+      rule.sources.length ? button('', {
         variant: 'ghost', size: 'sm', iconName: 'upload', title: t('firewall.publish.action'),
         onClick: (e) => { e.stopPropagation(); publishRule(rule); },
       }) : null,
@@ -507,7 +507,8 @@ function openCatalog() {
       return h('li', { class: 'fw-catalog-item' },
         h('div', { class: 'fw-catalog-head' },
           h('div', null,
-            h('strong', null, lst.name),
+            h('strong', null, lst.name), ' ',
+            badge(t(`firewall.mode.${lst.mode}`), lst.mode === 'allow' ? 'success' : 'danger'),
             h('div', { class: 'muted fw-catalog-meta' },
               [lst.author && t('firewall.lists.by', { author: lst.author }),
                 lst.updated && t('firewall.lists.updated', { date: lst.updated }),
@@ -539,9 +540,16 @@ function openCatalog() {
   fill(false);
 }
 
-function subscribe(lst, close) {
+async function subscribe(lst, close) {
+  // Liste d'autorisation sur tous les ports frp : tout le reste est coupé,
+  // clients frpc compris s'ils n'y figurent pas.
+  if (lst.mode === 'allow' && !(await confirmDialog({
+    title: t('firewall.lists.allowTitle', { name: lst.name }),
+    message: t('firewall.lists.allowText'),
+    confirmLabel: t('firewall.lists.subscribe'),
+  }))) return;
   S.rules.push({
-    id: Math.random().toString(16).slice(2, 10), name: lst.name, mode: 'block', ports: '*',
+    id: Math.random().toString(16).slice(2, 10), name: lst.name, mode: lst.mode, ports: '*',
     sources: [], list: lst.id, enabled: true,
   });
   close(undefined);
@@ -556,7 +564,7 @@ function savedAuthor() {
 }
 
 /** Règles dont les adresses peuvent être proposées au catalogue. */
-const publishable = () => S.rules.filter((r) => r.mode === 'block' && r.sources.length);
+const publishable = () => S.rules.filter((r) => r.sources.length);
 
 /** Proposer une liste au catalogue communautaire : les adresses d'une règle
  *  « Bloquer » (rule), ou saisies ici. */
@@ -589,6 +597,11 @@ function publishRule(rule = null) {
       const desc = h('textarea', {
         class: 'input fw-textarea', rows: 3, maxLength: 300, placeholder: t('firewall.publish.descPlaceholder'),
       });
+      const modeHint = h('p', { class: 'field-hint' });
+      const mode = segmented(['block', 'allow'].map((v) => ({ value: v, label: t(`firewall.mode.${v}`) })),
+        rule?.mode || 'block', (v) => { modeHint.textContent = t(`firewall.publish.modeHint.${v}`); },
+        { label: t('firewall.publish.mode') });
+      modeHint.textContent = t(`firewall.publish.modeHint.${mode.value}`);
       const notes = switchRow({ label: t('firewall.publish.notes'), description: t('firewall.publish.notesHint'), checked: false });
       const out = h('div', { class: 'form-stack' });
 
@@ -597,7 +610,7 @@ function publishRule(rule = null) {
         try { localStorage.setItem(AUTHOR_KEY, author.value.trim()); } catch { /* facultatif */ }
         const d = await api('/api/firewall/lists/publish', {
           method: 'POST',
-          body: { name: name.value, author: author.value, description: desc.value, notes: notes.input.checked, sources: textToSources(sources.value) },
+          body: { name: name.value, mode: mode.value, author: author.value, description: desc.value, notes: notes.input.checked, sources: textToSources(sources.value) },
         });
         const skipped = d.skipped?.length ? callout({
           type: 'warn', title: t('firewall.publish.skipped', { count: d.skipped.length }),
@@ -623,6 +636,7 @@ function publishRule(rule = null) {
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: (e) => busy(submitBtn, () => prepare(e).catch(toastError)) },
           field({ label: t('firewall.publish.name'), control: name, hint: t('firewall.publish.nameHint') }),
+          h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('firewall.publish.mode')), mode, modeHint),
           h('div', { class: 'field' },
             h('label', { class: 'field-label', for: 'fw-publish-sources' }, t('firewall.publish.sources')),
             Object.assign(sources, { id: 'fw-publish-sources' }),

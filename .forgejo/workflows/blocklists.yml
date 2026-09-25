@@ -1,0 +1,42 @@
+# Forgejo Actions : listes communautaires du pare-feu, ajoutées sans relecture.
+#
+# Toutes les 10 minutes, lit les issues GitHub ouvertes « Nouvelle liste … » /
+# « Mise à jour de la liste … » (préparées par le panel), les vérifie, ajoute
+# les listes acceptées au catalogue (branche « blocklists » du dépôt GitHub
+# public) et ferme chaque issue avec un commentaire. Le travail est fait par
+# sync_issues.py, sur cette branche.
+#
+# Prérequis : secret de dépôt GHCR_TOKEN (token GitHub classic, scope « repo »),
+# partagé avec release.yml.
+
+name: Listes communautaires
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+env:
+  GH_REPO: Gogowwww/frp-manager
+
+jobs:
+  sync:
+    runs-on: docker
+    container:
+      image: python:3.12-alpine
+    steps:
+      - name: Ajouter les listes publiées
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
+          apk add --no-cache --quiet git
+          export GIT_AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          rm -rf catalog
+          git -c "http.https://github.com/.extraheader=$GIT_AUTH" clone --quiet --depth 1 \
+            --branch blocklists "https://github.com/$GH_REPO.git" catalog
+          cd catalog
+          git config user.name "FRP Manager (listes)"
+          git config user.email "Gogowwww@users.noreply.github.com"
+          python sync_issues.py

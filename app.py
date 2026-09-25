@@ -2249,10 +2249,13 @@ _ip_asn_busy   = threading.Lock()
 # ── Listes de blocage communautaires ─────────────────────────────────────────
 # Catalogue publié sur la branche « blocklists » du dépôt GitHub public, pas sur
 # main : le main public n'avance qu'en avance rapide, à la promotion d'une
-# release. On y propose une liste par une issue pré-remplie depuis le panel ;
-# une fois acceptée, les panels abonnés la reçoivent. Une règle abonnée
-# (champ « list ») filtre ses propres adresses plus celles de la liste. Le
-# catalogue est gardé sur disque : sans GitHub, la dernière version sert.
+# release. On y publie une liste par une issue pré-remplie depuis le panel ;
+# le workflow Forgejo blocklists.yml la vérifie et l'ajoute tout seul (seul
+# l'auteur d'une liste peut la mettre à jour). Une liste bloque (« block ») ou
+# autorise seulement (« allow ») : c'est le mode de la règle créée en s'y
+# abonnant. Une règle abonnée (champ « list ») filtre ses propres adresses plus
+# celles de la liste. Le catalogue est gardé sur disque : sans GitHub, la
+# dernière version sert.
 FW_LISTS_BRANCH     = "blocklists"
 FW_LISTS_URL        = (os.environ.get("FRP_MANAGER_BLOCKLISTS_URL") or
                        f"https://raw.githubusercontent.com/{PANEL_GITHUB_REPO}/{FW_LISTS_BRANCH}/blocklists.json")
@@ -2339,6 +2342,7 @@ def _fw_list_normalize(raw):
             "description": str(raw.get("description") or "").strip()[:300],
             "author": str(raw.get("author") or "").strip()[:40],
             "updated": str(raw.get("updated") or "").strip()[:10],
+            "mode": "allow" if raw.get("mode") == "allow" else "block",
             "sources": sources}
 
 def _lists_all():
@@ -3013,7 +3017,8 @@ def api_firewall_lists():
 def api_firewall_lists_publish():
     """Prépare la proposition d'une liste au catalogue : l'entrée telle que les
     panels l'accepteront, et le lien d'une issue GitHub pré-remplie. Rien n'est
-    envoyé d'ici : l'utilisateur relit et soumet l'issue lui-même."""
+    envoyé d'ici : l'utilisateur relit et soumet l'issue lui-même, puis le
+    workflow Forgejo blocklists.yml l'ajoute au catalogue."""
     import unicodedata
     from urllib.parse import urlencode
     data = request.get_json() or {}
@@ -3029,7 +3034,8 @@ def api_firewall_lists_publish():
         return jsonify({"ok": False, "msg": "Aucune adresse publiable : il faut des adresses publiques, "
                                             "des réseaux d'au plus /8 (/16 en IPv6) ou des AS",
                         "skipped": skipped}), 400
-    entry = {"id": lid, "name": name,
+    mode = "allow" if data.get("mode") == "allow" else "block"
+    entry = {"id": lid, "name": name, "mode": mode,
              "description": str(data.get("description") or "").strip()[:300],
              "author": str(data.get("author") or "").strip()[:40],
              "updated": datetime.now().strftime("%Y-%m-%d"),
@@ -3037,9 +3043,11 @@ def api_firewall_lists_publish():
                          for s in sources]}
     text = json.dumps(entry, indent=2, ensure_ascii=False)
     existing = _lists_all()["lists"].get(lid)
-    title = f"{'Mise à jour de la liste' if existing else 'Nouvelle liste'} de blocage : {name}"
-    intro = ("Proposition pour le catalogue des listes de blocage communautaires du pare-feu "
-             f"(branche `{FW_LISTS_BRANCH}`), préparée par FRP Manager {PANEL_VERSION}.\n\n")
+    kind = "d'autorisation" if mode == "allow" else "de blocage"
+    title = f"{'Mise à jour de la liste' if existing else 'Nouvelle liste'} {kind} : {name}"
+    intro = (f"Liste pour le catalogue communautaire du pare-feu (branche `{FW_LISTS_BRANCH}`), "
+             f"préparée par FRP Manager {PANEL_VERSION}. Elle est vérifiée puis ajoutée "
+             "automatiquement dans les minutes qui suivent.\n\n")
     base = f"https://github.com/{PANEL_GITHUB_REPO}/issues/new?"
     url = base + urlencode({"title": title, "body": f"{intro}```json\n{text}\n```\n"})
     too_long = len(url) > 8000           # limite des liens GitHub : l'entrée est collée à la main

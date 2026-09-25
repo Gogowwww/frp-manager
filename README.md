@@ -83,7 +83,7 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 - 🙅 Le pare-feu **ne fait que bloquer** : il n'ouvre jamais un port et ne touche ni à ufw ni aux règles de Docker ; le port du panel et la boucle locale ne sont jamais filtrés
 - 🧪 **Tester une adresse** avant d'appliquer, **alerte** si vos règles bloqueraient votre propre IP
 - 📡 **Connexions bloquées en temps réel** (WebSocket, repli automatique) : adresse, opérateur (AS), port, règle, compteur par règle ; un clic bloque l'adresse ou tout son AS
-- 🌍 **Listes de blocage communautaires** : abonnez-vous en un clic à une liste du catalogue (règle *Bloquer* tenue à jour toute seule), ou **publiez** les adresses d'une de vos règles : le panel prépare une issue GitHub que vous relisez et envoyez ; le catalogue vit sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists)
+- 🌍 **Listes communautaires** (à bloquer ou à autoriser seulement) : abonnez-vous en un clic à une liste du catalogue (règle tenue à jour toute seule), ou **publiez** la vôtre : le panel prépare une issue GitHub, vous l'envoyez, elle est vérifiée et ajoutée automatiquement en quelques minutes ; le catalogue vit sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists)
 
 > ℹ️ Nécessite `nftables` sur la machine (`apt install nftables`). La page n'apparaît que si un frps tourne sur la machine.
 
