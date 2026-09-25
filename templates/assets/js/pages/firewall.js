@@ -530,6 +530,7 @@ function openCatalog() {
       body: [body, status],
       foot: [
         browse,
+        button(t('firewall.publish.new'), { iconName: 'upload', onClick: () => { close(undefined); publishRule(); } }),
         refresh,
         button(t('common.close'), { onClick: () => close(undefined) }),
       ],
@@ -554,15 +555,36 @@ function savedAuthor() {
   try { return localStorage.getItem(AUTHOR_KEY) || ''; } catch { return ''; }
 }
 
-/** Proposer les adresses d'une règle « Bloquer » au catalogue communautaire. */
-function publishRule(rule) {
+/** Règles dont les adresses peuvent être proposées au catalogue. */
+const publishable = () => S.rules.filter((r) => r.mode === 'block' && r.sources.length);
+
+/** Proposer une liste au catalogue communautaire : les adresses d'une règle
+ *  « Bloquer » (rule), ou saisies ici. */
+function publishRule(rule = null) {
   const formId = 'fw-publish-form';
   openDialog({
-    title: t('firewall.publish.title', { name: ruleTitle(rule) }),
+    title: rule ? t('firewall.publish.title', { name: ruleTitle(rule) }) : t('firewall.publish.titleNew'),
     description: t('firewall.publish.desc'),
     size: 'lg',
     build: () => {
-      const name = input({ value: rule.name || '', placeholder: t('firewall.publish.namePlaceholder'), maxLength: 60, required: true });
+      const sources = h('textarea', {
+        class: 'input input-mono fw-textarea', rows: 6, spellcheck: 'false', required: true,
+        placeholder: '203.0.113.4  # scanner\n198.51.100.0/24\nAS64500',
+      });
+      sources.value = sourcesToText(rule?.sources || []);
+      const rules = publishable();
+      const from = !rule && rules.length ? h('div', { class: 'fw-chips' },
+        h('span', { class: 'field-hint' }, t('firewall.publish.fromRule')),
+        rules.map((r) => h('button', {
+          type: 'button', class: 'fw-chip',
+          onClick: () => {
+            const have = new Set(textToSources(sources.value).map(sourceLabel));
+            const add = r.sources.filter((x) => !have.has(sourceLabel(x)));
+            sources.value = [sources.value.trim(), sourcesToText(add)].filter(Boolean).join('\n');
+            if (!name.value) name.value = r.name || '';
+          },
+        }, ruleTitle(r)))) : null;
+      const name = input({ value: rule?.name || '', placeholder: t('firewall.publish.namePlaceholder'), maxLength: 60, required: true });
       const author = input({ value: savedAuthor(), placeholder: t('firewall.publish.authorPlaceholder'), maxLength: 40 });
       const desc = h('textarea', {
         class: 'input fw-textarea', rows: 3, maxLength: 300, placeholder: t('firewall.publish.descPlaceholder'),
@@ -575,7 +597,7 @@ function publishRule(rule) {
         try { localStorage.setItem(AUTHOR_KEY, author.value.trim()); } catch { /* facultatif */ }
         const d = await api('/api/firewall/lists/publish', {
           method: 'POST',
-          body: { name: name.value, author: author.value, description: desc.value, notes: notes.input.checked, sources: rule.sources },
+          body: { name: name.value, author: author.value, description: desc.value, notes: notes.input.checked, sources: textToSources(sources.value) },
         });
         const skipped = d.skipped?.length ? callout({
           type: 'warn', title: t('firewall.publish.skipped', { count: d.skipped.length }),
@@ -601,6 +623,11 @@ function publishRule(rule) {
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: (e) => busy(submitBtn, () => prepare(e).catch(toastError)) },
           field({ label: t('firewall.publish.name'), control: name, hint: t('firewall.publish.nameHint') }),
+          h('div', { class: 'field' },
+            h('label', { class: 'field-label', for: 'fw-publish-sources' }, t('firewall.publish.sources')),
+            Object.assign(sources, { id: 'fw-publish-sources' }),
+            h('p', { class: 'field-hint' }, t('firewall.sourcesHint')),
+            from),
           field({ label: t('firewall.publish.description'), optional: true, control: desc }),
           field({ label: t('firewall.publish.author'), optional: true, control: author, hint: t('firewall.publish.authorHint') }),
           notes),
