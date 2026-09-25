@@ -587,6 +587,19 @@ legend.fieldset-title + * { clear: both; }
 .fw-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .fw-dot.is-ok { background: var(--accent); }
 .fw-dot.is-blocked { background: var(--danger); }
+.fw-head-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.fw-list-tag { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-text); }
+.fw-list-tag .icon { width: 13px; height: 13px; flex-shrink: 0; }
+.fw-catalog-list { list-style: none; display: flex; flex-direction: column; gap: var(--space-3); }
+.fw-catalog-item { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); display: flex; flex-direction: column; gap: 6px; }
+.fw-catalog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.fw-catalog-meta { font-size: 12.5px; }
+.fw-catalog-desc { font-size: 13px; color: var(--text-2); }
+.fw-catalog-entries { list-style: none; max-height: 220px; overflow: auto; font-size: 12.5px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; overflow-wrap: anywhere; }
+.fw-publish-preview { position: relative; }
+.fw-publish-preview pre { max-height: 260px; overflow: auto; font-size: 12.5px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 40px 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fw-publish-copy { position: absolute; top: 4px; right: 4px; }
+.fw-skipped { margin: 4px 0 0 18px; font-size: 12.5px; }
 @media (max-width: 760px) {
   .fw-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name actions" "detail detail" "count count"; }
   .fw-detail { grid-area: detail; }

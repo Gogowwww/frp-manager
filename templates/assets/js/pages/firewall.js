@@ -6,7 +6,7 @@ import { t } from '../i18n.js';
 import { api, apiOk } from '../api.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, openDialog, confirmDialog,
-  field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, badge, saveBar,
+  field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, badge, saveBar, copyButton,
 } from '../ui.js';
 
 const POLL_MS = 5000;          // repli sans WebSocket
@@ -20,6 +20,7 @@ const S = {
   rules: [],
   snapshot: '',
   live: null,
+  catalog: null,        // listes communautaires, une fois le catalogue ouvert
   els: {},
 };
 
@@ -113,7 +114,9 @@ function build() {
         h('div', null,
           h('h2', { class: 'section-title' }, t('firewall.rulesTitle')),
           h('p', { class: 'section-desc' }, t('firewall.rulesDesc'))),
-        button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) })),
+        h('div', { class: 'fw-head-actions' },
+          button(t('firewall.lists.open'), { iconName: 'globe', onClick: openCatalog }),
+          button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) }))),
       S.els.rules),
     h('section', null,
       h('div', { class: 'section-head' },
@@ -218,13 +221,20 @@ function renderRules() {
       h('span', null, h('small', null, t('firewall.portsLabel')),
         rule.ports === '*' ? h('span', null, t('firewall.allPorts')) : h('span', { class: 'mono' }, rule.ports)),
       h('span', null, h('small', null, t('firewall.sourcesLabel')),
-        h('span', { title: rule.sources.map(sourceTitle).join('\n') }, rule.sources.length
-          ? rule.sources.slice(0, 2).map(sourceLabel).join(', ') + (rule.sources.length > 2 ? ` +${rule.sources.length - 2}` : '')
-          : t('firewall.noSource')))),
+        h('span', { title: [rule.list && listText(rule.list), ...rule.sources.map(sourceTitle)].filter(Boolean).join('\n') },
+          rule.list ? h('span', { class: 'fw-list-tag' }, icon('globe'), listText(rule.list)) : null,
+          rule.list && rule.sources.length ? ' + ' : null,
+          rule.sources.length
+            ? rule.sources.slice(0, 2).map(sourceLabel).join(', ') + (rule.sources.length > 2 ? ` +${rule.sources.length - 2}` : '')
+            : rule.list ? null : t('firewall.noSource')))),
     h('div', { class: 'fw-count', title: t('firewall.countHint'), dataset: { rule: state || !rule.enabled ? '' : rule.id } },
       count != null && !state && rule.enabled ? t('firewall.blockedCount', { count }) : ''),
     h('div', { class: 'row-actions' },
       sw,
+      rule.mode === 'block' && rule.sources.length ? button('', {
+        variant: 'ghost', size: 'sm', iconName: 'upload', title: t('firewall.publish.action'),
+        onClick: (e) => { e.stopPropagation(); publishRule(rule); },
+      }) : null,
       button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
       button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: (e) => { e.stopPropagation(); removeRule(rule); } })));
   })));
@@ -441,6 +451,166 @@ function quickBlock(source) {
   toast(t('firewall.quickAdded', { what: label, rule: name }), 'info', 6000);
 }
 
+// ── Listes communautaires ──────────────────────────────────────────────────
+// Catalogue tenu sur GitHub. S'abonner crée une règle « Bloquer » qui suit la
+// liste (mise à jour par le serveur) ; publier prépare une issue GitHub.
+
+function listInfo(id) {
+  const known = S.data.lists?.[id];
+  if (known) return known;
+  const lst = S.catalog?.find((l) => l.id === id);
+  return lst ? { name: lst.name, author: lst.author, updated: lst.updated, count: lst.sources.length } : null;
+}
+
+/** « Scanners connus (120) », ou l'identifiant si la liste est inconnue. */
+function listText(id) {
+  const info = listInfo(id);
+  return info ? t('firewall.lists.tag', { name: info.name, count: info.count }) : t('firewall.lists.unknown', { id });
+}
+
+function openCatalog() {
+  const body = h('div', { class: 'fw-catalog' }, h('p', { class: 'muted' }, t('common.loading')));
+  const status = h('p', { class: 'field-hint' });
+  const browse = h('a', { class: 'btn btn-ghost', target: '_blank', rel: 'noopener', hidden: true },
+    icon('external'), t('firewall.lists.browse'));
+  let close;
+
+  const fill = async (fresh) => {
+    let d;
+    try {
+      d = await apiOk(`/api/firewall/lists${fresh ? '?fresh=1' : ''}`);
+    } catch (e) {
+      body.replaceChildren(callout({ type: 'danger', text: e.message || t('errors.generic') }));
+      return;
+    }
+    S.catalog = d.lists;
+    browse.href = d.browse_url;
+    browse.hidden = false;
+    status.textContent = d.error
+      ? t(d.fetched ? 'firewall.lists.stale' : 'firewall.lists.unreachable', { error: d.error })
+      : d.fetched ? t('firewall.lists.fetchedAt', { date: new Date(d.fetched * 1000).toLocaleString() }) : '';
+    if (!d.lists.length) {
+      body.replaceChildren(emptyState({
+        iconName: 'globe', title: t('firewall.lists.emptyTitle'), text: t('firewall.lists.emptyText'),
+      }));
+      return;
+    }
+    body.replaceChildren(h('ul', { class: 'fw-catalog-list' }, d.lists.map((lst) => {
+      const rule = S.rules.find((r) => r.list === lst.id);
+      const entries = h('ul', { class: 'fw-catalog-entries mono', hidden: true },
+        lst.sources.slice(0, 500).map((s) => h('li', null, sourceLabel(s), s.note ? h('span', { class: 'muted' }, `  # ${s.note}`) : null)),
+        lst.sources.length > 500 ? h('li', { class: 'muted' }, t('firewall.lists.more', { count: lst.sources.length - 500 })) : null);
+      const toggle = button(t('firewall.lists.show', { count: lst.sources.length }), {
+        variant: 'ghost', size: 'sm', iconName: 'eye',
+        onClick: () => { entries.hidden = !entries.hidden; },
+      });
+      return h('li', { class: 'fw-catalog-item' },
+        h('div', { class: 'fw-catalog-head' },
+          h('div', null,
+            h('strong', null, lst.name),
+            h('div', { class: 'muted fw-catalog-meta' },
+              [lst.author && t('firewall.lists.by', { author: lst.author }),
+                lst.updated && t('firewall.lists.updated', { date: lst.updated }),
+                t('firewall.lists.count', { count: lst.sources.length })].filter(Boolean).join(' · '))),
+          rule
+            ? badge(t('firewall.lists.subscribed'), 'success')
+            : button(t('firewall.lists.subscribe'), { variant: 'primary', size: 'sm', iconName: 'plus', onClick: () => subscribe(lst, close) })),
+        lst.description ? h('p', { class: 'fw-catalog-desc' }, lst.description) : null,
+        h('div', null, toggle),
+        entries);
+    })));
+  };
+
+  const refresh = button(t('common.refresh'), { iconName: 'refresh', onClick: () => busy(refresh, () => fill(true)) });
+  ({ close } = openDialog({
+    title: t('firewall.lists.title'),
+    description: t('firewall.lists.desc'),
+    size: 'lg',
+    build: () => ({
+      body: [body, status],
+      foot: [
+        browse,
+        refresh,
+        button(t('common.close'), { onClick: () => close(undefined) }),
+      ],
+    }),
+  }));
+  fill(false);
+}
+
+function subscribe(lst, close) {
+  S.rules.push({
+    id: Math.random().toString(16).slice(2, 10), name: lst.name, mode: 'block', ports: '*',
+    sources: [], list: lst.id, enabled: true,
+  });
+  close(undefined);
+  render();
+  toast(t('firewall.lists.added', { name: lst.name }), 'info', 6000);
+}
+
+const AUTHOR_KEY = 'frpm.fw.author';
+
+function savedAuthor() {
+  try { return localStorage.getItem(AUTHOR_KEY) || ''; } catch { return ''; }
+}
+
+/** Proposer les adresses d'une règle « Bloquer » au catalogue communautaire. */
+function publishRule(rule) {
+  const formId = 'fw-publish-form';
+  openDialog({
+    title: t('firewall.publish.title', { name: ruleTitle(rule) }),
+    description: t('firewall.publish.desc'),
+    size: 'lg',
+    build: () => {
+      const name = input({ value: rule.name || '', placeholder: t('firewall.publish.namePlaceholder'), maxLength: 60, required: true });
+      const author = input({ value: savedAuthor(), placeholder: t('firewall.publish.authorPlaceholder'), maxLength: 40 });
+      const desc = h('textarea', {
+        class: 'input fw-textarea', rows: 3, maxLength: 300, placeholder: t('firewall.publish.descPlaceholder'),
+      });
+      const notes = switchRow({ label: t('firewall.publish.notes'), description: t('firewall.publish.notesHint'), checked: false });
+      const out = h('div', { class: 'form-stack' });
+
+      const prepare = async (e) => {
+        e.preventDefault();
+        try { localStorage.setItem(AUTHOR_KEY, author.value.trim()); } catch { /* facultatif */ }
+        const d = await api('/api/firewall/lists/publish', {
+          method: 'POST',
+          body: { name: name.value, author: author.value, description: desc.value, notes: notes.input.checked, sources: rule.sources },
+        });
+        const skipped = d.skipped?.length ? callout({
+          type: 'warn', title: t('firewall.publish.skipped', { count: d.skipped.length }),
+          text: h('ul', { class: 'fw-skipped' }, d.skipped.slice(0, 20).map((s) => h('li', null, h('span', { class: 'mono' }, s.entry), ` — ${s.reason}`))),
+        }) : null;
+        if (!d.ok) { out.replaceChildren(callout({ type: 'danger', text: d.msg }), skipped || ''); return; }
+        const open = h('a', {
+          class: 'btn btn-primary', href: d.issue_url, target: '_blank', rel: 'noopener',
+          onClick: () => {
+            // Trop long pour le lien : l'entrée est collée à la main dans l'issue
+            if (d.too_long) navigator.clipboard?.writeText(d.json).then(() => toast(t('common.copied'), 'success', 1800)).catch(() => {});
+          },
+        }, icon('external'), t(d.update ? 'firewall.publish.openUpdate' : 'firewall.publish.open'));
+        out.replaceChildren(
+          skipped || '',
+          callout({ type: 'info', compact: true, text: t(d.too_long ? 'firewall.publish.tooLong' : 'firewall.publish.review') }),
+          h('div', { class: 'fw-publish-preview' },
+            h('div', { class: 'fw-publish-copy' }, copyButton(d.json)),
+            h('pre', { class: 'mono' }, d.json)),
+          h('div', null, open));
+      };
+      const submitBtn = button(t('firewall.publish.prepare'), { variant: 'primary', type: 'submit', form: formId });
+      return {
+        body: [h('form', { id: formId, class: 'form-stack', onSubmit: (e) => busy(submitBtn, () => prepare(e).catch(toastError)) },
+          field({ label: t('firewall.publish.name'), control: name, hint: t('firewall.publish.nameHint') }),
+          field({ label: t('firewall.publish.description'), optional: true, control: desc }),
+          field({ label: t('firewall.publish.author'), optional: true, control: author, hint: t('firewall.publish.authorHint') }),
+          notes),
+        out],
+        foot: [submitBtn],
+      };
+    },
+  });
+}
+
 // ── Édition ────────────────────────────────────────────────────────────────
 
 function sourcesToText(sources) {
@@ -502,6 +672,15 @@ async function editRule(existing) {
       });
       syncMode();
 
+      const subscribed = draft.list ? callout({
+        type: 'info', iconName: 'globe', compact: true,
+        title: t('firewall.lists.ruleUses', { name: listText(draft.list) }),
+        text: t('firewall.lists.ruleUsesHint'),
+        actions: [button(t('firewall.lists.unsubscribe'), {
+          size: 'sm', onClick: (e) => { draft.list = ''; e.currentTarget.closest('.callout').remove(); },
+        })],
+      }) : null;
+
       const submit = (e) => {
         e.preventDefault();
         close({
@@ -518,8 +697,11 @@ async function editRule(existing) {
           h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('firewall.action')), mode, modeHint),
           h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('firewall.portsLabel')), scope, portsBox,
             h('p', { class: 'field-hint' }, t('firewall.portsHint', { port: S.data.panel_port }))),
+          subscribed,
           h('div', { class: 'field' },
-            h('label', { class: 'field-label', for: 'fw-sources' }, t('firewall.sourcesLabel')),
+            h('label', { class: 'field-label', for: 'fw-sources' },
+              t(draft.list ? 'firewall.lists.extraSources' : 'firewall.sourcesLabel'),
+              draft.list ? h('span', { class: 'field-optional' }, t('common.optional')) : null),
             Object.assign(sources, { id: 'fw-sources' }),
             h('p', { class: 'field-hint' }, t('firewall.sourcesHint')),
             addMe ? h('div', null, addMe) : null))],
@@ -531,11 +713,17 @@ async function editRule(existing) {
     },
   }).result;
   if (!result) return;
-  if (result.mode === 'block' && !result.sources.length) {
+  if (!result.list) delete result.list;
+  if (result.mode === 'block' && !result.sources.length && !result.list) {
     toast(t('firewall.blockNeedsSource'), 'error');
     return;
   }
-  if (existing) Object.assign(existing, result);
+  if (existing) {
+    // Désabonnement : « list » absent de result. Les autres clés gardent leur
+    // place, sinon la règle paraîtrait modifiée (comparaison en JSON).
+    Object.keys(existing).forEach((k) => { if (!(k in result)) delete existing[k]; });
+    Object.assign(existing, result);
+  }
   else S.rules.push({ ...result, id: Math.random().toString(16).slice(2, 10) });
   render();
 }

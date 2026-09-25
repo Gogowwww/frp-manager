@@ -2246,6 +2246,178 @@ _asn_cache     = None        # {"16276": {"holder", "v4": [...], "v6": [...], "f
 _ip_asn_cache  = {}          # "1.2.3.4" → {"asn", "holder"}, ou None si l'adresse n'a pas d'AS
 _ip_asn_busy   = threading.Lock()
 
+# ── Listes de blocage communautaires ─────────────────────────────────────────
+# Catalogue publié sur la branche « blocklists » du dépôt GitHub public, pas sur
+# main : le main public n'avance qu'en avance rapide, à la promotion d'une
+# release. On y propose une liste par une issue pré-remplie depuis le panel ;
+# une fois acceptée, les panels abonnés la reçoivent. Une règle abonnée
+# (champ « list ») filtre ses propres adresses plus celles de la liste. Le
+# catalogue est gardé sur disque : sans GitHub, la dernière version sert.
+FW_LISTS_BRANCH     = "blocklists"
+FW_LISTS_URL        = (os.environ.get("FRP_MANAGER_BLOCKLISTS_URL") or
+                       f"https://raw.githubusercontent.com/{PANEL_GITHUB_REPO}/{FW_LISTS_BRANCH}/blocklists.json")
+FW_LISTS_FILE       = Path("/var/lib/frp-manager/blocklists-cache.json")
+FW_LISTS_MAX_AGE    = 6 * 3600
+FW_LISTS_RETRY      = 60         # après un échec, pas de nouvel essai avant 1 min
+FW_LIST_MAX_SOURCES = 20000
+FW_LIST_MAX_ASNS    = 50
+FW_LIST_ID          = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+_lists_lock         = threading.Lock()
+_lists_cache        = None       # {"fetched", "lists": {id: {"id", "name", …, "sources"}}}
+_lists_failure      = (0, "")    # (moment, message) du dernier échec
+
+def _fw_source(text, note=""):
+    """« 203.0.113.4 », « 198.51.100.0/24 » ou « AS16276 » → source de règle. ValueError sinon."""
+    text = str(text).strip()
+    m = re.fullmatch(r"(?i)AS\s*(\d{1,10})", text)
+    if m:
+        asn = int(m.group(1))
+        if not (1 <= asn <= 4294967295):
+            raise ValueError(f"« {text} » n'est pas un numéro d'AS valide")
+        return {"asn": asn, "note": note}
+    try:
+        net = ipaddress.ip_network(text, strict=False)
+    except ValueError:
+        raise ValueError(f"« {text} » n'est ni une adresse IP, ni un réseau "
+                         f"(203.0.113.0/24), ni un AS (AS16276)")
+    cidr = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
+    return {"cidr": cidr, "note": note}
+
+def _fw_list_sources(items, skipped=None):
+    """Entrées d'une liste communautaire (« AS16276  # note », ou {cidr|asn, note})
+    → sources de règle. Sont écartés, et notés dans skipped : ce qui est illisible,
+    les réseaux privés ou réservés (on se couperait de son réseau local), ceux plus
+    larges qu'un /8 (/16 en IPv6), et les AS au-delà de 50."""
+    sources, seen, asns = [], set(), 0
+    skip = (lambda text, why: skipped.append({"entry": text, "reason": why})) if skipped is not None else (lambda *a: None)
+    for item in items or []:
+        if len(sources) >= FW_LIST_MAX_SOURCES:
+            skip("…", f"liste limitée à {FW_LIST_MAX_SOURCES} entrées")
+            break
+        if isinstance(item, dict):
+            text = f"AS{item['asn']}" if item.get("asn") else str(item.get("cidr") or "")
+            note = str(item.get("note") or "")
+        else:
+            text, _, note = str(item).partition("#")
+        text = text.strip()
+        if not text:
+            continue
+        try:
+            src = _fw_source(text, note.strip()[:60])
+        except ValueError as e:
+            skip(text, str(e))
+            continue
+        if src.get("asn"):
+            if asns >= FW_LIST_MAX_ASNS:
+                skip(text, f"{FW_LIST_MAX_ASNS} AS au plus par liste")
+                continue
+            asns += 1
+        else:
+            net = ipaddress.ip_network(src["cidr"])
+            if not net.is_global:
+                skip(text, "adresse privée ou réservée")
+                continue
+            if net.prefixlen < (8 if net.version == 4 else 16):
+                skip(text, "réseau trop large")
+                continue
+        key = src.get("asn") or src["cidr"]
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(src)
+    return sources
+
+def _fw_list_normalize(raw):
+    """Une liste du catalogue → liste propre, ou None si elle est inutilisable."""
+    if not isinstance(raw, dict) or not FW_LIST_ID.fullmatch(str(raw.get("id") or "")):
+        return None
+    sources = _fw_list_sources(raw.get("sources"))
+    if not sources:
+        return None
+    return {"id": raw["id"],
+            "name": str(raw.get("name") or raw["id"]).strip()[:60],
+            "description": str(raw.get("description") or "").strip()[:300],
+            "author": str(raw.get("author") or "").strip()[:40],
+            "updated": str(raw.get("updated") or "").strip()[:10],
+            "sources": sources}
+
+def _lists_all():
+    global _lists_cache
+    if _lists_cache is None:
+        try:
+            _lists_cache = json.loads(FW_LISTS_FILE.read_text())
+        except Exception:
+            _lists_cache = {"fetched": 0, "lists": {}}
+    return _lists_cache
+
+def _lists_fetch():
+    """Télécharge le catalogue. Exception si GitHub échoue ou si le fichier est illisible."""
+    global _lists_cache
+    r = req.get(FW_LISTS_URL, timeout=15)
+    r.raise_for_status()
+    lists = {}
+    for raw in r.json().get("lists") or []:
+        lst = _fw_list_normalize(raw)
+        if lst and lst["id"] not in lists:
+            lists[lst["id"]] = lst
+    cache = {"fetched": int(time.time()), "lists": lists}
+    with _lists_lock:
+        _lists_cache = cache
+        try:
+            FW_LISTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            FW_LISTS_FILE.write_text(json.dumps(cache))
+        except Exception as e:
+            print(f"[WARN] Catalogue des listes non enregistré : {e}")
+    return cache
+
+def _lists_get(max_age=FW_LISTS_MAX_AGE):
+    """Catalogue de moins de max_age secondes, retéléchargé au besoin.
+    → (catalogue, erreur) : en cas d'échec, le dernier connu et le message."""
+    global _lists_failure
+    cache = _lists_all()
+    if time.time() - cache.get("fetched", 0) < max_age:
+        return cache, None
+    if time.time() - _lists_failure[0] < FW_LISTS_RETRY:
+        return cache, _lists_failure[1]
+    try:
+        return _lists_fetch(), None
+    except Exception as e:
+        _lists_failure = (time.time(), str(e) or type(e).__name__)
+        return cache, _lists_failure[1]
+
+def _fw_rule_list(rule):
+    """Liste communautaire d'une règle (dernière version connue), ou None."""
+    return _lists_all()["lists"].get(rule["list"]) if rule.get("list") else None
+
+def _fw_rule_sources(rule):
+    """Sources d'une règle : les siennes, plus celles de sa liste communautaire."""
+    lst = _fw_rule_list(rule)
+    return list(rule.get("sources") or []) + (lst["sources"] if lst else [])
+
+def _fw_ensure_lists(rules):
+    """Catalogue à jour pour les listes des règles. → message d'erreur, ou None."""
+    wanted = {r["list"] for r in rules if r.get("list")}
+    if not wanted:
+        return None
+    cache, err = _lists_get()
+    if wanted - set(cache["lists"]) and not err:
+        cache, err = _lists_get(0)          # ajoutée depuis le dernier téléchargement ?
+    missing = sorted(wanted - set(cache["lists"]))
+    if not missing:
+        return None
+    return (f"Liste communautaire introuvable dans le catalogue : {', '.join(missing)}"
+            + (f" (catalogue injoignable : {err})" if err else " — retirée ? supprimez la règle qui s'y abonne"))
+
+def _lists_info(rules):
+    """{id: résumé} des listes auxquelles des règles s'abonnent (None si inconnue)."""
+    info = {}
+    for rule in rules:
+        if rule.get("list"):
+            lst = _fw_rule_list(rule)
+            info[rule["list"]] = ({"name": lst["name"], "author": lst["author"], "updated": lst["updated"],
+                                   "count": len(lst["sources"])} if lst else None)
+    return info
+
 def _asn_all():
     global _asn_cache
     if _asn_cache is None:
@@ -2298,7 +2470,7 @@ def _asn_get(asn):
     return _asn_all().get(str(asn)) or _asn_fetch(asn)
 
 def _fw_rule_asns(rules):
-    return sorted({s["asn"] for r in rules for s in r.get("sources", []) if s.get("asn")})
+    return sorted({s["asn"] for r in rules for s in _fw_rule_sources(r) if s.get("asn")})
 
 def _asn_info(asns):
     info = {}
@@ -2495,34 +2667,29 @@ def _fw_normalize_rule(raw, index):
             text = str(src.get("cidr") or "").strip()
         if not text:
             continue
-        m = re.fullmatch(r"(?i)AS\s*(\d{1,10})", text)
-        if m:
-            asn = int(m.group(1))
-            if not (1 <= asn <= 4294967295):
-                raise ValueError(f"{where} : « {text} » n'est pas un numéro d'AS valide")
-            sources.append({"asn": asn, "note": note})
-            continue
         try:
-            net = ipaddress.ip_network(text, strict=False)
-        except ValueError:
-            raise ValueError(f"{where} : « {text} » n'est ni une adresse IP, ni un réseau "
-                             f"(203.0.113.0/24), ni un AS (AS16276)")
-        cidr = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
-        sources.append({"cidr": cidr, "note": note})
-    if mode == "block" and not sources:
+            sources.append(_fw_source(text, note))
+        except ValueError as e:
+            raise ValueError(f"{where} : {e}")
+    lst = str(raw.get("list") or "").strip()
+    if lst and not FW_LIST_ID.fullmatch(lst):
+        raise ValueError(f"{where} : liste communautaire « {lst} » invalide")
+    if mode == "block" and not sources and not lst:
         raise ValueError(f"{where} : indiquez au moins une adresse à bloquer")
     return {"id": re.sub(r"[^0-9a-f]", "", str(raw.get("id") or ""))[:12] or secrets.token_hex(4),
             "name": name, "mode": mode, "ports": ports, "sources": sources,
+            **({"list": lst} if lst else {}),
             "enabled": raw.get("enabled", True) is not False}
 
 _fw_nets_cache = {}
 
 def _fw_rule_nets(rule):
-    """Réseaux d'une règle : adresses et réseaux saisis, plus les préfixes des AS.
-    Mis en cache tant que les sources et les préfixes des AS ne changent pas."""
-    key = json.dumps([[s.get("asn"), s.get("cidr"),
-                       (_asn_all().get(str(s["asn"])) or {}).get("fetched") if s.get("asn") else None]
-                      for s in rule["sources"]])
+    """Réseaux d'une règle : adresses et réseaux saisis, ceux de sa liste
+    communautaire, plus les préfixes des AS. Mis en cache tant que ni les
+    sources, ni la liste, ni les préfixes des AS ne changent."""
+    key = json.dumps([[[s.get("asn"), s.get("cidr")] for s in rule["sources"]],
+                      [rule.get("list"), _lists_all().get("fetched") if rule.get("list") else None],
+                      [(_asn_all().get(str(a)) or {}).get("fetched") for a in _fw_rule_asns([rule])]])
     cached = _fw_nets_cache.get(key)
     if cached is None:
         cached = _fw_nets_cache[key] = _fw_rule_nets_build(rule)
@@ -2532,7 +2699,7 @@ def _fw_rule_nets(rule):
 
 def _fw_rule_nets_build(rule):
     nets = []
-    for s in rule["sources"]:
+    for s in _fw_rule_sources(rule):
         if s.get("asn"):
             e = _asn_all().get(str(s["asn"]))
             if e:
@@ -2729,6 +2896,10 @@ def _fw_sync_loop():
         try:
             cfg = _fw_cfg()
             if cfg["enabled"]:
+                if any(r.get("list") and r.get("enabled", True) for r in cfg["rules"]):
+                    _, err = _lists_get()
+                    if err:
+                        print(f"[WARN] Pare-feu : catalogue des listes communautaires non rafraîchi ({err})")
                 for asn in _fw_rule_asns(cfg["rules"]):
                     entry = _asn_all().get(str(asn))
                     if not entry or time.time() - entry.get("fetched", 0) > FW_ASN_MAX_AGE:
@@ -2770,6 +2941,7 @@ def api_firewall_get():
         "active": ok and _fw_table_present(),
         "counters": _fw_counters() if ok else {},
         "asns": _asn_info(_fw_rule_asns(cfg["rules"])),
+        "lists": _lists_info(cfg["rules"]),
         "client_ip": client,
         "client_verdicts": _fw_verdicts(client, cfg, known) if client and known and cfg["enabled"] else [],
         "panel_port": _fw_panel_port(), "in_docker": IN_DOCKER,
@@ -2787,6 +2959,9 @@ def api_firewall_save():
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e)}), 400
+    err = _fw_ensure_lists(rules)
+    if err:
+        return jsonify({"ok": False, "msg": f"{err}. Rien n'a changé."}), 502
     for asn in _fw_rule_asns(rules):
         try:
             _asn_get(asn)
@@ -2813,6 +2988,9 @@ def api_firewall_test():
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
     except ValueError as e:
         return jsonify({"ok": False, "msg": str(e) if "Règle" in str(e) else "Adresse IP invalide"}), 400
+    err = _fw_ensure_lists(rules)
+    if err:
+        return jsonify({"ok": False, "msg": err}), 502
     for asn in _fw_rule_asns(rules):
         try:
             _asn_get(asn)
@@ -2820,6 +2998,56 @@ def api_firewall_test():
             return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} : {e}"}), 502
     verdicts = _fw_verdicts(str(data["ip"]).strip(), {"enabled": True, "rules": rules}, _fw_known_ports())
     return jsonify({"ok": True, "verdicts": verdicts})
+
+@app.route("/api/firewall/lists")
+@login_required
+def api_firewall_lists():
+    """Catalogue des listes communautaires (retéléchargé s'il a plus de 10 min)."""
+    cache, err = _lists_get(0 if request.args.get("fresh") == "1" else 600)
+    return jsonify({"ok": True, "lists": sorted(cache["lists"].values(), key=lambda l: l["name"].lower()),
+                    "fetched": cache.get("fetched") or None, "error": err,
+                    "browse_url": f"https://github.com/{PANEL_GITHUB_REPO}/tree/{FW_LISTS_BRANCH}"})
+
+@app.route("/api/firewall/lists/publish", methods=["POST"])
+@login_required
+def api_firewall_lists_publish():
+    """Prépare la proposition d'une liste au catalogue : l'entrée telle que les
+    panels l'accepteront, et le lien d'une issue GitHub pré-remplie. Rien n'est
+    envoyé d'ici : l'utilisateur relit et soumet l'issue lui-même."""
+    import unicodedata
+    from urllib.parse import urlencode
+    data = request.get_json() or {}
+    name = str(data.get("name") or "").strip()[:60]
+    if not name:
+        return jsonify({"ok": False, "msg": "Donnez un nom à la liste"}), 400
+    lid = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    lid = re.sub(r"[^a-z0-9]+", "-", lid).strip("-")[:40].strip("-") or f"liste-{secrets.token_hex(3)}"
+    skipped = []
+    items = [src if data.get("notes", True) else {**src, "note": ""} for src in data.get("sources") or []]
+    sources = _fw_list_sources(items, skipped)
+    if not sources:
+        return jsonify({"ok": False, "msg": "Aucune adresse publiable : il faut des adresses publiques, "
+                                            "des réseaux d'au plus /8 (/16 en IPv6) ou des AS",
+                        "skipped": skipped}), 400
+    entry = {"id": lid, "name": name,
+             "description": str(data.get("description") or "").strip()[:300],
+             "author": str(data.get("author") or "").strip()[:40],
+             "updated": datetime.now().strftime("%Y-%m-%d"),
+             "sources": [(f"AS{s['asn']}" if s.get("asn") else s["cidr"]) + (f"  # {s['note']}" if s["note"] else "")
+                         for s in sources]}
+    text = json.dumps(entry, indent=2, ensure_ascii=False)
+    existing = _lists_all()["lists"].get(lid)
+    title = f"{'Mise à jour de la liste' if existing else 'Nouvelle liste'} de blocage : {name}"
+    intro = ("Proposition pour le catalogue des listes de blocage communautaires du pare-feu "
+             f"(branche `{FW_LISTS_BRANCH}`), préparée par FRP Manager {PANEL_VERSION}.\n\n")
+    base = f"https://github.com/{PANEL_GITHUB_REPO}/issues/new?"
+    url = base + urlencode({"title": title, "body": f"{intro}```json\n{text}\n```\n"})
+    too_long = len(url) > 8000           # limite des liens GitHub : l'entrée est collée à la main
+    if too_long:
+        url = base + urlencode({"title": title,
+                                "body": f"{intro}```json\n(collez ici l'entrée copiée depuis le panel)\n```\n"})
+    return jsonify({"ok": True, "entry": entry, "json": text, "issue_url": url, "too_long": too_long,
+                    "skipped": skipped, "update": bool(existing)})
 
 def _fw_blocked_payload():
     """Adresses bloquées ces dernières 24 h (retenues par nftables), avec leur AS,
