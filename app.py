@@ -1563,12 +1563,13 @@ def version_newer(candidate, current):
 
 _release_status_cache = {}   # version → (horodatage, True/False/None)
 
-def github_release_is_prerelease(version):
+def github_release_is_prerelease(version, fresh=False):
     """Statut de la release GitHub v<version> : True/False, ou None si inconnu
-    (pas de release, GitHub injoignable). Mis en cache 10 minutes."""
+    (pas de release, GitHub injoignable). Mis en cache 10 minutes, sauf fresh
+    (bouton « Vérifier ») : une promotion récente est vue tout de suite."""
     now = time.time()
     cached = _release_status_cache.get(version)
-    if cached and now - cached[0] < 600:
+    if cached and not fresh and now - cached[0] < 600:
         return cached[1]
     status = None
     try:
@@ -1581,11 +1582,11 @@ def github_release_is_prerelease(version):
     _release_status_cache[version] = (now, status)
     return status
 
-def panel_is_prerelease():
+def panel_is_prerelease(fresh=False):
     """Pré-release si le numéro l'indique (dev-<sha>, X.Y.Z-suffixe) ou si la release
     GitHub de cette version est marquée pré-release. Après promotion en release
     définitive, les mises à jour redeviennent possibles sans rien réinstaller."""
-    return is_prerelease_version(PANEL_VERSION) or github_release_is_prerelease(PANEL_VERSION) is True
+    return is_prerelease_version(PANEL_VERSION) or github_release_is_prerelease(PANEL_VERSION, fresh) is True
 
 @app.route("/api/panel/version")
 @login_required
@@ -1595,10 +1596,11 @@ def api_panel_version():
     pré-releases et releases plus récentes. Pré-release sous Docker : rien
     (la mise à jour passe par l'image)."""
     repo_configured = "VOTRE_USER" not in PANEL_GITHUB_REPO
-    prerelease = panel_is_prerelease()
+    fresh = request.args.get("fresh") == "1"
+    prerelease = panel_is_prerelease(fresh)
     latest_ver, release_url = _github_cached(("panel", prerelease),
                                              lambda: fetch_panel_latest(include_prereleases=prerelease),
-                                             fresh=request.args.get("fresh") == "1")
+                                             fresh=fresh)
     update_available = bool(latest_ver and repo_configured
                             and not (prerelease and IN_DOCKER)
                             and version_newer(latest_ver, PANEL_VERSION))
