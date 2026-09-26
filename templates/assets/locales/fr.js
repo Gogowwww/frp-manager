@@ -567,6 +567,8 @@ export default {
       themeDark: 'Sombre',
       language: 'Langue',
       languageSoon: 'D’autres langues arriveront dans une prochaine version.',
+      preview: 'aperçu',
+      languagePreview: 'Traduction en cours : certains messages du serveur restent en français.',
     },
   },
 

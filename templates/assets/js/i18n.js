@@ -10,8 +10,12 @@
 
 export const LOCALES = {
   fr: 'Français',
-  // en: 'English',
+  en: 'English',
 };
+// Langues en préparation : proposées dans Réglages (marquées « aperçu »), mais
+// jamais choisies d'après la langue du navigateur. Retirer le code à sa sortie
+// officielle (anglais : v0.0.50).
+export const PREVIEW_LOCALES = new Set(['en']);
 const DEFAULT_LOCALE = 'fr';
 const STORAGE_KEY = 'frpm.locale';
 
@@ -31,7 +35,7 @@ function detectLocale() {
   } catch { /* stockage indisponible */ }
   for (const lang of navigator.languages || [navigator.language]) {
     const code = String(lang || '').slice(0, 2).toLowerCase();
-    if (LOCALES[code]) return code;
+    if (LOCALES[code] && !PREVIEW_LOCALES.has(code)) return code;
   }
   return DEFAULT_LOCALE;
 }

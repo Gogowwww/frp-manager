@@ -1,6 +1,6 @@
 // ── Réglages du panel : sécurité, accès réseau, préférences ───────────────
 
-import { t, LOCALES, getLocale, setLocale } from '../i18n.js';
+import { t, LOCALES, PREVIEW_LOCALES, getLocale, setLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
 import { store } from '../store.js';
 import {
@@ -120,7 +120,8 @@ function preferencesCard() {
   ], getThemePref(), setThemePref, { label: t('settings.prefs.theme') });
 
   const codes = Object.keys(LOCALES);
-  const lang = select(codes.map((c) => ({ value: c, label: LOCALES[c] })), getLocale(), { class: 'select select-inline' });
+  const langLabel = (c) => (PREVIEW_LOCALES.has(c) ? `${LOCALES[c]} (${t('settings.prefs.preview')})` : LOCALES[c]);
+  const lang = select(codes.map((c) => ({ value: c, label: langLabel(c) })), getLocale(), { class: 'select select-inline' });
   lang.disabled = codes.length < 2;
   lang.addEventListener('change', () => setLocale(lang.value));
 
@@ -128,6 +129,7 @@ function preferencesCard() {
     title: t('settings.prefs.title'), description: t('settings.prefs.desc'),
     body: h('div', { class: 'form-stack' },
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('settings.prefs.theme')), theme),
-      field({ label: t('settings.prefs.language'), hint: codes.length < 2 ? t('settings.prefs.languageSoon') : null, control: lang })),
+      field({ label: t('settings.prefs.language'), hint: codes.length < 2 ? t('settings.prefs.languageSoon')
+        : PREVIEW_LOCALES.has(getLocale()) ? t('settings.prefs.languagePreview') : null, control: lang })),
   });
 }
