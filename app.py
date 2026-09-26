@@ -256,6 +256,8 @@ CONFIG_SEARCH_PATHS = [
 
 FALLBACK_VERSION_SOURCES = [
     ("github", "https://api.github.com/repos/fatedier/frp/releases/latest"),
+    # Le site lui-même (redirection de /releases/latest) : pas soumis au quota de l'API
+    ("github.com", "https://github.com/fatedier/frp/releases/latest"),
 ]
 FALLBACK_DOWNLOAD_MIRRORS = [
     "https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
@@ -869,13 +871,54 @@ def _log(msg):
     ts = datetime.now().strftime("%H:%M:%S")
     update_log_buf.append(f"[{ts}] {msg}")
 
+# ── GitHub : l'API, et le site en repli ───────────────────────────────────────
+# Sans compte, l'API n'accepte que 60 appels par heure et par adresse IP (partagée
+# par toutes les machines d'un même réseau). Une fois ce quota épuisé, on ne la
+# sollicite plus avant sa remise à zéro et on lit les mêmes informations sur le
+# site : redirection de /releases/latest et flux releases.atom.
+_gh_api_blocked_until = 0
+
+def gh_api(path, timeout=10):
+    """GET sur l'API GitHub (chemin ou URL complète) → JSON."""
+    global _gh_api_blocked_until
+    if time.time() < _gh_api_blocked_until:
+        raise RuntimeError("quota de l'API GitHub épuisé, repli sur github.com")
+    url = path if path.startswith("http") else f"https://api.github.com/{path}"
+    r = req.get(url, timeout=timeout, headers={"Accept": "application/vnd.github.v3+json"})
+    if r.status_code in (403, 429) and r.headers.get("X-RateLimit-Remaining") == "0":
+        try:
+            _gh_api_blocked_until = int(r.headers.get("X-RateLimit-Reset"))
+        except (TypeError, ValueError):
+            _gh_api_blocked_until = time.time() + 3600
+    r.raise_for_status()
+    return r.json()
+
+def gh_web_latest_tag(repo, timeout=10):
+    """Tag de la release « latest » d'un dépôt, lu sur le site (sans l'API)."""
+    r = req.head(f"https://github.com/{repo}/releases/latest", timeout=timeout, allow_redirects=False)
+    m = re.search(r"/releases/tag/([^/?#]+)$", r.headers.get("Location", ""))
+    if not m:
+        raise RuntimeError(f"github.com : pas de release « latest » pour {repo} (HTTP {r.status_code})")
+    return m.group(1)
+
+def gh_web_tags(repo, timeout=10):
+    """Tags des releases publiées (pré-releases comprises), du flux releases.atom."""
+    r = req.get(f"https://github.com/{repo}/releases.atom", timeout=timeout)
+    r.raise_for_status()
+    return list(dict.fromkeys(re.findall(r"/releases/tag/([^\"'<>\s]+)", r.text)))
+
+def fetch_version_source(url, timeout=12):
+    """Tag publié par une source de version : API (JSON) ou page /releases/latest du site."""
+    m = re.match(r"https://github\.com/([^/]+/[^/]+)/releases/latest$", url)
+    if m:
+        return gh_web_latest_tag(m.group(1), timeout)
+    data = gh_api(url, timeout)
+    return data.get("tag_name") or data.get("tag")
+
 def fetch_latest_version():
     for name, url in build_version_sources():
         try:
-            r = req.get(url, timeout=12, headers={"Accept": "application/vnd.github.v3+json"})
-            r.raise_for_status()
-            data = r.json()
-            tag  = data.get("tag_name") or data.get("tag")
+            tag = fetch_version_source(url)
             if tag:
                 return tag.lstrip("v"), tag, name
         except Exception:
@@ -900,17 +943,33 @@ def fetch_panel_release(include_prereleases=False):
     """Release GitHub cible du panel (JSON de l'API), ou None.
     Canal stable : la release « latest ». Canal pré-release : la version la plus
     récente parmi toutes les releases publiées, pré-releases comprises."""
-    headers = {"Accept": "application/vnd.github.v3+json"}
-    if not include_prereleases:
-        r = req.get(PANEL_GITHUB_API, timeout=10, headers=headers)
-        r.raise_for_status()
-        return r.json()
-    r = req.get(f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases?per_page=30",
-                timeout=10, headers=headers)
-    r.raise_for_status()
-    candidates = [rel for rel in r.json()
-                  if not rel.get("draft") and _version_key(rel.get("tag_name", ""))]
-    return max(candidates, key=lambda rel: _version_key(rel["tag_name"]), default=None)
+    try:
+        if not include_prereleases:
+            return gh_api(PANEL_GITHUB_API)
+        releases = gh_api(f"repos/{PANEL_GITHUB_REPO}/releases?per_page=30")
+        candidates = [rel for rel in releases
+                      if not rel.get("draft") and _version_key(rel.get("tag_name", ""))]
+        return max(candidates, key=lambda rel: _version_key(rel["tag_name"]), default=None)
+    except Exception:
+        # API indisponible (quota) : même choix, d'après le site
+        latest = gh_web_latest_tag(PANEL_GITHUB_REPO)
+        tag = latest
+        if include_prereleases:
+            tags = [t for t in gh_web_tags(PANEL_GITHUB_REPO) if _version_key(t)] + [latest]
+            tag = max(tags, key=_version_key)
+        return _panel_web_release(tag, latest)
+
+def _panel_web_release(tag, latest):
+    """Release du panel reconstituée sans l'API : l'archive publiée par la CI porte
+    toujours le nom frp-manager.zip ; une version plus récente que « latest » est
+    une pré-release."""
+    return {
+        "tag_name": tag,
+        "html_url": f"https://github.com/{PANEL_GITHUB_REPO}/releases/tag/{tag}",
+        "prerelease": version_newer(tag, latest),
+        "assets": [{"name": "frp-manager.zip",
+                    "browser_download_url": f"https://github.com/{PANEL_GITHUB_REPO}/releases/download/{tag}/frp-manager.zip"}],
+    }
 
 def fetch_panel_latest(include_prereleases=False):
     """(version, url) de la release cible du panel, ou (None, None)."""
@@ -1573,14 +1632,26 @@ def github_release_is_prerelease(version, fresh=False):
         return cached[1]
     status = None
     try:
-        r = req.get(f"https://api.github.com/repos/{PANEL_GITHUB_REPO}/releases/tags/v{version}",
-                    timeout=8, headers={"Accept": "application/vnd.github.v3+json"})
-        if r.status_code == 200:
-            status = bool(r.json().get("prerelease"))
+        status = bool(gh_api(f"repos/{PANEL_GITHUB_REPO}/releases/tags/v{version}", timeout=8).get("prerelease"))
+    except req.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            status = None       # pas de release pour cette version
+        else:
+            status = _web_prerelease_status(version)
     except Exception:
-        pass
+        status = _web_prerelease_status(version)
     _release_status_cache[version] = (now, status)
     return status
+
+def _web_prerelease_status(version):
+    """Statut déduit du site quand l'API ne répond pas : ce qui suit la release
+    « latest » est en pré-release. Une version antérieure passe pour définitive,
+    sans conséquence : les deux canaux lui proposent au moins « latest »."""
+    try:
+        latest = gh_web_latest_tag(PANEL_GITHUB_REPO, timeout=8)
+    except Exception:
+        return None
+    return version_newer(version, latest)
 
 def panel_is_prerelease(fresh=False):
     """Pré-release si le numéro l'indique (dev-<sha>, X.Y.Z-suffixe) ou si la release
@@ -1783,9 +1854,7 @@ def api_connectivity():
     sources = build_version_sources()
     def test(name, url):
         try:
-            r = req.get(url, timeout=8, headers={"Accept": "application/vnd.github.v3+json"})
-            r.raise_for_status()
-            results[name] = {"ok": True, "version": r.json().get("tag_name","?")}
+            results[name] = {"ok": True, "version": fetch_version_source(url, timeout=8) or "?"}
         except Exception as e:
             results[name] = {"ok": False, "error": str(e)[:120]}
     threads = [threading.Thread(target=test, args=(n,u)) for n,u in sources]

@@ -77,6 +77,14 @@ def fetch_latest_release():
             return version, tag, assets
         except Exception:
             continue
+    # Quota de l'API épuisé (60 appels/h sans compte) : le site indique la même
+    # version par la redirection de /releases/latest
+    try:
+        r = requests.head("https://github.com/fatedier/frp/releases/latest", timeout=30, allow_redirects=False)
+        tag = r.headers.get("Location", "").rstrip("/").rsplit("/releases/tag/", 1)[1]
+        return tag.lstrip("v"), tag, []
+    except Exception:
+        pass
     raise RuntimeError("Tous les endpoints de version sont inaccessibles")
 
 
