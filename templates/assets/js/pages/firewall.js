@@ -78,6 +78,20 @@ async function load() {
   build();
 }
 
+async function installNft(e) {
+  const btn = e.currentTarget;
+  await busy(btn, async () => {
+    try {
+      const d = await apiOk('/api/firewall/install', { method: 'POST' });
+      toast(d.msg, 'success');
+    } catch (err) {
+      toastError(err);
+      return;
+    }
+    await load();
+  });
+}
+
 // ── Rendu ──────────────────────────────────────────────────────────────────
 
 function build() {
@@ -97,6 +111,7 @@ function build() {
     root.replaceChildren(head, callout({
       type: 'danger', title: t('firewall.noNftTitle'),
       text: t(d.in_docker ? 'firewall.noNftTextDocker' : 'firewall.noNftText', { detail: d.nft }),
+      actions: [button(t('firewall.installNft'), { variant: 'primary', iconName: 'download', onClick: installNft })],
     }));
     return;
   }

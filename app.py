@@ -2986,6 +2986,39 @@ def api_firewall_get():
         "panel_port": _fw_panel_port(), "in_docker": IN_DOCKER,
     })
 
+# Gestionnaires de paquets reconnus → commandes d'installation de nftables
+_NFT_INSTALLERS = [
+    ("apt-get", [["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "update", "-q"],
+                 ["env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-y", "-q", "nftables"]]),
+    ("dnf",     [["dnf", "install", "-y", "nftables"]]),
+    ("yum",     [["yum", "install", "-y", "nftables"]]),
+    ("apk",     [["apk", "add", "--no-cache", "nftables"]]),
+    ("pacman",  [["pacman", "-Sy", "--noconfirm", "--needed", "nftables"]]),
+    ("zypper",  [["zypper", "--non-interactive", "install", "nftables"]]),
+]
+
+@app.route("/api/firewall/install", methods=["POST"])
+@login_required
+def api_firewall_install():
+    """Installe nftables sur la machine (l'hôte en Docker) avec son gestionnaire de paquets."""
+    if run_host(["nft", "--version"])[0]:
+        return jsonify({"ok": True, "msg": "nftables est déjà installé."})
+    for manager, steps in _NFT_INSTALLERS:
+        if not run_host(["sh", "-c", f"command -v {manager}"])[0]:
+            continue
+        for cmd in steps:
+            ok, out, err = run_host(cmd, timeout=600)
+            if not ok:
+                detail = (err or out or "erreur inconnue").strip().splitlines()[-1:]
+                return jsonify({"ok": False, "msg": f"Installation de nftables échouée ({manager}) : "
+                                                    f"{detail[0] if detail else 'erreur inconnue'}"}), 500
+        ok, out, err = run_host(["nft", "--version"])
+        if not ok:
+            return jsonify({"ok": False, "msg": f"nftables installé, mais nft ne répond pas : {err or out}"}), 500
+        return jsonify({"ok": True, "msg": f"nftables installé ({out.strip()})."})
+    return jsonify({"ok": False, "msg": "Aucun gestionnaire de paquets reconnu (apt, dnf, yum, apk, pacman, zypper) : "
+                                        "installez nftables à la main."}), 400
+
 @app.route("/api/firewall", methods=["POST"])
 @login_required
 def api_firewall_save():

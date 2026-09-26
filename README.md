@@ -88,7 +88,7 @@ Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarr
 - 📡 **Connexions bloquées en temps réel** (WebSocket, repli automatique) : adresse, opérateur (AS), port, règle, compteur par règle ; un clic bloque l'adresse ou tout son AS
 - 🌍 **Listes communautaires** (à bloquer ou à autoriser seulement) : abonnez-vous en un clic à une liste du catalogue (règle tenue à jour toute seule), ou **publiez** la vôtre : le panel prépare une issue GitHub, vous l'envoyez, elle est vérifiée et ajoutée automatiquement en quelques minutes ; le catalogue vit sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists)
 
-> ℹ️ Nécessite `nftables` sur la machine (`apt install nftables`). La page n'apparaît que si un frps tourne sur la machine.
+> ℹ️ Nécessite `nftables` sur la machine : s'il manque, la page propose un bouton **Installer nftables** (apt, dnf, yum, apk, pacman ou zypper). La page n'apparaît que si un frps tourne sur la machine.
 
 ### ⚙️ Configuration (frps / frpc)
 - 🧩 **Formulaire par sections** : l'essentiel visible (connexion, authentification, tableau de bord frp), le reste replié dans *Réglages avancés* (TLS, ports KCP/QUIC/vhost, limites, journalisation)
@@ -378,7 +378,7 @@ It detects your frp systemd services and Docker containers on its own, starts ov
 - 📡 **Blocked connections in real time** (WebSocket, automatic fallback): address, provider (AS), port, rule, per-rule counter; one click blocks the address or its whole AS
 - 🌍 **Community lists** (to block or to allow only): subscribe in one click to a list from the catalog (the rule keeps itself up to date), or **publish** your own: the panel prepares a GitHub issue, you submit it, it is checked and added automatically within minutes; the catalog lives on the [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch
 
-> ℹ️ Requires `nftables` on the machine (`apt install nftables`). The page only appears if an frps runs on the machine.
+> ℹ️ Requires `nftables` on the machine: if it is missing, the page offers an **Install nftables** button (apt, dnf, yum, apk, pacman or zypper). The page only appears if an frps runs on the machine.
 
 #### ⚙️ Configuration (frps / frpc)
 - 🧩 **Form in sections**: the essentials in view (connection, authentication, frp dashboard), the rest folded into *Advanced settings* (TLS, KCP/QUIC/vhost ports, limits, logging)
