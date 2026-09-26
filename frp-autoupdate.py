@@ -160,20 +160,6 @@ def install_version(version, tag, assets):
                 r = _sp.run(["systemctl", "start", svc])
                 log(f"  {svc} : {'OK' if r.returncode == 0 else 'WARN'}")
 
-    log("Extracting…")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with tarfile.open(tmp_path, "r:gz") as tf:
-            tf.extractall(tmpdir)
-        extracted_dir = next(Path(tmpdir).iterdir())
-        for binary in ["frps", "frpc"]:
-            src = extracted_dir / binary
-            dst = FRP_BIN_DIR / binary
-            if src.exists():
-                shutil.copy2(str(src), str(dst))
-                dst.chmod(0o755)
-                log(f"  → {dst}")
-    tmp_path.unlink(missing_ok=True)
-
     FRP_CONF_DIR.mkdir(parents=True, exist_ok=True)
     FRP_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
