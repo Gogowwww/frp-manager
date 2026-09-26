@@ -425,7 +425,7 @@ async function chooseQuickBlock(entry) {
     description: t('firewall.quickDesc'),
     size: 'sm',
     build: ({ close }) => ({
-      body: [h('div', { class: 'form-stack', style: { gap: '8px' } },
+      body: [h('div', { class: 'form-stack fw-quick-choices' },
         button(t('firewall.quickIp', { ip: entry.src }), { iconName: 'shield', onClick: () => close({ cidr: entry.src }) }),
         entry.as && button(t('firewall.quickAs', { asn: entry.as.asn, holder: entry.as.holder }), {
           iconName: 'shield', onClick: () => close({ asn: entry.as.asn, note: entry.as.holder }),

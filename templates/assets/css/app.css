@@ -578,6 +578,10 @@ legend.fieldset-title + * { clear: both; }
 .fw-test-out:empty { display: none; }
 .fw-pad { padding: 16px var(--space-5); }
 .fw-live { margin-left: 6px; vertical-align: middle; }
+/* Choix du blocage rapide : un nom d'opérateur long passe à la ligne au lieu de déborder */
+.fw-quick-choices { gap: 8px; }
+.fw-quick-choices .btn { height: auto; min-height: 34px; padding: 7px 12px; white-space: normal; overflow-wrap: anywhere; text-align: left; justify-content: flex-start; line-height: 1.35; }
+.fw-quick-choices .btn .icon { flex-shrink: 0; }
 .fw-as { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fw-cell-menu { width: 1%; text-align: right; padding-top: 4px !important; padding-bottom: 4px !important; }
 .fw-table td.mono, .fw-table td .mono { white-space: nowrap; }
