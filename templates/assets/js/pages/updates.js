@@ -21,11 +21,20 @@ export default {
     view.append(page);
 
     if (store.inDocker) {
-      page.append(callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }));
-    } else {
-      page.append(frpCard(), manualCard(), connectivityCard());
+      page.append(
+        callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }),
+        panelCard());
+      return;
     }
-    page.append(panelCard());
+    // frp et panel côte à côte, les outils de dépannage regroupés en dessous
+    page.append(
+      h('div', { class: 'grid-2 card-pair update-cards' }, frpCard(), panelCard()),
+      h('section', null,
+        h('div', { class: 'section-head' },
+          h('div', null,
+            h('h2', { class: 'section-title' }, t('updates.toolsTitle')),
+            h('p', { class: 'section-desc' }, t('updates.toolsDesc')))),
+        h('div', { class: 'card' }, manualCard(), connectivityCard())));
   },
 
   unmount() {
@@ -177,7 +186,7 @@ function manualCard() {
   }
 
   const releases = h('a', { href: 'https://github.com/fatedier/frp/releases', target: '_blank', rel: 'noopener' }, 'github.com/fatedier/frp/releases');
-  return h('details', { class: 'card disclosure' },
+  return h('details', { class: 'disclosure' },
     h('summary', null, icon('chevron-down'), t('updates.manualTitle'), h('span', { class: 'summary-hint' }, t('updates.manualHint'))),
     h('div', { class: 'disclosure-body' },
       h('p', { class: 'field-hint', style: { fontSize: '13.5px' } }, t('updates.manualText1'), ' ', releases, t('updates.manualText2')),
@@ -205,7 +214,7 @@ function connectivityCard() {
     } catch (e) { grid.replaceChildren(); toastError(e); }
   }
 
-  return h('details', { class: 'card disclosure' },
+  return h('details', { class: 'disclosure' },
     h('summary', null, icon('chevron-down'), t('updates.connTitle'), h('span', { class: 'summary-hint' }, t('updates.connHint'))),
     h('div', { class: 'disclosure-body' }, h('div', null, testBtn), grid));
 }

@@ -211,6 +211,7 @@ export default {
     noNftTitle: 'nftables cannot be found',
     noNftText: 'The firewall relies on nftables. Install it, then reload the page: apt install nftables ({detail})',
     noNftTextDocker: 'The firewall relies on nftables on the host machine. Install it on the host, then reload the page: apt install nftables ({detail})',
+    statusTitle: 'Filtering status',
     enable: 'Filter connections',
     enableHint: 'When off, no rule is applied: ports stay open as before.',
     state: {
@@ -385,10 +386,7 @@ export default {
     missingFile: 'The file {path} does not exist yet. The values below are the defaults; it will be created when you save.',
     tunnelsElsewhere: 'Ports are managed on the Ports page. They are kept when you save this page.',
     advanced: 'Advanced settings',
-    advancedHint: {
-      frps: 'TLS, extra ports, limits, logging',
-      frpc: 'TLS, local dashboard, network, logging',
-    },
+    advancedDesc: 'The defaults fit most setups.',
     saved: 'Configuration saved',
     blocksReadError: 'Could not read the existing ports back: saving cancelled so they are not lost.',
     toggles: {
@@ -492,6 +490,8 @@ export default {
     frpDesc: 'The frps and frpc programs on this machine.',
     dockerTitle: 'frp is managed by your containers',
     dockerText: 'In Docker mode, update frp by changing the version of the fatedier/frps and fatedier/frpc images.',
+    toolsTitle: 'Troubleshooting',
+    toolsDesc: 'If an frp update does not go through.',
     manualTitle: 'Install from an archive',
     manualHint: 'if GitHub cannot be reached from this server',
     manualText1: 'Download the frp_X.Y.Z_linux_amd64.tar.gz archive from',

@@ -24,7 +24,10 @@ export default {
     } catch (e) {
       page.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
     }
-    page.append(securityCard(cfg), networkCard(cfg), preferencesCard());
+    // Sécurité et accès réseau côte à côte, les préférences d'affichage en dessous
+    page.append(
+      h('div', { class: 'grid-2 card-pair' }, securityCard(cfg), networkCard(cfg)),
+      preferencesCard());
   },
 };
 
@@ -127,7 +130,7 @@ function preferencesCard() {
 
   return card({
     title: t('settings.prefs.title'), description: t('settings.prefs.desc'),
-    body: h('div', { class: 'form-stack' },
+    body: h('div', { class: 'form-grid-2' },
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('settings.prefs.theme')), theme),
       field({ label: t('settings.prefs.language'), hint: codes.length < 2 ? t('settings.prefs.languageSoon')
         : PREVIEW_LOCALES.has(getLocale()) ? t('settings.prefs.languagePreview') : null, control: lang })),

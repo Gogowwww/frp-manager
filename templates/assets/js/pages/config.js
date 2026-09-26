@@ -246,11 +246,20 @@ async function load() {
   const basic = sections.filter((s) => !s.advanced).map((s) => sectionCard(s, cfg));
   const advanced = sections.filter((s) => s.advanced).map((s) => sectionBlock(s, cfg));
 
-  const details = h('details', { class: 'card disclosure' },
-    h('summary', null, icon('chevron-down'), t('config.advanced'), h('span', { class: 'summary-hint' }, t(`config.advancedHint.${S.type}`))),
-    h('div', { class: 'disclosure-body' }, advanced));
+  // Sections principales deux par deux (la dernière seule en pleine largeur si impaire)
+  const rows = [];
+  for (let i = 0; i < basic.length; i += 2) {
+    rows.push(basic[i + 1] ? h('div', { class: 'grid-2 card-pair' }, basic[i], basic[i + 1]) : basic[i]);
+  }
 
-  S.els.body.replaceChildren(...top, ...basic, details);
+  const advancedSection = h('section', null,
+    h('div', { class: 'section-head' },
+      h('div', null,
+        h('h2', { class: 'section-title' }, t('config.advanced')),
+        h('p', { class: 'section-desc' }, t('config.advancedDesc')))),
+    h('div', { class: 'card' }, advanced));
+
+  S.els.body.replaceChildren(...top, ...rows, advancedSection);
   S.snapshot = JSON.stringify(values());
   updateSaveBar();
 }
@@ -328,11 +337,9 @@ function sectionCard(section, cfg) {
 }
 
 function sectionBlock(section, cfg) {
-  return h('section', { class: 'form-stack' },
-    h('div', null,
-      h('h3', { class: 'fieldset-title' }, sectionTitle(section)),
-      h('p', { class: 'field-hint' }, sectionDesc(section))),
-    buildFields(section, cfg));
+  return h('details', { class: 'disclosure' },
+    h('summary', null, icon('chevron-down'), sectionTitle(section), h('span', { class: 'summary-hint' }, sectionDesc(section))),
+    h('div', { class: 'disclosure-body' }, h('div', { class: 'form-stack' }, buildFields(section, cfg))));
 }
 
 async function save(restart) {

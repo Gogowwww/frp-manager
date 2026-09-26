@@ -265,6 +265,9 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-5); }
 @media (max-width: 760px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+/* Deux cartes côte à côte : même hauteur, boutons alignés en bas */
+.card-pair > .card { display: flex; flex-direction: column; }
+.card-pair > .card > .card-body { flex: 1; }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 .btn {
@@ -563,7 +566,6 @@ legend.fieldset-title + * { clear: both; }
 }
 
 /* ── Pare-feu ───────────────────────────────────────────────────────────── */
-.fw-status { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .fw-you { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; color: var(--text-2); }
 .fw-you .icon { width: 15px; height: 15px; color: var(--text-3); }
 .fw-you-warn { color: var(--danger-text); }
@@ -745,6 +747,10 @@ legend.fieldset-title + * { clear: both; }
 .version-cell dt { font-size: 12px; color: var(--text-3); }
 .version-cell dd { font-family: var(--font-mono); font-size: 15px; font-weight: 600; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 560px) { .versions { grid-template-columns: minmax(0, 1fr); } }
+/* frp et panel côte à côte (voir .card-pair), l'état sur toute la largeur */
+.update-cards .versions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.update-cards .version-cell:last-child { grid-column: 1 / -1; }
+@media (max-width: 560px) { .update-cards .versions { grid-template-columns: minmax(0, 1fr); } }
 
 .source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
 .source { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2); min-width: 0; }

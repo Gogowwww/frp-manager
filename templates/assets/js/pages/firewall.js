@@ -6,7 +6,7 @@ import { t } from '../i18n.js';
 import { api, apiOk } from '../api.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, openDialog, confirmDialog,
-  field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, badge, saveBar, copyButton,
+  field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, card, badge, saveBar, copyButton,
 } from '../ui.js';
 
 const POLL_MS = 5000;          // repli sans WebSocket
@@ -108,7 +108,8 @@ function build() {
 
   root.replaceChildren(
     head,
-    S.els.status,
+    // État et test d'adresse côte à côte, règles et tableaux en pleine largeur
+    h('div', { class: 'grid-2 card-pair' }, S.els.status, testSection()),
     h('section', null,
       h('div', { class: 'section-head' },
         h('div', null,
@@ -124,7 +125,6 @@ function build() {
           h('h2', { class: 'section-title' }, t('firewall.portsTitle')),
           h('p', { class: 'section-desc' }, t('firewall.portsDesc')))),
       S.els.ports),
-    testSection(),
     blockedSection(),
     S.els.savebar);
   render();
@@ -164,10 +164,9 @@ function renderStatus() {
         : h('span', { class: 'muted' }, ' — ', t('firewall.youFree'))));
   }
 
-  S.els.status.replaceChildren(h('div', { class: 'card-body form-stack' },
-    h('div', { class: 'fw-status' }, icon('shield', 'icon-lg'), h('div', null, state)),
-    master,
-    ...you));
+  S.els.status.replaceChildren(
+    h('div', { class: 'card-head' }, h('h2', { class: 'card-title' }, icon('shield'), t('firewall.statusTitle')), state),
+    h('div', { class: 'card-body form-stack' }, master, ...you));
 }
 
 function portText(p) {
@@ -301,14 +300,12 @@ function testSection() {
     } catch (err) { toastError(err); }
   };
   const btn = button(t('firewall.test'), { type: 'submit', form: 'fw-test' });
-  return h('section', null,
-    h('div', { class: 'section-head' },
-      h('div', null,
-        h('h2', { class: 'section-title' }, t('firewall.testTitle')),
-        h('p', { class: 'section-desc' }, t('firewall.testDesc')))),
-    h('div', { class: 'card' }, h('div', { class: 'card-body form-stack' },
+  return card({
+    title: t('firewall.testTitle'), description: t('firewall.testDesc'),
+    body: h('div', { class: 'form-stack' },
       h('form', { id: 'fw-test', class: 'fw-test-form', onSubmit: (e) => busy(btn, () => run(e)) }, ip, btn),
-      out)));
+      out),
+  });
 }
 
 // ── Connexions bloquées ────────────────────────────────────────────────────

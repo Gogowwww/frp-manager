@@ -212,6 +212,7 @@ export default {
     noNftTitle: 'nftables est introuvable',
     noNftText: 'Le pare-feu s’appuie sur nftables. Installez-le puis rechargez la page : apt install nftables ({detail})',
     noNftTextDocker: 'Le pare-feu s’appuie sur nftables, sur la machine hôte. Installez-le sur l’hôte puis rechargez la page : apt install nftables ({detail})',
+    statusTitle: 'État du filtrage',
     enable: 'Filtrer les connexions',
     enableHint: 'Désactivé, aucune règle n’est appliquée : les ports restent ouverts comme avant.',
     state: {
@@ -386,10 +387,7 @@ export default {
     missingFile: 'Le fichier {path} n’existe pas encore. Les valeurs ci-dessous sont celles par défaut ; il sera créé à l’enregistrement.',
     tunnelsElsewhere: 'Les ports se gèrent dans la page Ports. Ils sont conservés quand vous enregistrez cette page.',
     advanced: 'Réglages avancés',
-    advancedHint: {
-      frps: 'TLS, ports supplémentaires, limites, journalisation',
-      frpc: 'TLS, tableau de bord local, réseau, journalisation',
-    },
+    advancedDesc: 'Les valeurs par défaut conviennent dans la plupart des cas.',
     saved: 'Configuration enregistrée',
     blocksReadError: 'Impossible de relire les ports existants : enregistrement annulé pour ne pas les perdre.',
     toggles: {
@@ -493,6 +491,8 @@ export default {
     frpDesc: 'Les programmes frps et frpc de cette machine.',
     dockerTitle: 'frp est géré par vos conteneurs',
     dockerText: 'En mode Docker, mettez frp à jour en changeant la version des images fatedier/frps et fatedier/frpc.',
+    toolsTitle: 'Dépannage',
+    toolsDesc: 'Si une mise à jour de frp n’aboutit pas.',
     manualTitle: 'Installer depuis une archive',
     manualHint: 'si GitHub est inaccessible depuis ce serveur',
     manualText1: 'Téléchargez l’archive frp_X.Y.Z_linux_amd64.tar.gz depuis',
