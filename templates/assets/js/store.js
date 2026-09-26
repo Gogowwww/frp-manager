@@ -39,11 +39,14 @@ export function instanceIds(filter) {
 
 export const isDocker = (inst) => inst && inst.source === 'docker';
 export const frpcIds = () => instanceIds((i) => i.type === 'frpc');
-export const frpsIds = () => instanceIds((i) => i.type === 'frps');
 /** frpc réellement utilisés : install.sh crée partout un frpc (service + config
  * vide) ; seul un frpc avec un serveur renseigné, lancé ou en conteneur compte. */
 export const usedFrpcIds = () => instanceIds((i) => i.type === 'frpc'
   && (isDocker(i) || i.configured || i.status?.running || i.status?.enabled));
+/** frps réellement utilisés : même principe, mais sa config par défaut suffit à
+ * le lancer, donc seuls comptent le conteneur, le service lancé ou activé. */
+export const usedFrpsIds = () => instanceIds((i) => i.type === 'frps'
+  && (isDocker(i) || i.status?.running || i.status?.enabled));
 
 export function displayName(iid) {
   const inst = store.instances[iid];
