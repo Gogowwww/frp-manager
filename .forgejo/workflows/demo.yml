@@ -1,0 +1,77 @@
+# Forgejo Actions : démo en ligne de FRP Manager (interface réelle, données fictives).
+#
+# À chaque push sur main qui touche l'interface ou la démo, demo/build.py
+# construit l'application de démo (app.py + site/, bibliothèque standard
+# Python uniquement) et la publie sur la branche main du dépôt
+# administrator/frp-manager-demo. Le cloudpod Webstrator clone ce dépôt et
+# lance « python3 app.py ».
+#
+# Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
+# d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
+
+name: Démo
+
+on:
+  push:
+    branches: [main]
+    paths: ['templates/**', 'demo/**', '.forgejo/workflows/demo.yml']
+  workflow_dispatch:
+
+env:
+  DEMO_REPO: administrator/frp-manager-demo
+
+jobs:
+  publish:
+    runs-on: docker
+    container:
+      image: python:3.12-alpine
+    steps:
+      - name: Récupérer le code
+        run: |
+          apk add --no-cache --quiet git
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet --depth 1 --branch "${{ github.ref_name }}" \
+            "${{ github.server_url }}/${{ github.repository }}.git" src
+          git -C src -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" fetch --quiet --tags --depth 1
+          git -C src log -1 --format='Commit %h : %s'
+
+      - name: Construire et publier la démo
+        env:
+          DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
+        run: |
+          set -eu
+          [ -n "$DEMO_REPO_TOKEN" ] || { echo "Secret DEMO_REPO_TOKEN manquant"; exit 1; }
+          AUTH="Authorization: token $DEMO_REPO_TOKEN"
+          rm -rf out
+          # Dépôt vide au premier passage : on part d'un dépôt neuf
+          if ! git -c "http.extraHeader=$AUTH" clone --quiet --depth 1 \
+               "${{ github.server_url }}/$DEMO_REPO.git" out 2>/dev/null \
+             || [ -z "$(git -C out rev-parse --verify -q HEAD)" ]; then
+            rm -rf out && git init --quiet -b main out
+          fi
+
+          # Numéro affiché : dernière version publiée
+          VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          SHA=$(git -C src rev-parse --short HEAD)
+          python3 src/demo/build.py --out dist-demo --version "${VERSION:-demo}" --bundle out
+          cat > out/README.md <<EOF
+          # FRP Manager — démo
+
+          Construit automatiquement depuis frp-manager (commit $SHA) par
+          .forgejo/workflows/demo.yml : ne pas modifier ce dépôt à la main.
+
+          Lancer : \`python3 app.py\` (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut).
+          Aucune dépendance : bibliothèque standard Python uniquement.
+          EOF
+
+          cd out
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Démo inchangée, rien à publier"
+            exit 0
+          fi
+          git -c user.name="FRP Manager (démo)" -c user.email="demo@frp-manager.invalid" \
+            commit --quiet -m "Démo ${VERSION:-demo} (frp-manager $SHA)"
+          git -c "http.extraHeader=$AUTH" push --quiet "${{ github.server_url }}/$DEMO_REPO.git" HEAD:main
+          echo "Publié : $DEMO_REPO ($(git rev-parse --short HEAD))"

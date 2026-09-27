@@ -36,3 +36,7 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# Démo construite (demo/build.py)
+dist-demo/
+frp-manager-demo.zip

@@ -8,3 +8,5 @@ __pycache__/
 frp-manager.zip
 .claude/
 install.sh
+demo/
+dist-demo/
