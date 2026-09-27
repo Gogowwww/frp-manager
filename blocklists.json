@@ -7,7 +7,7 @@
       "mode": "allow",
       "description": "Autorise seulement les FAI Français.",
       "author": "Gogow_",
-      "updated": "2026-09-25",
+      "updated": "2026-09-27",
       "sources": [
         "AS3215  # Orange France",
         "AS5511  # Orange backbone international",
