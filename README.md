@@ -1,6 +1,6 @@
 # 🌐 FRP Manager
 
-> 🚀 A self-hosted web panel to run [frp](https://github.com/fatedier/frp) (**frps** & **frpc**) without the command line: services, open ports, configuration, logs and updates, in a clean interface, light or dark, on desktop and mobile.
+> 🚀 A self-hosted **web UI and dashboard for [frp](https://github.com/fatedier/frp)** (fast reverse proxy): run **frps** & **frpc** without the command line — services, tunnels and open ports, nftables firewall, configuration, live logs and updates, in a clean interface, light or dark, on desktop and mobile.
 
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
