@@ -74,7 +74,7 @@ jobs:
           mkdir -p dist/frp-manager
           cd src
           cp -r app.py frp-autoupdate.py install.sh requirements.txt templates \
-                README.md LICENSE docker-compose.yml ../dist/frp-manager/
+                README.md README.fr.md LICENSE docker-compose.yml ../dist/frp-manager/
           cd ../dist
           # Version affichée par les installations via install.sh (hors Docker)
           sed -i "s/^_PANEL_VERSION_FALLBACK = \"[^\"]*\"/_PANEL_VERSION_FALLBACK = \"$VERSION\"/" frp-manager/app.py
