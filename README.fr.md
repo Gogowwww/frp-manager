@@ -1,6 +1,6 @@
 # 🌐 FRP Manager
 
-> 🚀 Panel web auto-hébergé pour piloter [frp](https://github.com/fatedier/frp) (**frps** & **frpc**) sans ligne de commande : services, ports ouverts, configuration, journaux et mises à jour, dans une interface claire, en clair ou en sombre, sur ordinateur comme sur mobile.
+> 🚀 **Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/fatedier/frp)** (fast reverse proxy) : pilotez **frps** & **frpc** sans ligne de commande — services, tunnels et ports ouverts, pare-feu nftables, configuration, journaux en direct et mises à jour, dans une interface claire, en clair ou en sombre, sur ordinateur comme sur mobile.
 
 ![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
 ![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)

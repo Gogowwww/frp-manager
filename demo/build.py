@@ -30,9 +30,82 @@ DEMO = Path(__file__).resolve().parent
 # au lieu de produire une démo qui renvoie vers une page inexistante.
 PATCHES = {
     "js/api.js": [("location.href = '/login';", "location.href = 'login.html';")],
-    "js/main.js": [("location.href = '/login';", "location.href = 'login.html';")],
+    "js/main.js": [
+        ("location.href = '/login';", "location.href = 'login.html';"),
+        # Titre de chaque page : « Pare-feu — FRP Manager · démo » (moteurs de recherche, onglets)
+        ("document.title = `${page.title()} — FRP Manager`;",
+         "document.title = `${page.title()} — FRP Manager · Live demo`;"),
+    ],
 }
 LOGIN_PATCHES = [("location.href = '/';", "location.href = 'index.html';")]
+
+# ── Référencement de la démo ────────────────────────────────────────────────
+REPO_URL = "https://github.com/Gogowwww/frp-manager"
+SEO_TITLE = "FRP Manager — live demo of the self-hosted web panel for frp (frps & frpc)"
+SEO_DESC = ("Try FRP Manager in your browser: a free, open-source web GUI and dashboard for frp. "
+            "Manage frps and frpc tunnels, open ports, an nftables firewall, live logs and updates "
+            "without the command line. Sample data, nothing to install.")
+
+
+def seo_head(site, version):
+    """Balises <head> de la page d'accueil de la démo (partages, moteurs de recherche)."""
+    ld = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "FRP Manager",
+        "description": SEO_DESC,
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Network tunnel / reverse proxy management",
+        "operatingSystem": "Linux",
+        "softwareVersion": version,
+        "url": site + "/",
+        "image": site + "/og.png",
+        "downloadUrl": REPO_URL + "/releases/latest",
+        "codeRepository": REPO_URL,
+        "license": "https://www.apache.org/licenses/LICENSE-2.0",
+        "isAccessibleForFree": True,
+        "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
+        "keywords": "frp, frps, frpc, frp panel, frp dashboard, frp web ui, reverse proxy, tunnel, "
+                    "port forwarding, self-hosted, homelab, nftables firewall",
+        "sameAs": [REPO_URL],
+    }
+    esc = lambda s: s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;")
+    return "\n".join([
+        f'<meta name="description" content="{esc(SEO_DESC)}">',
+        '<meta name="robots" content="index, follow, max-image-preview:large">',
+        f'<link rel="canonical" href="{site}/">',
+        '<meta name="theme-color" content="#0e1319">',
+        '<meta property="og:type" content="website">',
+        '<meta property="og:site_name" content="FRP Manager">',
+        f'<meta property="og:title" content="{esc(SEO_TITLE)}">',
+        f'<meta property="og:description" content="{esc(SEO_DESC)}">',
+        f'<meta property="og:url" content="{site}/">',
+        f'<meta property="og:image" content="{site}/og.png">',
+        '<meta property="og:image:width" content="1280">',
+        '<meta property="og:image:height" content="640">',
+        '<meta property="og:image:alt" content="FRP Manager, the self-hosted web panel for frp: firewall page of the live demo">',
+        '<meta property="og:locale" content="en_US">',
+        '<meta property="og:locale:alternate" content="fr_FR">',
+        '<meta name="twitter:card" content="summary_large_image">',
+        f'<meta name="twitter:title" content="{esc(SEO_TITLE)}">',
+        f'<meta name="twitter:description" content="{esc(SEO_DESC)}">',
+        f'<meta name="twitter:image" content="{site}/og.png">',
+        f'<script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>',
+    ])
+
+
+# Sans JavaScript (robots qui n'exécutent pas les scripts, aperçus de liens) :
+# une vraie présentation au lieu de « nécessite JavaScript ».
+NOSCRIPT = f"""<noscript><main style="max-width:760px;margin:0 auto;padding:40px 20px;font-family:system-ui,sans-serif;line-height:1.6">
+<h1>FRP Manager — self-hosted web panel for frp</h1>
+<p>FRP Manager is a free, open-source web interface (GUI and dashboard) for <a href="https://github.com/fatedier/frp">frp</a>, the fast reverse proxy.
+It manages <strong>frps</strong> (the server) and <strong>frpc</strong> (the client) from a browser: start and stop services, open ports and tunnels
+(TCP, UDP, HTTP, HTTPS, STCP, XTCP), edit the configuration, follow live logs, filter who can connect with an <strong>nftables firewall</strong>
+and update frp in one click. Linux with systemd, or Docker.</p>
+<p>This live demo runs the real interface with sample data. <strong>Enable JavaScript</strong> to try it.</p>
+<p><a href="{REPO_URL}">Source code, documentation and installation on GitHub</a> ·
+<a href="{REPO_URL}/releases/latest">Download the latest release</a></p>
+</main></noscript>"""
 
 
 def git_version():
@@ -75,7 +148,10 @@ def main():
     ap.add_argument("--version", default=None)
     ap.add_argument("--bundle", default=None, help="dossier app.py + site/ à produire (contenu remplacé)")
     ap.add_argument("--zip", default=None, help="archive app.py + site/ à produire")
+    ap.add_argument("--site-url", default="https://demo-frp-manager.gogow.fr",
+                    help="adresse publique de la démo (canonical, Open Graph, sitemap)")
     args = ap.parse_args()
+    site = args.site_url.rstrip("/")
     out = Path(args.out)
     version = (args.version or git_version()).lstrip("v")
 
@@ -109,10 +185,25 @@ def main():
         "icons": (TEMPLATES / "partials" / "icons.html").read_text(encoding="utf-8"),
         "demo_tag": f'<script src="{href}/demo.js"></script>',
     }
-    (out / "index.html").write_text(
-        render((TEMPLATES / "index.html").read_text(encoding="utf-8"), **common), encoding="utf-8")
-    login = patch((TEMPLATES / "login.html").read_text(encoding="utf-8"), LOGIN_PATCHES, "login.html")
+    index = patch((TEMPLATES / "index.html").read_text(encoding="utf-8"), [
+        ('<html lang="fr">', '<html lang="en">'),       # langue servie par défaut aux visiteurs
+        ("<title>FRP Manager</title>", f"<title>{SEO_TITLE}</title>\n{seo_head(site, version)}"),
+        ('<noscript><p style="padding:24px">FRP Manager nécessite JavaScript.</p></noscript>', NOSCRIPT),
+    ], "index.html")
+    (out / "index.html").write_text(render(index, **common), encoding="utf-8")
+    login = patch((TEMPLATES / "login.html").read_text(encoding="utf-8"), LOGIN_PATCHES + [
+        ("<title>", '<meta name="robots" content="noindex, follow">\n<title>'),   # page sans intérêt en recherche
+    ], "login.html")
     (out / "login.html").write_text(render(login, **common), encoding="utf-8")
+
+    shutil.copyfile(DEMO / "og.png", out / "og.png")
+    (out / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\n\nSitemap: {site}/sitemap.xml\n", encoding="utf-8")
+    (out / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"  <url><loc>{site}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n"
+        "</urlset>\n", encoding="utf-8")
 
     # Hébergeurs Apache : pas de liste des dossiers, pages HTML toujours relues
     # (les assets, sous v/<empreinte>/, peuvent rester en cache indéfiniment).
