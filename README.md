@@ -14,6 +14,12 @@
   <a href="README.fr.md"><img alt="Français" src="https://img.shields.io/badge/🇫🇷_Français-555?style=for-the-badge"></a>
 </p>
 
+<p align="center">
+  <a href="https://demo-frp-manager.gogow.fr"><img alt="Live demo" src="https://img.shields.io/badge/▶_Live_demo-demo--frp--manager.gogow.fr-0e9f6e?style=for-the-badge"></a>
+</p>
+
+> 🎮 **[Try the live demo](https://demo-frp-manager.gogow.fr)**: the real interface with sample data, nothing to install. Everything can be clicked, nothing is actually changed.
+
 > 🌍 **The panel's interface in English** is available as a preview in **Settings → Preferences → Language**. Until its official release, some messages sent by the server stay in French.
 
 ---
@@ -37,6 +43,8 @@
 ---
 
 ## 🖥️ Preview
+
+> 🎮 Rather than screenshots, try it in the **[live demo](https://demo-frp-manager.gogow.fr)**.
 
 | Dashboard | Ports |
 |:---:|:---:|

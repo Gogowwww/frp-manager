@@ -14,6 +14,12 @@
   <a href="README.fr.md"><img alt="Français" src="https://img.shields.io/badge/🇫🇷_Français-2ea44f?style=for-the-badge"></a>
 </p>
 
+<p align="center">
+  <a href="https://demo-frp-manager.gogow.fr"><img alt="Démo en ligne" src="https://img.shields.io/badge/▶_Démo_en_ligne-demo--frp--manager.gogow.fr-0e9f6e?style=for-the-badge"></a>
+</p>
+
+> 🎮 **[Essayer la démo en ligne](https://demo-frp-manager.gogow.fr)** : la vraie interface avec des données fictives, rien à installer. Tout est cliquable, rien n'est réellement modifié.
+
 ---
 
 ## 📑 Sommaire
@@ -35,6 +41,8 @@
 ---
 
 ## 🖥️ Aperçu
+
+> 🎮 Plutôt que des captures, essayez-la dans la **[démo en ligne](https://demo-frp-manager.gogow.fr)**.
 
 | Tableau de bord | Ports |
 |:---:|:---:|
