@@ -41,6 +41,8 @@ jobs:
           DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
         run: |
           set -eu
+          # Espaces et retours à la ligne collés avec la valeur du secret : retirés
+          DEMO_REPO_TOKEN=$(printf '%s' "$DEMO_REPO_TOKEN" | tr -d '[:space:]')
           [ -n "$DEMO_REPO_TOKEN" ] || { echo "Secret DEMO_REPO_TOKEN manquant"; exit 1; }
           AUTH="Authorization: token $DEMO_REPO_TOKEN"
           URL="${{ github.server_url }}/$DEMO_REPO.git"
