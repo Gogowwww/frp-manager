@@ -7,7 +7,10 @@
 # ou via l'API Forgejo (POST …/actions/workflows/promote.yml/dispatches).
 #
 # Effets, dans cet ordre :
-#   1. main public avancé jusqu'au commit du tag (avance rapide uniquement) ;
+#   1. main public avancé jusqu'au commit du tag, en avance rapide ; s'il a reçu
+#      entre-temps des commits de README seuls (publiés sans release), fusion
+#      du tag et de ces commits, à condition que le résultat ne diffère du tag
+#      que par des README (jamais de force-push) ;
 #   2. image :X.Y.Z re-taguée en :latest (même image, pas de rebuild) ;
 #   3. release GitHub passée de pré-release à release normale, marquée « latest »
 #      → visible par le bouton « Mettre à jour » des panels installés.
@@ -62,13 +65,35 @@ jobs:
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git -C src remote add public "https://github.com/$GH_REPO.git"
           git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
-          git -C src merge-base --is-ancestor public/main "$SHA" \
-            || { echo "Le main public a des commits absents de $TAG : promotion impossible en avance rapide"; exit 1; }
+          MAIN_SHA="$SHA"
+          if ! git -C src merge-base --is-ancestor public/main "$SHA"; then
+            # README publiés sur GitHub depuis le tag : on les garde en fusionnant.
+            # Conflit sur un README : version du main public (tirée d'un main plus récent).
+            # Identité exigée par git merge, même sans commit (aucune dans le conteneur)
+            export GIT_AUTHOR_NAME="FRP Manager (promotion)" GIT_COMMITTER_NAME="FRP Manager (promotion)"
+            export GIT_AUTHOR_EMAIL="promote@frp-manager.invalid" GIT_COMMITTER_EMAIL="promote@frp-manager.invalid"
+            git -C src checkout --quiet --detach "$SHA"
+            git -C src merge --no-ff --no-commit --quiet public/main >/dev/null 2>&1 || true
+            for f in $(git -C src diff --name-only --diff-filter=U); do
+              case "$f" in README*.md) git -C src checkout --theirs -- "$f" && git -C src add -- "$f" ;; esac
+            done
+            UNMERGED=$(git -C src diff --name-only --diff-filter=U)
+            OTHER=$(git -C src diff --cached --name-only "$SHA" | grep -v '^README[^/]*\.md$' || true)
+            if [ -n "$UNMERGED$OTHER" ]; then
+              echo "Le main public a des commits absents de $TAG qui ne touchent pas que des README :"
+              printf '%s\n%s\n' "$UNMERGED" "$OTHER"
+              exit 1
+            fi
+            git -C src commit --quiet -m "Release $TAG (README publiés entre-temps conservés)"
+            MAIN_SHA="$(git -C src rev-parse HEAD)"
+            echo "main public : fusion de $TAG et des README publiés depuis ($MAIN_SHA)"
+          fi
 
           {
             echo "TAG=$TAG"
             echo "VERSION=$VERSION"
             echo "SHA=$SHA"
+            echo "MAIN_SHA=$MAIN_SHA"
             echo "REL_ID=$(echo "$REL" | jq -r .id)"
           } >> "$GITHUB_ENV"
           echo "Promotion de $TAG ($SHA)"
@@ -79,7 +104,7 @@ jobs:
         run: |
           set -eu
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$SHA:refs/heads/main"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" push public "$MAIN_SHA:refs/heads/main"
 
       - name: Image :latest
         env:
