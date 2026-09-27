@@ -43,12 +43,16 @@ jobs:
           set -eu
           [ -n "$DEMO_REPO_TOKEN" ] || { echo "Secret DEMO_REPO_TOKEN manquant"; exit 1; }
           AUTH="Authorization: token $DEMO_REPO_TOKEN"
+          URL="${{ github.server_url }}/$DEMO_REPO.git"
+          # Accès au dépôt vérifié d'abord : sinon on repartirait d'un dépôt
+          # vide et l'échec n'apparaîtrait qu'au push, sans explication.
+          git -c "http.extraHeader=$AUTH" ls-remote --heads "$URL" >/dev/null \
+            || { echo "DEMO_REPO_TOKEN refusé ou sans accès à $DEMO_REPO ($URL)"; exit 1; }
           rm -rf out
-          # Dépôt vide au premier passage : on part d'un dépôt neuf
-          if ! git -c "http.extraHeader=$AUTH" clone --quiet --depth 1 \
-               "${{ github.server_url }}/$DEMO_REPO.git" out 2>/dev/null \
-             || [ -z "$(git -C out rev-parse --verify -q HEAD)" ]; then
-            rm -rf out && git init --quiet -b main out
+          if [ -n "$(git -c "http.extraHeader=$AUTH" ls-remote --heads "$URL" main)" ]; then
+            git -c "http.extraHeader=$AUTH" clone --quiet --depth 1 "$URL" out
+          else
+            git init --quiet -b main out      # dépôt encore vide
           fi
 
           # Numéro affiché : dernière version publiée
@@ -73,5 +77,5 @@ jobs:
           fi
           git -c user.name="FRP Manager (démo)" -c user.email="demo@frp-manager.invalid" \
             commit --quiet -m "Démo ${VERSION:-demo} (frp-manager $SHA)"
-          git -c "http.extraHeader=$AUTH" push --quiet "${{ github.server_url }}/$DEMO_REPO.git" HEAD:main
+          git -c "http.extraHeader=$AUTH" push --quiet "$URL" HEAD:main
           echo "Publié : $DEMO_REPO ($(git rev-parse --short HEAD))"
