@@ -37,7 +37,7 @@ PATCHES = {
          "document.title = `${page.title()} — FRP Manager · Live demo`;"),
     ],
 }
-LOGIN_PATCHES = [("location.href = '/';", "location.href = 'index.html';")]
+LOGIN_PATCHES = [("location.href = '/';", "location.href = './';")]   # /demo/ et pas /demo/index.html
 
 # ── Référencement de la démo ────────────────────────────────────────────────
 REPO_URL = "https://github.com/Gogowwww/frp-manager"
