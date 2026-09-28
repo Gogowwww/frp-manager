@@ -41,3 +41,6 @@ Thumbs.db
 # Démo construite (demo/build.py)
 dist-demo/
 frp-manager-demo.zip
+
+# Site construit (website/build.py)
+dist-site/

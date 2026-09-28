@@ -40,6 +40,13 @@ La [démo](demo/build.py) (`python3 demo/build.py`) produit une version
 statique de l'interface avec des données fictives, pratique pour travailler
 sur le front sans frp installé.
 
+Le site du projet ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) se
+construit avec `python3 website/build.py` : page d'accueil, documentation
+rendue depuis `docs/`, `SECURITY.md`, `CHANGELOG.md`… et démo sous `/demo/`.
+Servez le résultat avec `DEMO_SITE=dist-site python3 demo/serve.py`. Après un
+changement visible de l'interface, `python3 website/shots.py` refait les
+captures du site à partir de la démo (Pillow et Chrome ou Edge requis).
+
 ## Avant d'ouvrir une pull request
 
 ```bash

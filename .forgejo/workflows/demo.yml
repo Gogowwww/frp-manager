@@ -1,20 +1,21 @@
-# Forgejo Actions : démo en ligne de FRP Manager (interface réelle, données fictives).
+# Forgejo Actions : site de FRP Manager (https://frp-manager.gogow.fr) —
+# page d'accueil, documentation et démo en ligne (interface réelle, données fictives).
 #
-# À chaque push sur main qui touche l'interface ou la démo, demo/build.py
-# construit l'application de démo (app.py + site/, bibliothèque standard
-# Python uniquement) et la publie sur la branche main du dépôt
-# administrator/frp-manager-demo. Le cloudpod Webstrator clone ce dépôt et
-# lance « python3 app.py ».
+# À chaque push sur main qui touche l'interface, la démo, le site ou la
+# documentation, website/build.py construit l'application (app.py + site/,
+# bibliothèque standard Python uniquement ; la démo est dans site/demo/) et la
+# publie sur la branche main du dépôt administrator/frp-manager-demo. Le
+# cloudpod Webstrator clone ce dépôt et lance « python3 app.py ».
 #
 # Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
 # d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
 
-name: Démo
+name: Site et démo
 
 on:
   push:
     branches: [main]
-    paths: ['templates/**', 'demo/**', '.forgejo/workflows/demo.yml']
+    paths: ['templates/**', 'demo/**', 'website/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
   workflow_dispatch:
 
 env:
@@ -36,7 +37,7 @@ jobs:
           git -C src -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" fetch --quiet --tags --depth 1
           git -C src log -1 --format='Commit %h : %s'
 
-      - name: Construire et publier la démo
+      - name: Construire et publier le site
         env:
           DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
         run: |
@@ -60,9 +61,9 @@ jobs:
           # Numéro affiché : dernière version publiée
           VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           SHA=$(git -C src rev-parse --short HEAD)
-          python3 src/demo/build.py --out dist-demo --version "${VERSION:-demo}" --bundle out
+          python3 src/website/build.py --out dist-site --version "${VERSION:-dev}" --bundle out
           cat > out/README.md <<EOF
-          # FRP Manager — démo
+          # FRP Manager — site et démo
 
           Construit automatiquement depuis frp-manager (commit $SHA) par
           .forgejo/workflows/demo.yml : ne pas modifier ce dépôt à la main.
@@ -74,10 +75,10 @@ jobs:
           cd out
           git add -A
           if git diff --cached --quiet; then
-            echo "Démo inchangée, rien à publier"
+            echo "Site inchangé, rien à publier"
             exit 0
           fi
           git -c user.name="FRP Manager (démo)" -c user.email="demo@frp-manager.invalid" \
-            commit --quiet -m "Démo ${VERSION:-demo} (frp-manager $SHA)"
+            commit --quiet -m "Site ${VERSION:-dev} (frp-manager $SHA)"
           git -c "http.extraHeader=$AUTH" push --quiet "$URL" HEAD:main
           echo "Publié : $DEMO_REPO ($(git rev-parse --short HEAD))"
