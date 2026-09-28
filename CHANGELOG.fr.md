@@ -14,6 +14,8 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [0.0.52] - 2026-09-28
 
+Pré-release puis release définitive le même jour.
+
 Le panel devient entièrement bilingue et a désormais son propre site.
 
 ### Ajouté

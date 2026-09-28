@@ -14,6 +14,8 @@ number. Versions older than 0.0.51 are described in the
 
 ## [0.0.52] - 2026-09-28
 
+Pre-release, then final release, on the same day.
+
 The panel is now fully bilingual, and gets its own website.
 
 ### Added
