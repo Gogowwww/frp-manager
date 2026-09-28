@@ -12,7 +12,8 @@
 #   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
 #
-# Fichier joint : frp-manager.zip (nom attendu par le README et l'auto-update du panel).
+# Fichiers joints : frp-manager.zip (nom attendu par le README et l'auto-update du panel)
+# et frp-manager.zip.sha256 (vérifiée par l'auto-update à partir de 0.0.51).
 #
 # Prérequis :
 #   - runner Forgejo avec le label « docker » et container.valid_volumes: [/var/run/docker.sock]
@@ -80,7 +81,9 @@ jobs:
           sed -i "s/^_PANEL_VERSION_FALLBACK = \"[^\"]*\"/_PANEL_VERSION_FALLBACK = \"$VERSION\"/" frp-manager/app.py
           grep -q "_PANEL_VERSION_FALLBACK = \"$VERSION\"" frp-manager/app.py
           zip -qr frp-manager.zip frp-manager
-          ls -l frp-manager.zip
+          # Somme vérifiée par la mise à jour du panel (PANEL_CHECKSUM_ASSET dans app.py)
+          sha256sum frp-manager.zip > frp-manager.zip.sha256
+          ls -l frp-manager.zip frp-manager.zip.sha256
 
       - name: Image Docker
         run: |
@@ -122,9 +125,9 @@ jobs:
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)
-          for f in dist/frp-manager.zip; do
+          for f in dist/frp-manager.zip dist/frp-manager.zip.sha256; do
             NAME=$(basename "$f")
-            case "$NAME" in *.zip) TYPE=application/zip ;; *) TYPE=application/gzip ;; esac
+            case "$NAME" in *.zip) TYPE=application/zip ;; *.sha256) TYPE=text/plain ;; *) TYPE=application/gzip ;; esac
             curl -sf -X POST -H "Authorization: token $GH_TOKEN" -H "Content-Type: $TYPE" \
               --data-binary "@$f" "https://uploads.github.com/repos/$GH_REPO/releases/$ID/assets?name=$NAME" >/dev/null
             echo "Joint : $NAME"
