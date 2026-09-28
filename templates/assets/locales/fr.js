@@ -18,7 +18,7 @@ export default {
     updateAvailable: 'Mise à jour disponible',
   },
   footer: {
-    madeWith: 'Fait avec ♥ et',
+    madeWith: 'Développé avec',
   },
 
   common: {

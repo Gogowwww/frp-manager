@@ -17,7 +17,7 @@ export default {
     updateAvailable: 'Update available',
   },
   footer: {
-    madeWith: 'Made with ♥ and',
+    madeWith: 'Built with',
   },
 
   common: {
