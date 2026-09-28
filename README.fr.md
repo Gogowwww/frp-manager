@@ -40,7 +40,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
 - **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
 - **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
-- **Interface** : thèmes clair et sombre, ordinateur et mobile, français et anglais (anglais en aperçu, à choisir dans Réglages).
+- **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
 
 | Ports | Éditeur de port | Journaux en direct |
 |:---:|:---:|:---:|

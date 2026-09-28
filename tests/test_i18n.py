@@ -66,3 +66,10 @@ def test_port_labels_translated(appmod):
         assert appmod.with_port_labels(items) == items
 
 
+
+
+def test_other_browser_language_gets_english(appmod, client):
+    set_password(appmod)
+    r = client.post("/api/login", json={"username": "admin", "password": "x"},
+                    headers={"X-CSRF-Token": csrf_of(client), "Accept-Language": "de-DE,de;q=0.9"})
+    assert r.get_json()["msg"] == "Wrong username or password"

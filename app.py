@@ -247,8 +247,9 @@ _tls = threading.local()
 def _lang():
     if has_request_context():
         v = request.headers.get("X-Lang") or request.args.get("lang") or ""
-        if not v:
-            v = request.accept_languages.best_match(["fr", "en"]) or "fr"
+        if not v and request.accept_languages:
+            # Navigateur dans une autre langue : anglais, comme l'interface
+            v = request.accept_languages.best_match(["fr", "en"]) or "en"
     else:
         v = getattr(_tls, "lang", None) or os.environ.get("LANG", "")
     return "en" if v.lower().startswith("en") else "fr"

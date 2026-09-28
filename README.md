@@ -40,7 +40,7 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
 - **Logs**: systemd journal, log file or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
-- **Interface**: light and dark themes, desktop and mobile, French and English (English is a preview, to be chosen in Settings).
+- **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
 
 | Ports | Port editor | Live logs |
 |:---:|:---:|:---:|

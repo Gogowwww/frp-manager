@@ -195,7 +195,7 @@ HOME = {
             ("config", "Configuration forms", "frps and frpc settings in sections; TOML is checked before it is written."),
             ("download", "One-click updates", "frp downloaded and checked against its published SHA-256; the panel updates itself."),
             ("box", "Docker ready", "Run the panel in a container and drive frp on the host, or manage frp containers."),
-            ("monitor", "Light and dark", "Readable on desktop and mobile, in French and English (preview)."),
+            ("monitor", "Light and dark", "Readable on desktop and mobile, in English and French."),
             ("shield", "Locked by default", "Mandatory setup, argon2id passwords, CSRF protection, localhost only."),
         ],
         "demo_title": "Try it before installing",
@@ -266,8 +266,8 @@ HOME = {
              "Run <code>python3 app.py --reset-password</code> in the install directory (or through "
              "<code>docker exec</code>), then restart the panel."),
             ("Which languages are available?",
-             "French and English, messages from the server included. English is still marked as a preview: "
-             "choose it in Settings, Preferences."),
+             "English and French, messages from the server included. The panel follows your browser's "
+             "language; you can change it in Settings, Preferences."),
         ],
         "final_title": "Take back your ports",
         "final_text": "Open the demo, or install it on the machine that runs frp.",
@@ -324,7 +324,7 @@ HOME = {
             ("config", "Formulaires de configuration", "Réglages de frps et frpc par sections ; le TOML est vérifié avant d'être écrit."),
             ("download", "Mises à jour en un clic", "frp téléchargé et vérifié par sa somme SHA-256 publiée ; le panel se met à jour seul."),
             ("box", "Prêt pour Docker", "Faites tourner le panel en conteneur pour piloter frp sur l'hôte, ou gérez des conteneurs frp."),
-            ("monitor", "Clair ou sombre", "Lisible sur ordinateur et mobile, en français et en anglais (aperçu)."),
+            ("monitor", "Clair ou sombre", "Lisible sur ordinateur et mobile, en français et en anglais."),
             ("shield", "Verrouillé par défaut", "Configuration initiale imposée, mots de passe argon2id, CSRF, écoute locale."),
         ],
         "demo_title": "Essayez avant d'installer",
@@ -398,8 +398,8 @@ HOME = {
              "Lancez <code>python3 app.py --reset-password</code> dans le dossier d'installation (ou par "
              "<code>docker exec</code>), puis redémarrez le panel."),
             ("Quelles langues sont disponibles ?",
-             "Français et anglais, messages du serveur compris. L'anglais est encore marqué comme aperçu : "
-             "choisissez-le dans Réglages, Préférences."),
+             "Français et anglais, messages du serveur compris. Le panel suit la langue du navigateur ; "
+             "vous pouvez la changer dans Réglages, Préférences."),
         ],
         "final_title": "Reprenez la main sur vos ports",
         "final_text": "Ouvrez la démo, ou installez le panel sur la machine qui fait tourner frp.",
