@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for, g
+from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for, g, has_request_context
 import requests as req
 
 try:
@@ -237,6 +237,56 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
 sock = Sock(app) if Sock else None
 
+# ── Langue des messages ──────────────────────────────────────────────────────
+# Les messages renvoyés à l'interface suivent sa langue : en-tête X-Lang posé
+# par api.js (paramètre ?lang= pour les journaux en direct), sinon la langue
+# du navigateur. Hors requête (journaux d'installation, lignes des journaux en
+# direct) : la langue retenue par le thread, sinon celle du système (LANG).
+_tls = threading.local()
+
+def _lang():
+    if has_request_context():
+        v = request.headers.get("X-Lang") or request.args.get("lang") or ""
+        if not v:
+            v = request.accept_languages.best_match(["fr", "en"]) or "fr"
+    else:
+        v = getattr(_tls, "lang", None) or os.environ.get("LANG", "")
+    return "en" if v.lower().startswith("en") else "fr"
+
+def M(fr, en):
+    """Le message dans la langue de l'interface (français par défaut)."""
+    return en if _lang() == "en" else fr
+
+def _in_lang(lang, fn):
+    """fn lancé dans un thread, avec la langue de la requête qui l'a démarré."""
+    def run(*args, **kwargs):
+        _tls.lang = lang
+        return fn(*args, **kwargs)
+    return run
+
+# Libellés des ports frp (détectés en français, parfois mis en cache pour tous
+# les onglets) : traduits au moment de la réponse
+_PORT_LABELS_EN = {
+    "Connexion frpc": "frpc connections", "Connexion serveur": "Server connection",
+    "Dashboard web": "Web dashboard", "Connexion des clients frpc": "frpc client connections",
+    "Sites HTTP (vhost)": "HTTP sites (vhost)", "Sites HTTPS (vhost)": "HTTPS sites (vhost)",
+    "Tableau de bord frps": "frps dashboard", "Port réservé aux clients": "Port reserved for clients",
+    "Plage réservée aux clients": "Range reserved for clients", "Port ouvert par frps": "Port opened by frps",
+}
+
+def port_label(label):
+    if _lang() != "en" or not label:
+        return label
+    if label in _PORT_LABELS_EN:
+        return _PORT_LABELS_EN[label]
+    m = re.fullmatch(r"Port « (.*) »", label)
+    if m:
+        return f"Port “{m.group(1)}”"
+    return re.sub(r"^Visiteur ", "Visitor ", label)
+
+def with_port_labels(items):
+    return [{**i, "label": port_label(i.get("label"))} for i in items]
+
 # ── En-têtes de sécurité, CSP et jeton CSRF ──────────────────────────────────
 # Les scripts en ligne des pages portent un nonce tiré à chaque requête : la CSP
 # refuse tout autre script en ligne. Les styles en ligne restent permis (l'interface
@@ -321,7 +371,7 @@ def _accepts_gzip():
 def versioned_asset(version, filename):
     entry = _ASSETS.get(filename)
     if not entry:
-        return Response("Introuvable", status=404, mimetype="text/plain")
+        return Response(M("Introuvable", "Not found"), status=404, mimetype="text/plain")
     data, gz, mime = entry
     resp = Response(gz if gz and _accepts_gzip() else data, mimetype=mime)
     if gz:
@@ -478,7 +528,7 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if not _session_valid():
             if request.path.startswith("/api/"):
-                return jsonify({"ok": False, "msg": "Non authentifié"}), 401
+                return jsonify({"ok": False, "msg": M("Non authentifié", "Not authenticated")}), 401
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
@@ -489,10 +539,11 @@ _SETUP_ENDPOINTS = {"setup_page", "api_setup", "versioned_asset", "static"}
 @app.before_request
 def _security_gate():
     if request.method not in ("GET", "HEAD", "OPTIONS") and not _csrf_valid():
-        return jsonify({"ok": False, "msg": "Jeton CSRF absent ou invalide : rechargez la page."}), 403
+        return jsonify({"ok": False, "msg": M("Jeton CSRF absent ou invalide : rechargez la page.",
+                                              "Missing or invalid CSRF token: reload the page.")}), 403
     if needs_setup() and request.endpoint not in _SETUP_ENDPOINTS:
         if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "msg": "Configuration initiale requise", "setup": True}), 401
+            return jsonify({"ok": False, "msg": M("Configuration initiale requise", "Initial setup required"), "setup": True}), 401
         return redirect(url_for("setup_page"))
     return None
 
@@ -534,7 +585,8 @@ def _login_succeeded(ip):
         _login_failures.pop(ip, None)
 
 def _too_many_attempts(wait):
-    resp = jsonify({"ok": False, "msg": f"Trop de tentatives : réessayez dans {wait} s."})
+    resp = jsonify({"ok": False, "msg": M(f"Trop de tentatives : réessayez dans {wait} s.",
+                                         f"Too many attempts: try again in {wait} s.")})
     resp.status_code = 429
     resp.headers["Retry-After"] = str(wait)
     return resp
@@ -563,7 +615,7 @@ def api_login():
         wait = _login_retry_after(ip)
         if wait:
             return _too_many_attempts(wait)
-        return jsonify({"ok": False, "msg": "Identifiants incorrects"}), 401
+        return jsonify({"ok": False, "msg": M("Identifiants incorrects", "Wrong username or password")}), 401
     _login_succeeded(ip)
     if rehash:
         # Ancien hash (SHA-256 sans sel, ou scrypt alors qu'argon2 est disponible)
@@ -589,9 +641,11 @@ _USERNAME_RE = re.compile(r"[^\x00-\x1f\x7f]{1,64}")
 def password_problem(pw):
     """Message si le mot de passe est refusé, sinon None."""
     if len(pw) < PASSWORD_MIN_LENGTH:
-        return f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères."
+        return M(f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères.",
+                 f"The password must be at least {PASSWORD_MIN_LENGTH} characters long.")
     if len(pw) > PASSWORD_MAX_LENGTH:
-        return f"Le mot de passe ne doit pas dépasser {PASSWORD_MAX_LENGTH} caractères."
+        return M(f"Le mot de passe ne doit pas dépasser {PASSWORD_MAX_LENGTH} caractères.",
+                 f"The password must not exceed {PASSWORD_MAX_LENGTH} characters.")
     return None
 
 @app.route("/setup", methods=["GET"])
@@ -609,13 +663,14 @@ def api_setup():
     user = str(data.get("username", "")).strip()
     pw = str(data.get("password", ""))
     if not _USERNAME_RE.fullmatch(user):
-        return jsonify({"ok": False, "msg": "Identifiant invalide (1 à 64 caractères)."}), 400
+        return jsonify({"ok": False, "msg": M("Identifiant invalide (1 à 64 caractères).",
+                                              "Invalid username (1 to 64 characters).")}), 400
     problem = password_problem(pw)
     if problem:
         return jsonify({"ok": False, "msg": problem}), 400
     with _setup_lock:
         if not needs_setup():
-            return jsonify({"ok": False, "msg": "Le panel est déjà configuré."}), 409
+            return jsonify({"ok": False, "msg": M("Le panel est déjà configuré.", "The panel is already set up.")}), 409
         cfg = {**MGR_CFG, "username": user, "password_hash": hash_password(pw)}
         save_manager_config(cfg)
         MGR_CFG = cfg
@@ -627,17 +682,18 @@ def reset_password_cli():
     (mot de passe perdu, ou hash illisible)."""
     import getpass
     current = MGR_CFG.get("username", "admin")
-    user = input(f"Identifiant [{current}] : ").strip() or current
+    user = input(M(f"Identifiant [{current}] : ", f"Username [{current}]: ")).strip() or current
     if not _USERNAME_RE.fullmatch(user):
-        sys.exit("Identifiant invalide (1 à 64 caractères).")
-    pw = getpass.getpass("Nouveau mot de passe : ")
+        sys.exit(M("Identifiant invalide (1 à 64 caractères).", "Invalid username (1 to 64 characters)."))
+    pw = getpass.getpass(M("Nouveau mot de passe : ", "New password: "))
     problem = password_problem(pw)
     if problem:
         sys.exit(problem)
-    if getpass.getpass("Confirmer : ") != pw:
-        sys.exit("Les deux mots de passe sont différents.")
+    if getpass.getpass(M("Confirmer : ", "Confirm: ")) != pw:
+        sys.exit(M("Les deux mots de passe sont différents.", "The two passwords don't match."))
     save_manager_config({**MGR_CFG, "username": user, "password_hash": hash_password(pw)})
-    print("Identifiants enregistrés. Redémarrez frp-manager (systemctl restart frp-manager).")
+    print(M("Identifiants enregistrés. Redémarrez frp-manager (systemctl restart frp-manager).",
+            "Credentials saved. Restart frp-manager (systemctl restart frp-manager)."))
 
 # ── State ─────────────────────────────────────────────────────────────────────
 def load_state():
@@ -762,7 +818,7 @@ def get_arch():
 
 def service_action(name, action):
     if not valid_service_name(name):
-        return False, f"Nom de service refusé : {name!r}"
+        return False, M(f"Nom de service refusé : {name!r}", f"Service name rejected: {name!r}")
     ok, out, err = run_cmd(["systemctl", action, name])
     return ok, err or out
 
@@ -846,6 +902,7 @@ class LiveLog:
     lu / coupe la connexion Docker, ce qui termine lines()."""
 
     def __init__(self, inst, source="journal", history=50):
+        self.lang = _lang()       # lines() tourne dans un autre thread, hors requête
         self.inst = inst
         self.source = "file" if source == "file" else "journal"
         self.history = history   # lignes déjà écrites à renvoyer d'abord (0 à la reconnexion)
@@ -865,19 +922,21 @@ class LiveLog:
             except Exception: pass
 
     def lines(self):
+        _tls.lang = self.lang
         try:
             if self.inst.get("source") == "docker":
                 yield from self._docker_lines(_resolve_container(self.inst["container_name"]))
             elif self.source == "file":
                 path = self.inst.get("log")
                 if not path:
-                    yield "[frp-manager] aucun fichier de log connu pour cette instance"
+                    yield M("[frp-manager] aucun fichier de log connu pour cette instance",
+                          "[frp-manager] no known log file for this instance")
                     return
                 # -F : suit le fichier même après une rotation des logs
                 yield from self._command_lines(["tail", f"-n{self.history}", "-F", str(path)])
             else:
                 if not valid_service_name(self.inst.get("service")):
-                    yield "[frp-manager] nom de service refusé"
+                    yield M("[frp-manager] nom de service refusé", "[frp-manager] service name rejected")
                     return
                 yield from self._command_lines(["journalctl", "-u", self.inst.get("service", ""),
                                                 "-f", f"-n{self.history}", "--no-pager", "-o", "short-iso"])
@@ -899,14 +958,15 @@ class LiveLog:
         """http.client décode le « chunked encoding » de la réponse Docker ;
         les trames multiplexées (ou le texte brut si tty) sont ensuite découpées."""
         if not _DOCKER_SOCK.exists():
-            yield "[frp-manager] socket Docker indisponible"
+            yield M("[frp-manager] socket Docker indisponible", "[frp-manager] Docker socket unavailable")
             return
         self._conn = _UnixHTTPConn(str(_DOCKER_SOCK))
         self._conn.request("GET",
             f"/v1.41/containers/{container}/logs?stdout=1&stderr=1&follow=1&tail={self.history}")
         resp = self._conn.getresponse()
         if resp.status != 200:
-            yield f"[frp-manager] logs Docker indisponibles (HTTP {resp.status})"
+            yield M(f"[frp-manager] logs Docker indisponibles (HTTP {resp.status})",
+                    f"[frp-manager] Docker logs unavailable (HTTP {resp.status})")
             return
         buf, tty, pending = b"", None, ""
         while True:
@@ -1238,7 +1298,8 @@ def gh_api(path, timeout=10):
     """GET sur l'API GitHub (chemin ou URL complète) → JSON."""
     global _gh_api_blocked_until
     if time.time() < _gh_api_blocked_until:
-        raise RuntimeError("quota de l'API GitHub épuisé, repli sur github.com")
+        raise RuntimeError(M("quota de l'API GitHub épuisé, repli sur github.com",
+                             "GitHub API quota exhausted, falling back to github.com"))
     url = path if path.startswith("http") else f"https://api.github.com/{path}"
     r = req.get(url, timeout=timeout, headers={"Accept": "application/vnd.github.v3+json"})
     if r.status_code in (403, 429) and r.headers.get("X-RateLimit-Remaining") == "0":
@@ -1254,7 +1315,8 @@ def gh_web_latest_tag(repo, timeout=10):
     r = req.head(f"https://github.com/{repo}/releases/latest", timeout=timeout, allow_redirects=False)
     m = re.search(r"/releases/tag/([^/?#]+)$", r.headers.get("Location", ""))
     if not m:
-        raise RuntimeError(f"github.com : pas de release « latest » pour {repo} (HTTP {r.status_code})")
+        raise RuntimeError(M(f"github.com : pas de release « latest » pour {repo} (HTTP {r.status_code})",
+                             f"github.com: no \"latest\" release for {repo} (HTTP {r.status_code})"))
     return m.group(1)
 
 def gh_web_tags(repo, timeout=10):
@@ -1280,7 +1342,7 @@ def fetch_latest_version():
                 return tag.lstrip("v"), tag, name
         except Exception:
             continue
-    return None, None, "toutes les sources inaccessibles"
+    return None, None, M("toutes les sources inaccessibles", "all sources unreachable")
 
 # Réponses de GitHub gardées 10 min (1 min en cas d'échec) : l'interface vérifie
 # les mises à jour à chaque ouverture de page, et l'API GitHub n'accepte que 60
@@ -1340,17 +1402,20 @@ def check_panel_zip(zf):
     « .. », liens symboliques, trop d'entrées ou trop gros une fois décompressé."""
     infos = zf.infolist()
     if len(infos) > PANEL_ZIP_MAX_MEMBERS:
-        raise ValueError("archive refusée : trop d'entrées")
+        raise ValueError(M("archive refusée : trop d'entrées", "archive rejected: too many entries"))
     total = 0
     for info in infos:
         name = info.filename.replace("\\", "/")
         if name.startswith("/") or re.match(r"^[A-Za-z]:", name) or ".." in PurePosixPath(name).parts:
-            raise ValueError(f"archive refusée : chemin suspect « {info.filename} »")
+            raise ValueError(M(f"archive refusée : chemin suspect « {info.filename} »",
+                             f"archive rejected: suspicious path “{info.filename}”"))
         if (info.external_attr >> 16) & 0o170000 == 0o120000:
-            raise ValueError(f"archive refusée : lien symbolique « {info.filename} »")
+            raise ValueError(M(f"archive refusée : lien symbolique « {info.filename} »",
+                             f"archive rejected: symbolic link “{info.filename}”"))
         total += info.file_size
         if total > PANEL_ZIP_MAX_UNPACKED:
-            raise ValueError("archive refusée : trop volumineuse une fois décompressée")
+            raise ValueError(M("archive refusée : trop volumineuse une fois décompressée",
+                                   "archive rejected: too large once decompressed"))
 
 def fetch_panel_latest(include_prereleases=False):
     """(version, url) de la release cible du panel, ou (None, None)."""
@@ -1388,8 +1453,10 @@ def fetch_frp_checksums(tag, log_fn):
             sums = parse_checksums(r.text[:1_000_000])
             if sums:
                 if is_third_party(url):
-                    log_fn(f"[WARN] Sommes de contrôle obtenues via le miroir tiers {url.split('/')[2]} : "
-                           "vérification moins fiable")
+                    log_fn(M(f"[WARN] Sommes de contrôle obtenues via le miroir tiers {url.split('/')[2]} : "
+                             "vérification moins fiable",
+                             f"[WARN] Checksums obtained through the third-party mirror {url.split('/')[2]}: "
+                             "weaker verification"))
                 return sums, not is_third_party(url)
         except Exception:
             continue
@@ -1405,7 +1472,8 @@ def _download_to_temp(url, suffix, max_bytes=DOWNLOAD_MAX_BYTES):
                 for chunk in r.iter_content(65536):
                     size += len(chunk)
                     if size > max_bytes:
-                        raise ValueError(f"fichier plus gros que {max_bytes // 1048576} Mo")
+                        raise ValueError(M(f"fichier plus gros que {max_bytes // 1048576} Mo",
+                                           f"file larger than {max_bytes // 1048576} MB"))
                     h.update(chunk)
                     tmp.write(chunk)
             except Exception:
@@ -1421,16 +1489,20 @@ def download_archive(version, tag, log_fn):
     sums, sums_trusted = fetch_frp_checksums(tag, log_fn)
     expected = sums.get(filename)
     if not expected:
-        log_fn(f"[WARN] Pas de somme de contrôle publiée pour {filename} : intégrité non vérifiable")
+        log_fn(M(f"[WARN] Pas de somme de contrôle publiée pour {filename} : intégrité non vérifiable",
+                 f"[WARN] No published checksum for {filename}: integrity cannot be verified"))
     if not mirrors_allowed():
-        log_fn("[INFO] Miroirs tiers désactivés : github.com uniquement")
+        log_fn(M("[INFO] Miroirs tiers désactivés : github.com uniquement",
+                 "[INFO] Third-party mirrors disabled: github.com only"))
     for url in build_download_mirrors(tag, filename):
         source = url.split("/")[2]
         third = is_third_party(url)
         if third and not expected:
-            log_fn(f"[WARN] {source} ignoré : un miroir tiers n'est utilisé qu'avec une somme de contrôle")
+            log_fn(M(f"[WARN] {source} ignoré : un miroir tiers n'est utilisé qu'avec une somme de contrôle",
+                     f"[WARN] {source} skipped: a third-party mirror is only used with a checksum"))
             continue
-        log_fn(f"[INFO] Tentative : {source} …" + (" (miroir tiers)" if third else ""))
+        log_fn(M(f"[INFO] Tentative : {source} …", f"[INFO] Trying {source}…")
+               + (M(" (miroir tiers)", " (third-party mirror)") if third else ""))
         try:
             path, digest = _download_to_temp(url, ".tar.gz")
         except Exception as e:
@@ -1438,13 +1510,16 @@ def download_archive(version, tag, log_fn):
             continue
         if expected and not hmac.compare_digest(digest, expected):
             path.unlink(missing_ok=True)
-            log_fn(f"[ERROR] {source} : somme SHA-256 différente de celle publiée, fichier rejeté")
+            log_fn(M(f"[ERROR] {source} : somme SHA-256 différente de celle publiée, fichier rejeté",
+                     f"[ERROR] {source}: SHA-256 differs from the published one, file rejected"))
             continue
         if expected:
-            log_fn(f"[OK] Téléchargé depuis {source}, SHA-256 vérifiée"
-                   + ("" if sums_trusted else " (somme obtenue via un miroir tiers)"))
+            log_fn(M(f"[OK] Téléchargé depuis {source}, SHA-256 vérifiée",
+                     f"[OK] Downloaded from {source}, SHA-256 verified")
+                   + ("" if sums_trusted else M(" (somme obtenue via un miroir tiers)",
+                                                " (checksum obtained through a third-party mirror)")))
         else:
-            log_fn(f"[OK] Téléchargé depuis {source} (non vérifié)")
+            log_fn(M(f"[OK] Téléchargé depuis {source} (non vérifié)", f"[OK] Downloaded from {source} (not verified)"))
         return path, filename
     return None, filename
 
@@ -1480,20 +1555,22 @@ def extract_frp_binaries(archive, dest):
         for m in tf:
             count += 1
             if count > ARCHIVE_MAX_MEMBERS:
-                raise ValueError("archive refusée : trop d'entrées")
+                raise ValueError(M("archive refusée : trop d'entrées", "archive rejected: too many entries"))
             parts = PurePosixPath(m.name).parts
             if m.name.startswith(("/", "\\")) or ".." in parts or "\\" in m.name:
-                raise ValueError(f"archive refusée : chemin suspect « {m.name} »")
+                raise ValueError(M(f"archive refusée : chemin suspect « {m.name} »",
+                                 f"archive rejected: suspicious path “{m.name}”"))
             base = parts[-1] if parts else ""
             if m.issym() or m.islnk():
                 if base in FRP_BINARIES:
-                    raise ValueError(f"archive refusée : {m.name} est un lien")
+                    raise ValueError(M(f"archive refusée : {m.name} est un lien", f"archive rejected: {m.name} is a link"))
                 continue
             if not m.isfile():
                 continue                          # dossiers, périphériques, FIFO : ignorés
             total += m.size
             if total > ARCHIVE_MAX_UNPACKED:
-                raise ValueError("archive refusée : trop volumineuse une fois décompressée")
+                raise ValueError(M("archive refusée : trop volumineuse une fois décompressée",
+                                   "archive rejected: too large once decompressed"))
             if base not in FRP_BINARIES or len(parts) > 2 or base in found:
                 continue
             src = tf.extractfile(m)
@@ -1506,21 +1583,22 @@ def extract_frp_binaries(archive, dest):
                         break
                     written += len(chunk)
                     if written > m.size:
-                        raise ValueError("archive refusée : taille incohérente")
+                        raise ValueError(M("archive refusée : taille incohérente", "archive rejected: inconsistent size"))
                     f.write(chunk)
             with open(out, "rb") as f:
                 if f.read(4) != b"\x7fELF":
-                    raise ValueError(f"archive refusée : {m.name} n'est pas un exécutable Linux")
+                    raise ValueError(M(f"archive refusée : {m.name} n'est pas un exécutable Linux",
+                                     f"archive rejected: {m.name} is not a Linux executable"))
             found[base] = out
     return found
 
 def install_from_archive(tmp_path, version, log_fn):
-    log_fn("[INFO] Arrêt des services frp …")
+    log_fn(M("[INFO] Arrêt des services frp …", "[INFO] Stopping frp services…"))
     running = _stop_running_frp_services()
     if running:
-        log_fn(f"[INFO] Stoppés : {', '.join(running)}")
+        log_fn(M(f"[INFO] Stoppés : {', '.join(running)}", f"[INFO] Stopped: {', '.join(running)}"))
     try:
-        log_fn("[INFO] Extraction …")
+        log_fn(M("[INFO] Extraction …", "[INFO] Extracting…"))
         with tempfile.TemporaryDirectory() as tmpdir:
             extracted = extract_frp_binaries(tmp_path, tmpdir)
             installed = []
@@ -1533,7 +1611,7 @@ def install_from_archive(tmp_path, version, log_fn):
                     log_fn(f"[INFO] {b} → {dst}")
                     installed.append(b)
         if not installed:
-            log_fn("[ERROR] Aucun binaire trouvé dans l'archive.")
+            log_fn(M("[ERROR] Aucun binaire trouvé dans l'archive.", "[ERROR] No binary found in the archive."))
             return False
         FRP_CONF_DIR.mkdir(parents=True, exist_ok=True)
         FRP_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1544,14 +1622,14 @@ def install_from_archive(tmp_path, version, log_fn):
                       "last_update_result": f"Installed {version}"})
         save_state(state)
         _invalidate_cache(discovery=True)
-        log_fn(f"[OK] frp {version} installé.")
+        log_fn(M(f"[OK] frp {version} installé.", f"[OK] frp {version} installed."))
         return True
     except Exception as e:
         log_fn(f"[ERROR] {e}")
         return False
     finally:
         if running:
-            log_fn(f"[INFO] Redémarrage : {', '.join(running)} …")
+            log_fn(M(f"[INFO] Redémarrage : {', '.join(running)} …", f"[INFO] Restarting: {', '.join(running)}…"))
             for svc in running:
                 r_ok, _, err = run_cmd(["systemctl", "start", svc])
                 log_fn(f"[{'OK' if r_ok else 'WARN'}] {svc}{'' if r_ok else ' : ' + err}")
@@ -1614,21 +1692,22 @@ def api_status():
 def api_service_action(iid, action):
     detect_frp(force=False)
     if iid not in INSTANCES:
-        return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+        return jsonify({"ok": False, "msg": M(f"Instance inconnue : {iid}", f"Unknown instance: {iid}")}), 404
     inst = INSTANCES[iid]
     # ── Container Docker ──────────────────────────────────────────────────────
     if inst.get("source") == "docker":
         if action not in ("start", "stop", "restart"):
             return jsonify({"ok": False,
-                "msg": f"Action '{action}' non supportée pour les containers Docker (start/stop/restart uniquement)"}), 400
+                "msg": M(f"Action '{action}' non supportée pour les containers Docker (start/stop/restart uniquement)",
+                         f"Action '{action}' not supported for Docker containers (start/stop/restart only)")}), 400
         container = inst["container_name"]
         status, _ = _docker_api("POST", f"/containers/{container}/{action}")
         ok = status in (200, 204, 304)
         _invalidate_cache()
-        return jsonify({"ok": ok, "msg": "OK" if ok else f"Erreur Docker (HTTP {status})"})
+        return jsonify({"ok": ok, "msg": "OK" if ok else M(f"Erreur Docker (HTTP {status})", f"Docker error (HTTP {status})")})
     # ── Instance systemd ──────────────────────────────────────────────────────
     if action not in ("start","stop","restart","reload","enable","disable"):
-        return jsonify({"ok": False, "msg": "Action invalide"}), 400
+        return jsonify({"ok": False, "msg": M("Action invalide", "Invalid action")}), 400
     ok, msg = service_action(inst["service"], action)
     _invalidate_cache()
     return jsonify({"ok": ok, "msg": msg or f"{action} {'OK' if ok else 'FAILED'}"})
@@ -1708,12 +1787,12 @@ def api_instance_delete_info(iid):
     detect_frp(force=False)
     inst = INSTANCES.get(iid)
     if not inst:
-        return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+        return jsonify({"ok": False, "msg": M(f"Instance inconnue : {iid}", f"Unknown instance: {iid}")}), 404
     if inst.get("source") != "docker":
         return jsonify({"ok": True, "image": None, "config_path": None})
     st, ins = _docker_api("GET", f"/containers/{inst['container_name']}/json")
     if st != 200 or not isinstance(ins, dict):
-        return jsonify({"ok": False, "msg": f"Conteneur introuvable (HTTP {st})"}), 404
+        return jsonify({"ok": False, "msg": M(f"Conteneur introuvable (HTTP {st})", f"Container not found (HTTP {st})")}), 404
     return jsonify({"ok": True,
                     "image": (ins.get("Config") or {}).get("Image") or inst.get("image"),
                     "config_path": _docker_mounted_config(ins, inst["type"])})
@@ -1722,37 +1801,40 @@ def _delete_container(iid, inst, delete_image, delete_config):
     container = inst["container_name"]
     st, ins = _docker_api("GET", f"/containers/{container}/json")
     if st != 200 or not isinstance(ins, dict):
-        return False, f"Conteneur introuvable (HTTP {st})", 404
+        return False, M(f"Conteneur introuvable (HTTP {st})", f"Container not found (HTTP {st})"), 404
     image_id = ins.get("Image")
     image_name = (ins.get("Config") or {}).get("Image") or image_id
     cfg = _docker_mounted_config(ins, inst["type"]) if delete_config else None
     if delete_config and not cfg:
-        return False, "Aucun fichier de configuration monté n'a été trouvé pour ce conteneur.", 400
+        return False, M("Aucun fichier de configuration monté n'a été trouvé pour ce conteneur.",
+                         "No mounted configuration file was found for this container."), 400
     if cfg:
         shared = _config_users(cfg, iid)
         if shared:
-            return False, f"{cfg} est aussi utilisé par {', '.join(shared)} : rien n'a été supprimé.", 400
+            return False, M(f"{cfg} est aussi utilisé par {', '.join(shared)} : rien n'a été supprimé.",
+                             f"{cfg} is also used by {', '.join(shared)}: nothing was deleted."), 400
 
     status, data = _docker_api("DELETE", f"/containers/{container}?force=true")
     if status not in (204, 404):
         detail = data.get("message") if isinstance(data, dict) else data
-        return False, f"Erreur Docker (HTTP {status}) : {detail or ''}".strip(), 500
-    done, notes = [f"conteneur {container}"], []
+        return False, M(f"Erreur Docker (HTTP {status}) : {detail or ''}", f"Docker error (HTTP {status}): {detail or ''}").strip(), 500
+    done, notes = [M(f"conteneur {container}", f"container {container}")], []
 
     if delete_image and image_id:
         status, data = _docker_api("DELETE", f"/images/{image_id}", timeout=60)
         if status == 200:
             done.append(f"image {image_name}")
         elif status == 409:
-            notes.append(f"image {image_name} conservée : un autre conteneur l'utilise")
+            notes.append(M(f"image {image_name} conservée : un autre conteneur l'utilise",
+                            f"image {image_name} kept: another container uses it"))
         elif status != 404:
-            notes.append(f"image {image_name} non supprimée (HTTP {status})")
+            notes.append(M(f"image {image_name} non supprimée (HTTP {status})", f"image {image_name} not deleted (HTTP {status})"))
     if cfg:
         if host_remove_file(cfg):
             done.append(cfg)
         else:
-            notes.append(f"impossible de supprimer {cfg}")
-    msg = f"Supprimé : {', '.join(done)}"
+            notes.append(M(f"impossible de supprimer {cfg}", f"could not delete {cfg}"))
+    msg = M(f"Supprimé : {', '.join(done)}", f"Deleted: {', '.join(done)}")
     if notes:
         msg += " — " + " ; ".join(notes)
     return True, msg, 200
@@ -1762,7 +1844,7 @@ def _delete_container(iid, inst, delete_image, delete_config):
 def api_instance_delete(iid):
     detect_frp(force=True)
     if iid not in INSTANCES:
-        return jsonify({"ok": False, "msg": f"Instance inconnue : {iid}"}), 404
+        return jsonify({"ok": False, "msg": M(f"Instance inconnue : {iid}", f"Unknown instance: {iid}")}), 404
     inst = INSTANCES[iid]
     opts = request.get_json(silent=True) or {}
     delete_config = bool(opts.get("delete_config"))
@@ -1780,23 +1862,26 @@ def api_instance_delete(iid):
     _, fragment, _ = run_cmd(["systemctl", "show", unit, "--property=FragmentPath", "--value"])
     fragment = posixpath.normpath(fragment.strip()) if fragment.strip() else ""
     if not valid_service_name(inst["service"]):
-        return jsonify({"ok": False, "msg": "Nom de service refusé"}), 400
+        return jsonify({"ok": False, "msg": M("Nom de service refusé", "Service name rejected")}), 400
     if fragment and not fragment.startswith(_UNIT_DIR):
         return jsonify({"ok": False,
-            "msg": f"{fragment} appartient à un paquet système : supprimez-le avec le gestionnaire de paquets."}), 400
+            "msg": M(f"{fragment} appartient à un paquet système : supprimez-le avec le gestionnaire de paquets.",
+                     f"{fragment} belongs to a system package: remove it with the package manager.")}), 400
 
     cfg = Path(inst["config"]) if inst.get("config") else None
     if cfg and delete_config:
         shared = _config_users(str(cfg), iid)
         if shared:
             return jsonify({"ok": False,
-                "msg": f"{cfg} est aussi utilisé par {', '.join(shared)} : il n'a pas été supprimé."}), 400
+                "msg": M(f"{cfg} est aussi utilisé par {', '.join(shared)} : il n'a pas été supprimé.",
+                         f"{cfg} is also used by {', '.join(shared)}: it was not deleted.")}), 400
     done = []
     if fragment:
         run_cmd(["systemctl", "disable", "--now", unit], timeout=30)
         if not host_remove_file(fragment):
             _invalidate_cache(discovery=True)
-            return jsonify({"ok": False, "msg": f"Service arrêté, mais impossible de supprimer {fragment}"}), 500
+            return jsonify({"ok": False, "msg": M(f"Service arrêté, mais impossible de supprimer {fragment}",
+                                                  f"Service stopped, but {fragment} could not be deleted")}), 500
         run_host(["rm", "-rf", f"{_UNIT_DIR}{unit}.d"])
         run_cmd(["systemctl", "daemon-reload"])
         run_cmd(["systemctl", "reset-failed", unit])
@@ -1807,20 +1892,21 @@ def api_instance_delete(iid):
             done.append(str(cfg))
         except Exception as e:
             _invalidate_cache(discovery=True)
-            return jsonify({"ok": False, "msg": f"Service supprimé, mais pas {cfg} : {e}"}), 500
+            return jsonify({"ok": False, "msg": M(f"Service supprimé, mais pas {cfg} : {e}",
+                                                  f"Service deleted, but not {cfg}: {e}")}), 500
     kept = str(cfg) if cfg and cfg.exists() else None
     if kept and not done:
-        done.append(f"{iid} retiré du tableau de bord ({kept} conservé)")
+        done.append(M(f"{iid} retiré du tableau de bord ({kept} conservé)", f"{iid} removed from the dashboard ({kept} kept)"))
     _forget_instance(iid, kept_config=kept)
     _invalidate_cache(discovery=True)
-    return jsonify({"ok": True, "msg": f"Supprimé : {', '.join(done)}"})
+    return jsonify({"ok": True, "msg": M(f"Supprimé : {', '.join(done)}", f"Deleted: {', '.join(done)}")})
 
 @app.route("/api/config/<iid>", methods=["GET"])
 @login_required
 def api_config_get(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
-        return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
+        return jsonify({"ok": False, "msg": M("Instance inconnue", "Unknown instance")}), 404
     inst = INSTANCES[iid]
     # ── Container Docker : lire la config depuis les volumes montés ───────────
     if inst.get("source") == "docker":
@@ -1830,7 +1916,8 @@ def api_config_get(iid):
         # Pas de config trouvée → retourner un template vide
         return jsonify({"ok": True, "content": DEFAULT_CONFIGS.get(inst["type"], ""),
                         "exists": False, "docker": True,
-                        "msg": "Config non trouvée — assurez-vous que le volume /etc/frp est monté."})
+                        "msg": M("Config non trouvée — assurez-vous que le volume /etc/frp est monté.",
+                                  "Config not found: make sure the /etc/frp volume is mounted.")})
     # ── Instance systemd / binaire ────────────────────────────────────────────
     cfg = Path(inst["config"])
     if not cfg.exists():
@@ -1842,10 +1929,10 @@ def api_config_get(iid):
 def api_config_save(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
-        return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
+        return jsonify({"ok": False, "msg": M("Instance inconnue", "Unknown instance")}), 404
     content = (request.get_json(silent=True) or {}).get("content", "")
     if not isinstance(content, str):
-        return jsonify({"ok": False, "msg": "Contenu invalide"}), 400
+        return jsonify({"ok": False, "msg": M("Contenu invalide", "Invalid content")}), 400
     ok, msg, status = write_instance_config(INSTANCES[iid], content)
     if ok:
         _invalidate_cache(discovery=True)      # serverAddr, fichier créé…
@@ -1862,20 +1949,22 @@ def safe_config_path(path):
     """Chemin réel d'une config autorisée en écriture, ou ValueError."""
     real = Path(os.path.realpath(str(path)))
     if real.suffix not in _CONFIG_SUFFIXES:
-        raise ValueError(f"{path} : extension refusée (attendu {', '.join(_CONFIG_SUFFIXES)})")
+        raise ValueError(M(f"{path} : extension refusée (attendu {', '.join(_CONFIG_SUFFIXES)})",
+                           f"{path}: extension rejected (expected {', '.join(_CONFIG_SUFFIXES)})"))
     for root in CONFIG_SEARCH_PATHS:
         root_real = Path(os.path.realpath(str(root)))
         if real.parent == root_real or root_real in real.parents:
             return real
-    raise ValueError(f"{path} est hors des dossiers de configuration autorisés "
-                     f"({', '.join(str(r) for r in CONFIG_SEARCH_PATHS)})")
+    dirs = ", ".join(str(r) for r in CONFIG_SEARCH_PATHS)
+    raise ValueError(M(f"{path} est hors des dossiers de configuration autorisés ({dirs})",
+                       f"{path} is outside the allowed configuration directories ({dirs})"))
 
 def validate_config_content(path, content):
     """ValueError si le contenu ne peut pas être écrit tel quel."""
     if len(content.encode("utf-8", "surrogatepass")) > CONFIG_MAX_BYTES:
-        raise ValueError("Configuration trop volumineuse (1 Mo au plus)")
+        raise ValueError(M("Configuration trop volumineuse (1 Mo au plus)", "Configuration too large (1 MB at most)"))
     if "\x00" in content:
-        raise ValueError("Configuration invalide : caractère nul")
+        raise ValueError(M("Configuration invalide : caractère nul", "Invalid configuration: null character"))
     if Path(path).suffix == ".toml":
         if _tomllib is None:
             print("[WARN] tomllib/tomli indisponible : configuration TOML écrite sans vérification")
@@ -1883,7 +1972,7 @@ def validate_config_content(path, content):
         try:
             _tomllib.loads(content)
         except _tomllib.TOMLDecodeError as e:
-            raise ValueError(f"TOML invalide, rien n'a été écrit : {e}")
+            raise ValueError(M(f"TOML invalide, rien n'a été écrit : {e}", f"Invalid TOML, nothing was written: {e}"))
 
 def _write_config_file(path, content):
     """→ (ok, message, code HTTP)."""
@@ -1895,9 +1984,9 @@ def _write_config_file(path, content):
     try:
         real.parent.mkdir(parents=True, exist_ok=True)
         real.write_text(content)
-        return True, f"Sauvegardé : {real}", 200
+        return True, M(f"Sauvegardé : {real}", f"Saved: {real}"), 200
     except Exception as e:
-        return False, f"Erreur écriture : {e}", 500
+        return False, M(f"Erreur écriture : {e}", f"Write error: {e}"), 500
 
 def write_instance_config(inst, content_str):
     """Écrit la config TOML d'une instance (fichier monté pour un container).
@@ -1936,7 +2025,7 @@ def write_instance_config(inst, content_str):
 
     # ── Instance systemd / binaire ────────────────────────────────────────────
     if not inst.get("config"):
-        return False, "Aucun fichier de config associé", 400
+        return False, M("Aucun fichier de config associé", "No configuration file associated"), 400
     return _write_config_file(inst["config"], content_str)
 
 @app.route("/api/logs/<iid>")
@@ -1957,14 +2046,15 @@ def api_logs(iid):
             if status == 200 and isinstance(data, dict):
                 cid = data.get("Id", "")[:12]
                 content = _docker_logs_raw(cid, tail=200)
-        return jsonify({"ok": True, "content": content or "(aucun log disponible)"})
+        return jsonify({"ok": True, "content": content or M("(aucun log disponible)", "(no logs available)")})
     # ── Instance systemd ──────────────────────────────────────────────────────
     if request.args.get("source") == "file":
         # run_host : en mode Docker, le fichier de log est sur l'hôte, pas dans le container
         ok, out, err = run_host(["tail", "-n200", str(inst["log"])])
-        return jsonify({"ok": True, "content": out if ok else (err or f"Fichier illisible : {inst['log']}")})
+        return jsonify({"ok": True, "content": out if ok else (err or M(f"Fichier illisible : {inst['log']}",
+                                                                         f"Unreadable file: {inst['log']}"))})
     if not valid_service_name(inst["service"]):
-        return jsonify({"ok": False, "msg": "Nom de service refusé"}), 400
+        return jsonify({"ok": False, "msg": M("Nom de service refusé", "Service name rejected")}), 400
     ok, out, err = run_cmd(["journalctl", "-u", inst["service"],
                              "-n200", "--no-pager", "-o", "short-iso"])
     return jsonify({"ok": True, "content": out if ok else err})
@@ -1993,7 +2083,7 @@ def _pump(live):
                 q.put(line)
         finally:
             q.put(None)
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=_in_lang(_lang(), run), daemon=True).start()
     return q
 
 @app.route("/api/logs/stream/<iid>")
@@ -2033,7 +2123,7 @@ def _same_origin():
 
 def _ws_authenticated(ws):
     if not _session_valid() or not _same_origin():
-        ws.close(reason=1008, message="Non authentifié")
+        ws.close(reason=1008, message=M("Non authentifié", "Not authenticated"))
         return False
     return True
 
@@ -2072,7 +2162,7 @@ if sock:
         detect_frp(force=False)
         inst = INSTANCES.get(iid)
         if not inst:
-            ws.close(reason=1008, message="Instance inconnue")
+            ws.close(reason=1008, message=M("Instance inconnue", "Unknown instance"))
             return
         live = _live_log_from_request(inst)
         lines = _pump(live)
@@ -2113,14 +2203,16 @@ def api_manager_config_set():
     if "username" in data:
         user = str(data["username"]).strip()
         if not _USERNAME_RE.fullmatch(user):
-            return jsonify({"ok": False, "msg": "Identifiant invalide (1 à 64 caractères)."}), 400
+            return jsonify({"ok": False, "msg": M("Identifiant invalide (1 à 64 caractères).",
+                                              "Invalid username (1 to 64 characters).")}), 400
         cfg["username"] = user
     if "bind_host" in data:
         host = str(data["bind_host"]).strip()
         try:
             ipaddress.ip_address(host)
         except ValueError:
-            return jsonify({"ok": False, "msg": "Adresse d'écoute invalide (ex. 127.0.0.1, 0.0.0.0 ou ::)."}), 400
+            return jsonify({"ok": False, "msg": M("Adresse d'écoute invalide (ex. 127.0.0.1, 0.0.0.0 ou ::).",
+                                                  "Invalid listening address (e.g. 127.0.0.1, 0.0.0.0 or ::).")}), 400
         cfg["bind_host"] = host
     try:
         if "bind_port" in data:
@@ -2132,7 +2224,8 @@ def api_manager_config_set():
             if not 300 <= cfg["session_timeout"] <= 30 * 86400:
                 raise ValueError
     except (TypeError, ValueError):
-        return jsonify({"ok": False, "msg": "Port (1 à 65535) ou durée de session (5 min à 30 jours) invalide."}), 400
+        return jsonify({"ok": False, "msg": M("Port (1 à 65535) ou durée de session (5 min à 30 jours) invalide.",
+                                              "Invalid port (1 to 65535) or session length (5 min to 30 days).")}), 400
     if "ssl_enabled" in data: cfg["ssl_enabled"] = bool(data["ssl_enabled"])
     if "download_mirrors" in data: cfg["download_mirrors"] = bool(data["download_mirrors"])
     if data.get("new_password"):
@@ -2145,7 +2238,8 @@ def api_manager_config_set():
     app.permanent_session_lifetime = timedelta(seconds=int(cfg.get("session_timeout") or 3600))
     if data.get("new_password"):
         _start_session()      # cette session reste ouverte, les autres sont déconnectées
-    return jsonify({"ok": True, "msg": "Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port."})
+    return jsonify({"ok": True, "msg": M("Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.",
+                                         "Saved. Restart frp-manager to apply bind_host/port.")})
 
 @app.route("/api/nicknames", methods=["GET"])
 @login_required
@@ -2157,7 +2251,7 @@ def api_nicknames_get():
 def api_nickname_set(iid):
     global MGR_CFG
     if not valid_instance_id(iid):
-        return jsonify({"ok": False, "msg": "Instance invalide"}), 400
+        return jsonify({"ok": False, "msg": M("Instance invalide", "Invalid instance")}), 400
     data = request.get_json(silent=True) or {}
     nick = str(data.get("nickname", "")).strip()[:64]
     cfg  = dict(MGR_CFG)
@@ -2169,7 +2263,7 @@ def api_nickname_set(iid):
     cfg["nicknames"] = nicks
     save_manager_config(cfg)
     MGR_CFG = cfg
-    return jsonify({"ok": True, "msg": "Surnom mis à jour"})
+    return jsonify({"ok": True, "msg": M("Surnom mis à jour", "Nickname updated")})
 
 _VERSION_RE = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?$')
 
@@ -2273,32 +2367,34 @@ def _panel_log(msg):
 def api_panel_update():
     """Télécharge la dernière release du panel et relance frp-manager."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
-        return jsonify({"ok": False, "msg": "Repo GitHub du panel non configuré."})
+        return jsonify({"ok": False, "msg": M("Repo GitHub du panel non configuré.", "The panel's GitHub repository is not configured.")})
     prerelease = panel_is_prerelease()
     if prerelease and IN_DOCKER:
-        return jsonify({"ok": False, "msg": "Pré-release sous Docker : mettez à jour l'image du conteneur."})
+        return jsonify({"ok": False, "msg": M("Pré-release sous Docker : mettez à jour l'image du conteneur.",
+                                              "Pre-release under Docker: update the container image.")})
     if not panel_update_lock.acquire(blocking=False):
-        return jsonify({"ok": False, "msg": "Mise à jour du panel déjà en cours."})
+        return jsonify({"ok": False, "msg": M("Mise à jour du panel déjà en cours.", "A panel update is already running.")})
 
     global panel_update_log
     panel_update_log = []
 
     def run():
         try:
-            _panel_log("[INFO] Récupération des infos de release…")
+            _panel_log(M("[INFO] Récupération des infos de release…", "[INFO] Fetching release information…"))
             try:
                 # Une installation en pré-release suit aussi les pré-releases suivantes
                 data = fetch_panel_release(include_prereleases=prerelease)
                 if not data:
-                    _panel_log("[ERROR] Aucune release trouvée.")
+                    _panel_log(M("[ERROR] Aucune release trouvée.", "[ERROR] No release found."))
                     return
                 tag = data.get("tag_name", "")
                 assets = data.get("assets", [])
             except Exception as e:
-                _panel_log(f"[ERROR] GitHub inaccessible : {e}")
+                _panel_log(M(f"[ERROR] GitHub inaccessible : {e}", f"[ERROR] GitHub unreachable: {e}"))
                 return
             if not version_newer(tag, PANEL_VERSION):
-                _panel_log(f"[ERROR] {tag} n'est pas plus récente que v{PANEL_VERSION} : rien à faire.")
+                _panel_log(M(f"[ERROR] {tag} n'est pas plus récente que v{PANEL_VERSION} : rien à faire.",
+                             f"[ERROR] {tag} is not newer than v{PANEL_VERSION}: nothing to do."))
                 return
 
             # Chercher l'asset zip (frp-manager.zip ou frp-manager-vX.X.X.zip)
@@ -2313,7 +2409,7 @@ def api_panel_update():
                 zip_url = data.get("zipball_url")
 
             if not zip_url:
-                _panel_log("[ERROR] Aucun asset .zip trouvé dans la release.")
+                _panel_log(M("[ERROR] Aucun asset .zip trouvé dans la release.", "[ERROR] No .zip asset found in the release."))
                 return
 
             expected = None
@@ -2326,22 +2422,24 @@ def api_panel_update():
                 except Exception:
                     expected = None
             if not expected:
-                _panel_log("[WARN] Pas de somme SHA-256 publiée pour cette release : intégrité non vérifiée")
+                _panel_log(M("[WARN] Pas de somme SHA-256 publiée pour cette release : intégrité non vérifiée",
+                             "[WARN] No SHA-256 published for this release: integrity not verified"))
 
-            _panel_log(f"[INFO] Téléchargement de {tag}…")
+            _panel_log(M(f"[INFO] Téléchargement de {tag}…", f"[INFO] Downloading {tag}…"))
             try:
                 tmp_path, digest = _download_to_temp(zip_url, ".zip", PANEL_ZIP_MAX_BYTES)
             except Exception as e:
-                _panel_log(f"[ERROR] Téléchargement échoué : {e}")
+                _panel_log(M(f"[ERROR] Téléchargement échoué : {e}", f"[ERROR] Download failed: {e}"))
                 return
             if expected:
                 if not hmac.compare_digest(digest, expected):
                     tmp_path.unlink(missing_ok=True)
-                    _panel_log("[ERROR] Somme SHA-256 différente de celle publiée : mise à jour annulée")
+                    _panel_log(M("[ERROR] Somme SHA-256 différente de celle publiée : mise à jour annulée",
+                                 "[ERROR] SHA-256 differs from the published one: update cancelled"))
                     return
-                _panel_log("[OK] Somme SHA-256 vérifiée")
+                _panel_log(M("[OK] Somme SHA-256 vérifiée", "[OK] SHA-256 verified"))
 
-            _panel_log("[INFO] Extraction…")
+            _panel_log(M("[INFO] Extraction…", "[INFO] Extracting…"))
             install_dir = Path("/opt/frp-manager")
             try:
                 import zipfile
@@ -2367,41 +2465,45 @@ def api_panel_update():
                             info.filename = norm_name
                             zf.extract(info, tmpdir)
                         src_dir = Path(tmpdir) / prefix if prefix else Path(tmpdir)
-                        _panel_log(f"[INFO] Source zip : {src_dir} — contenu : {[p.name for p in src_dir.iterdir()] if src_dir.exists() else '?'}")
+                        _panel_log(M("[INFO] Source zip : ", "[INFO] Zip source: ") + f"{src_dir} — "
+                                   + M("contenu : ", "contents: ")
+                                   + f"{[p.name for p in src_dir.iterdir()] if src_dir.exists() else '?'}")
 
                         # Copier app.py, templates/, frp-autoupdate.py, install.sh
                         for item in ["app.py", "frp-autoupdate.py", "templates", "install.sh"]:
                             src = src_dir / item
                             dst = install_dir / item
                             if not src.exists():
-                                _panel_log(f"[WARN] Absent du zip : {item}")
+                                _panel_log(M(f"[WARN] Absent du zip : {item}", f"[WARN] Missing from the zip: {item}"))
                                 continue
                             if src.is_dir():
                                 if dst.exists():
                                     shutil.rmtree(dst)
                                 shutil.copytree(str(src), str(dst))
                                 n = sum(1 for _ in dst.rglob("*") if _.is_file())
-                                _panel_log(f"[INFO] Mis à jour : {item}/ ({n} fichiers)")
+                                _panel_log(M(f"[INFO] Mis à jour : {item}/ ({n} fichiers)", f"[INFO] Updated: {item}/ ({n} files)"))
                             elif src.is_file():
                                 shutil.copy2(str(src), str(dst))
-                                _panel_log(f"[INFO] Mis à jour : {item}")
+                                _panel_log(M(f"[INFO] Mis à jour : {item}", f"[INFO] Updated: {item}"))
 
                         # Dépendances Python de la nouvelle version, dans le même
                         # environnement que le panel (venv de l'installation classique)
                         reqs = src_dir / "requirements.txt"
                         if reqs.exists():
-                            _panel_log("[INFO] Installation des dépendances Python…")
+                            _panel_log(M("[INFO] Installation des dépendances Python…", "[INFO] Installing Python dependencies…"))
                             try:
                                 rc = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", str(reqs)],
                                                     capture_output=True, text=True, timeout=300)
                                 if rc.returncode == 0:
-                                    _panel_log("[INFO] Dépendances à jour")
+                                    _panel_log(M("[INFO] Dépendances à jour", "[INFO] Dependencies up to date"))
                                 else:
-                                    _panel_log(f"[WARN] pip : {(rc.stderr or rc.stdout).strip()[-300:]} — le panel démarrera quand même")
+                                    _panel_log(f"[WARN] pip : {(rc.stderr or rc.stdout).strip()[-300:]} — "
+                                               + M("le panel démarrera quand même", "the panel will start anyway"))
                             except Exception as e:
-                                _panel_log(f"[WARN] pip indisponible ({e}) — le panel démarrera quand même")
+                                _panel_log(M(f"[WARN] pip indisponible ({e}) — le panel démarrera quand même",
+                                             f"[WARN] pip unavailable ({e}): the panel will start anyway"))
             except Exception as e:
-                _panel_log(f"[ERROR] Extraction : {e}")
+                _panel_log(M(f"[ERROR] Extraction : {e}", f"[ERROR] Extraction: {e}"))
                 return
             finally:
                 try: tmp_path.unlink()
@@ -2414,21 +2516,21 @@ def api_panel_update():
                 state = json.loads(p.read_text()) if p.exists() else {}
                 state["panel_version"] = tag.lstrip("v")
                 p.write_text(json.dumps(state, indent=2))
-                _panel_log(f"[INFO] Version {tag} sauvegardée dans state.json")
+                _panel_log(M(f"[INFO] Version {tag} sauvegardée dans state.json", f"[INFO] Version {tag} saved in state.json"))
             except Exception as e:
-                _panel_log(f"[WARN] Impossible de sauvegarder la version : {e}")
+                _panel_log(M(f"[WARN] Impossible de sauvegarder la version : {e}", f"[WARN] Could not save the version: {e}"))
 
-            _panel_log(f"[OK] Panel {tag} installé. Redémarrage dans 2s…")
+            _panel_log(M(f"[OK] Panel {tag} installé. Redémarrage dans 2s…", f"[OK] Panel {tag} installed. Restarting in 2 s…"))
             def restart():
                 time.sleep(2)
-                _panel_log("[INFO] Redémarrage de frp-manager…")
+                _panel_log(M("[INFO] Redémarrage de frp-manager…", "[INFO] Restarting frp-manager…"))
                 subprocess.Popen(["systemctl", "restart", "frp-manager"])
-            threading.Thread(target=restart, daemon=True).start()
+            threading.Thread(target=_in_lang(_lang(), restart), daemon=True).start()
 
         finally:
             panel_update_lock.release()
 
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=_in_lang(_lang(), run), daemon=True).start()
     return jsonify({"ok": True})
 
 @app.route("/api/panel/update/log")
@@ -2456,7 +2558,7 @@ def api_connectivity():
 def api_update_check():
     version, tag, source = _github_cached("frp", fetch_latest_version, fresh=request.args.get("fresh") == "1")
     if not version:
-        return jsonify({"ok": False, "msg": "Toutes les sources inaccessibles."})
+        return jsonify({"ok": False, "msg": M("Toutes les sources inaccessibles.", "All sources unreachable.")})
     installed = load_state().get("installed_version")
     state = load_state()
     state["last_update_check"] = datetime.now().isoformat()
@@ -2468,19 +2570,21 @@ def api_update_check():
 @login_required
 def api_update_install():
     if not update_lock.acquire(blocking=False):
-        return jsonify({"ok": False, "msg": "Mise à jour déjà en cours"})
+        return jsonify({"ok": False, "msg": M("Mise à jour déjà en cours", "An update is already running")})
     global update_log_buf
     update_log_buf = []
     def run():
         try:
             version, tag, source = fetch_latest_version()
             if not version:
-                _log("[ERROR] Toutes les sources inaccessibles. Utilisez l'upload manuel.")
+                _log(M("[ERROR] Toutes les sources inaccessibles. Utilisez l'upload manuel.",
+                        "[ERROR] All sources unreachable. Use the manual upload."))
                 return
-            _log(f"[INFO] Version : {tag} via {source}")
+            _log(f"[INFO] Version: {tag} ({source})")
             tmp, _ = download_archive(version, tag, _log)
             if not tmp:
-                _log("[ERROR] Tous les miroirs ont échoué. Utilisez l'upload manuel.")
+                _log(M("[ERROR] Tous les miroirs ont échoué. Utilisez l'upload manuel.",
+                        "[ERROR] All mirrors failed. Use the manual upload."))
                 return
             try:
                 install_from_archive(tmp, version, _log)
@@ -2489,19 +2593,19 @@ def api_update_install():
                 except OSError: pass
         finally:
             update_lock.release()
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=_in_lang(_lang(), run), daemon=True).start()
     return jsonify({"ok": True})
 
 @app.route("/api/update/upload", methods=["POST"])
 @login_required
 def api_update_upload():
     if not update_lock.acquire(blocking=False):
-        return jsonify({"ok": False, "msg": "Mise à jour déjà en cours"})
+        return jsonify({"ok": False, "msg": M("Mise à jour déjà en cours", "An update is already running")})
     global update_log_buf
     update_log_buf = []
     if "file" not in request.files:
         update_lock.release()
-        return jsonify({"ok": False, "msg": "Aucun fichier reçu"})
+        return jsonify({"ok": False, "msg": M("Aucun fichier reçu", "No file received")})
     f       = request.files["file"]
     version = request.form.get("version", "").strip().lstrip("v")
     if not re.fullmatch(r"[0-9A-Za-z._-]{1,32}", version):
@@ -2516,7 +2620,7 @@ def api_update_upload():
             try: tmp_path.unlink()
             except OSError: pass
             update_lock.release()
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=_in_lang(_lang(), run), daemon=True).start()
     return jsonify({"ok": True})
 
 @app.route("/api/update/log")
@@ -2725,7 +2829,7 @@ def api_ports():
     ufw_ok, allowed = _ufw_allowed_ports()
     for p in ports:
         p["ufw_allowed"] = (p["port"], p["proto"]) in allowed or (p["port"], "any") in allowed
-    return jsonify({"ok": True, "ports": ports, "ufw_available": ufw_ok})
+    return jsonify({"ok": True, "ports": with_port_labels(ports), "ufw_available": ufw_ok})
 
 @app.route("/api/ports/open", methods=["POST"])
 @login_required
@@ -2734,15 +2838,15 @@ def api_ports_open():
     try:
         port = int(data.get("port", 0))
     except (ValueError, TypeError):
-        return jsonify({"ok": False, "msg": "Port invalide"}), 400
+        return jsonify({"ok": False, "msg": M("Port invalide", "Invalid port")}), 400
     if not (1 <= port <= 65535):
-        return jsonify({"ok": False, "msg": "Port invalide"}), 400
+        return jsonify({"ok": False, "msg": M("Port invalide", "Invalid port")}), 400
     proto = data.get("proto", "tcp").lower()
     if proto not in ("tcp", "udp"):
         proto = "tcp"
     ok, out, err = run_cmd(["ufw", "allow", f"{port}/{proto}"])
     msg = (out or err or "").strip()
-    return jsonify({"ok": ok, "msg": msg or f"Port {port}/{proto} {'ouvert' if ok else 'erreur'}"})
+    return jsonify({"ok": ok, "msg": msg or f"Port {port}/{proto} " + (M("ouvert", "opened") if ok else M("erreur", "error"))})
 
 # ── Retrait de go-mmproxy (option « IP réelle », supprimée en 0.0.26) ───────
 # Les installations qui l'utilisaient ont des tunnels frpc pointant vers un relais
@@ -2933,13 +3037,13 @@ def _fw_source(text, note=""):
     if m:
         asn = int(m.group(1))
         if not (1 <= asn <= 4294967295):
-            raise ValueError(f"« {text} » n'est pas un numéro d'AS valide")
+            raise ValueError(M(f"« {text} » n'est pas un numéro d'AS valide", f"“{text}” is not a valid AS number"))
         return {"asn": asn, "note": note}
     try:
         net = ipaddress.ip_network(text, strict=False)
     except ValueError:
-        raise ValueError(f"« {text} » n'est ni une adresse IP, ni un réseau "
-                         f"(203.0.113.0/24), ni un AS (AS16276)")
+        raise ValueError(M(f"« {text} » n'est ni une adresse IP, ni un réseau (203.0.113.0/24), ni un AS (AS16276)",
+                           f"“{text}” is neither an IP address, a network (203.0.113.0/24) nor an AS (AS16276)"))
     cidr = str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
     return {"cidr": cidr, "note": note}
 
@@ -2952,7 +3056,7 @@ def _fw_list_sources(items, skipped=None):
     skip = (lambda text, why: skipped.append({"entry": text, "reason": why})) if skipped is not None else (lambda *a: None)
     for item in items or []:
         if len(sources) >= FW_LIST_MAX_SOURCES:
-            skip("…", f"liste limitée à {FW_LIST_MAX_SOURCES} entrées")
+            skip("…", M(f"liste limitée à {FW_LIST_MAX_SOURCES} entrées", f"list limited to {FW_LIST_MAX_SOURCES} entries"))
             break
         if isinstance(item, dict):
             text = f"AS{item['asn']}" if item.get("asn") else str(item.get("cidr") or "")
@@ -2969,16 +3073,16 @@ def _fw_list_sources(items, skipped=None):
             continue
         if src.get("asn"):
             if asns >= FW_LIST_MAX_ASNS:
-                skip(text, f"{FW_LIST_MAX_ASNS} AS au plus par liste")
+                skip(text, M(f"{FW_LIST_MAX_ASNS} AS au plus par liste", f"{FW_LIST_MAX_ASNS} AS at most per list"))
                 continue
             asns += 1
         else:
             net = ipaddress.ip_network(src["cidr"])
             if not net.is_global:
-                skip(text, "adresse privée ou réservée")
+                skip(text, M("adresse privée ou réservée", "private or reserved address"))
                 continue
             if net.prefixlen < (8 if net.version == 4 else 16):
-                skip(text, "réseau trop large")
+                skip(text, M("réseau trop large", "network too wide"))
                 continue
         key = src.get("asn") or src["cidr"]
         if key in seen:
@@ -3066,8 +3170,12 @@ def _fw_ensure_lists(rules):
     missing = sorted(wanted - set(cache["lists"]))
     if not missing:
         return None
-    return (f"Liste communautaire introuvable dans le catalogue : {', '.join(missing)}"
-            + (f" (catalogue injoignable : {err})" if err else " — retirée ? supprimez la règle qui s'y abonne"))
+    names = ", ".join(missing)
+    return (M(f"Liste communautaire introuvable dans le catalogue : {names}",
+              f"Community list not found in the catalog: {names}")
+            + (M(f" (catalogue injoignable : {err})", f" (catalog unreachable: {err})") if err
+               else M(" — retirée ? supprimez la règle qui s'y abonne",
+                      ": removed? Delete the rule that subscribes to it")))
 
 def _lists_info(rules):
     """{id: résumé} des listes auxquelles des règles s'abonnent (None si inconnue)."""
@@ -3309,13 +3417,15 @@ def _fw_parse_ports(spec):
             continue
         m = re.fullmatch(r"(\d{1,5})(?:-(\d{1,5}))?", part)
         if not m:
-            raise ValueError(f"« {part} » n'est pas un port ni une plage (ex. 30000-30010)")
+            raise ValueError(M(f"« {part} » n'est pas un port ni une plage (ex. 30000-30010)",
+                               f"“{part}” is neither a port nor a range (e.g. 30000-30010)"))
         a, b = int(m.group(1)), int(m.group(2) or m.group(1))
         if not (1 <= a <= b <= 65535):
-            raise ValueError(f"« {part} » : les ports vont de 1 à 65535, dans l'ordre")
+            raise ValueError(M(f"« {part} » : les ports vont de 1 à 65535, dans l'ordre",
+                               f"“{part}”: ports go from 1 to 65535, in order"))
         ranges.append((a, b))
     if not ranges:
-        raise ValueError("Indiquez au moins un port")
+        raise ValueError(M("Indiquez au moins un port", "Enter at least one port"))
     return ranges
 
 def _fw_rule_ranges(rule, known):
@@ -3333,24 +3443,28 @@ def _fw_rule_ranges(rule, known):
             out.append((a, b))
     return out
 
+class RuleError(ValueError):
+    """Règle refusée : message à montrer tel quel."""
+
 def _fw_normalize_rule(raw, index):
     """Valide une règle venue de l'interface. → règle propre, ou ValueError."""
-    where = f"Règle {index + 1}"
+    where = M(f"Règle {index + 1}", f"Rule {index + 1}")
     name = str(raw.get("name") or "").strip()[:60]
     if name:
-        where = f"Règle « {name} »"
+        where = M(f"Règle « {name} »", f"Rule “{name}”")
     mode = raw.get("mode")
     if mode not in FW_MODES:
-        raise ValueError(f"{where} : action inconnue")
+        raise RuleError(M(f"{where} : action inconnue", f"{where}: unknown action"))
     ports = str(raw.get("ports") or "").strip()
     if ports != "*":
         try:
             ranges = _fw_parse_ports(ports)
         except ValueError as e:
-            raise ValueError(f"{where} : {e}")
+            raise RuleError(M(f"{where} : {e}", f"{where}: {e}"))
         panel = _fw_panel_port()
         if ranges == [(panel, panel)]:
-            raise ValueError(f"{where} : le port du panel ({panel}) n'est jamais filtré ici")
+            raise RuleError(M(f"{where} : le port du panel ({panel}) n'est jamais filtré ici",
+                              f"{where}: the panel port ({panel}) is never filtered here"))
         ports = ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in ranges)
     sources = []
     for src in raw.get("sources") or []:
@@ -3364,12 +3478,12 @@ def _fw_normalize_rule(raw, index):
         try:
             sources.append(_fw_source(text, note))
         except ValueError as e:
-            raise ValueError(f"{where} : {e}")
+            raise RuleError(M(f"{where} : {e}", f"{where}: {e}"))
     lst = str(raw.get("list") or "").strip()
     if lst and not FW_LIST_ID.fullmatch(lst):
-        raise ValueError(f"{where} : liste communautaire « {lst} » invalide")
+        raise RuleError(M(f"{where} : liste communautaire « {lst} » invalide", f"{where}: invalid community list “{lst}”"))
     if mode == "block" and not sources and not lst:
-        raise ValueError(f"{where} : indiquez au moins une adresse à bloquer")
+        raise RuleError(M(f"{where} : indiquez au moins une adresse à bloquer", f"{where}: enter at least one address to block"))
     return {"id": re.sub(r"[^0-9a-f]", "", str(raw.get("id") or ""))[:12] or secrets.token_hex(4),
             "name": name, "mode": mode, "ports": ports, "sources": sources,
             **({"list": lst} if lst else {}),
@@ -3630,14 +3744,14 @@ def api_firewall_get():
     client = _client_ip()
     return jsonify({
         "ok": True, "has_frps": has_frps,
-        "available": ok, "nft": out.strip() if ok else (err or "nft introuvable").strip(),
-        "enabled": cfg["enabled"], "rules": cfg["rules"], "ports": known,
+        "available": ok, "nft": out.strip() if ok else (err or M("nft introuvable", "nft not found")).strip(),
+        "enabled": cfg["enabled"], "rules": cfg["rules"], "ports": with_port_labels(known),
         "active": ok and _fw_table_present(),
         "counters": _fw_counters() if ok else {},
         "asns": _asn_info(_fw_rule_asns(cfg["rules"])),
         "lists": _lists_info(cfg["rules"]),
         "client_ip": client,
-        "client_verdicts": _fw_verdicts(client, cfg, known) if client and known and cfg["enabled"] else [],
+        "client_verdicts": with_port_labels(_fw_verdicts(client, cfg, known)) if client and known and cfg["enabled"] else [],
         "panel_port": _fw_panel_port(), "in_docker": IN_DOCKER,
     })
 
@@ -3657,22 +3771,27 @@ _NFT_INSTALLERS = [
 def api_firewall_install():
     """Installe nftables sur la machine (l'hôte en Docker) avec son gestionnaire de paquets."""
     if run_host(["nft", "--version"])[0]:
-        return jsonify({"ok": True, "msg": "nftables est déjà installé."})
+        return jsonify({"ok": True, "msg": M("nftables est déjà installé.", "nftables is already installed.")})
     for manager, steps in _NFT_INSTALLERS:
         if not run_host(["sh", "-c", 'command -v "$1"', "sh", manager])[0]:
             continue
         for cmd in steps:
             ok, out, err = run_host(cmd, timeout=600)
             if not ok:
-                detail = (err or out or "erreur inconnue").strip().splitlines()[-1:]
-                return jsonify({"ok": False, "msg": f"Installation de nftables échouée ({manager}) : "
-                                                    f"{detail[0] if detail else 'erreur inconnue'}"}), 500
+                unknown = M("erreur inconnue", "unknown error")
+                detail = (err or out or unknown).strip().splitlines()[-1:]
+                detail = detail[0] if detail else unknown
+                return jsonify({"ok": False, "msg": M(f"Installation de nftables échouée ({manager}) : {detail}",
+                                                      f"nftables installation failed ({manager}): {detail}")}), 500
         ok, out, err = run_host(["nft", "--version"])
         if not ok:
-            return jsonify({"ok": False, "msg": f"nftables installé, mais nft ne répond pas : {err or out}"}), 500
-        return jsonify({"ok": True, "msg": f"nftables installé ({out.strip()})."})
-    return jsonify({"ok": False, "msg": "Aucun gestionnaire de paquets reconnu (apt, dnf, yum, apk, pacman, zypper) : "
-                                        "installez nftables à la main."}), 400
+            return jsonify({"ok": False, "msg": M(f"nftables installé, mais nft ne répond pas : {err or out}",
+                                                  f"nftables installed, but nft does not respond: {err or out}")}), 500
+        return jsonify({"ok": True, "msg": M(f"nftables installé ({out.strip()}).", f"nftables installed ({out.strip()}).")})
+    return jsonify({"ok": False, "msg": M("Aucun gestionnaire de paquets reconnu (apt, dnf, yum, apk, pacman, zypper) : "
+                                          "installez nftables à la main.",
+                                          "No known package manager (apt, dnf, yum, apk, pacman, zypper): "
+                                          "install nftables by hand.")}), 400
 
 @app.route("/api/firewall", methods=["POST"])
 @login_required
@@ -3680,7 +3799,8 @@ def api_firewall_save():
     global MGR_CFG
     detect_frp(force=False)
     if not _frps_instances():
-        return jsonify({"ok": False, "msg": "Le pare-feu ne filtre que les ports d'un frps : aucun frps sur cette machine."}), 400
+        return jsonify({"ok": False, "msg": M("Le pare-feu ne filtre que les ports d'un frps : aucun frps sur cette machine.",
+                                              "The firewall only filters the ports of an frps: no frps on this machine.")}), 400
     data = request.get_json() or {}
     try:
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
@@ -3688,21 +3808,25 @@ def api_firewall_save():
         return jsonify({"ok": False, "msg": str(e)}), 400
     err = _fw_ensure_lists(rules)
     if err:
-        return jsonify({"ok": False, "msg": f"{err}. Rien n'a changé."}), 502
+        return jsonify({"ok": False, "msg": err + M(". Rien n'a changé.", ". Nothing was changed.")}), 502
     for asn in _fw_rule_asns(rules):
         try:
             _asn_get(asn)
         except Exception as e:
-            return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} "
-                                                f"auprès de RIPEstat, rien n'a changé : {e}"}), 502
+            return jsonify({"ok": False, "msg": M(f"Impossible de récupérer les préfixes de AS{asn} "
+                                                  f"auprès de RIPEstat, rien n'a changé : {e}",
+                                                  f"Could not fetch the prefixes of AS{asn} "
+                                                  f"from RIPEstat, nothing was changed: {e}")}), 502
     new = {"enabled": bool(data.get("enabled")), "rules": rules}
     ok, msg = _fw_apply(new)
     if not ok:
-        return jsonify({"ok": False, "msg": f"nftables a refusé les règles, rien n'a changé : {msg or 'erreur inconnue'}"}), 500
+        return jsonify({"ok": False, "msg": M(f"nftables a refusé les règles, rien n'a changé : {msg or 'erreur inconnue'}",
+                                              f"nftables rejected the rules, nothing was changed: {msg or 'unknown error'}")}), 500
     MGR_CFG = {**MGR_CFG, "firewall": new}
     save_manager_config(MGR_CFG)
     return jsonify({"ok": True, "rules": rules,
-                    "msg": "Pare-feu appliqué" if new["enabled"] else "Pare-feu désactivé : plus aucun filtrage"})
+                    "msg": M("Pare-feu appliqué", "Firewall applied") if new["enabled"]
+                           else M("Pare-feu désactivé : plus aucun filtrage", "Firewall disabled: no more filtering")})
 
 @app.route("/api/firewall/test", methods=["POST"])
 @login_required
@@ -3714,7 +3838,7 @@ def api_firewall_test():
         ipaddress.ip_address(str(data.get("ip", "")).strip())
         rules = [_fw_normalize_rule(r, i) for i, r in enumerate(data.get("rules") or [])]
     except ValueError as e:
-        return jsonify({"ok": False, "msg": str(e) if "Règle" in str(e) else "Adresse IP invalide"}), 400
+        return jsonify({"ok": False, "msg": str(e) if isinstance(e, RuleError) else M("Adresse IP invalide", "Invalid IP address")}), 400
     err = _fw_ensure_lists(rules)
     if err:
         return jsonify({"ok": False, "msg": err}), 502
@@ -3722,9 +3846,10 @@ def api_firewall_test():
         try:
             _asn_get(asn)
         except Exception as e:
-            return jsonify({"ok": False, "msg": f"Impossible de récupérer les préfixes de AS{asn} : {e}"}), 502
+            return jsonify({"ok": False, "msg": M(f"Impossible de récupérer les préfixes de AS{asn} : {e}",
+                                                  f"Could not fetch the prefixes of AS{asn}: {e}")}), 502
     verdicts = _fw_verdicts(str(data["ip"]).strip(), {"enabled": True, "rules": rules}, _fw_known_ports())
-    return jsonify({"ok": True, "verdicts": verdicts})
+    return jsonify({"ok": True, "verdicts": with_port_labels(verdicts)})
 
 @app.route("/api/firewall/lists")
 @login_required
@@ -3747,15 +3872,17 @@ def api_firewall_lists_publish():
     data = request.get_json() or {}
     name = str(data.get("name") or "").strip()[:60]
     if not name:
-        return jsonify({"ok": False, "msg": "Donnez un nom à la liste"}), 400
+        return jsonify({"ok": False, "msg": M("Donnez un nom à la liste", "Give the list a name")}), 400
     lid = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
     lid = re.sub(r"[^a-z0-9]+", "-", lid).strip("-")[:40].strip("-") or f"liste-{secrets.token_hex(3)}"
     skipped = []
     items = [src if data.get("notes", True) else {**src, "note": ""} for src in data.get("sources") or []]
     sources = _fw_list_sources(items, skipped)
     if not sources:
-        return jsonify({"ok": False, "msg": "Aucune adresse publiable : il faut des adresses publiques, "
-                                            "des réseaux d'au plus /8 (/16 en IPv6) ou des AS",
+        return jsonify({"ok": False, "msg": M("Aucune adresse publiable : il faut des adresses publiques, "
+                                              "des réseaux d'au plus /8 (/16 en IPv6) ou des AS",
+                                              "Nothing to publish: public addresses, networks of /8 at most "
+                                              "(/16 for IPv6) or AS numbers are required"),
                         "skipped": skipped}), 400
     mode = "allow" if data.get("mode") == "allow" else "block"
     entry = {"id": lid, "name": name, "mode": mode,

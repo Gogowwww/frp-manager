@@ -1,6 +1,6 @@
 // ── Journaux : 200 dernières lignes ou flux en direct (WebSocket, repli SSE) ──
 
-import { t } from '../i18n.js';
+import { t, getLocale } from '../i18n.js';
 import { api } from '../api.js';
 import { store, instanceIds, displayName, isDocker } from '../store.js';
 import { h, icon, button, busy, select, segmented, emptyState, pageHeader, toast, toastError } from '../ui.js';
@@ -133,7 +133,7 @@ function appendLive(text) {
  *  history = lignes déjà écrites à renvoyer : 50 au départ, 0 à la reconnexion. */
 function liveQuery(history) {
   const src = isDocker(store.instances[S.iid]) ? 'docker' : S.source;
-  return `?source=${encodeURIComponent(src)}&history=${history}`;
+  return `?source=${encodeURIComponent(src)}&history=${history}&lang=${getLocale()}`;
 }
 
 /**

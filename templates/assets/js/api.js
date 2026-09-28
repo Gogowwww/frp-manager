@@ -3,7 +3,7 @@
 //   api()   → renvoie le JSON tel quel (l'appelant lit d.ok)
 //   apiOk() → lève ApiError si d.ok est faux
 
-import { t } from './i18n.js';
+import { t, getLocale } from './i18n.js';
 
 export class ApiError extends Error {
   constructor(message, data = null) {
@@ -20,7 +20,8 @@ export function csrfToken() {
 }
 
 export async function api(path, { method = 'GET', body, form, signal } = {}) {
-  const init = { method, headers: { Accept: 'application/json' }, signal, credentials: 'same-origin' };
+  // X-Lang : les messages du serveur suivent la langue de l'interface
+  const init = { method, headers: { Accept: 'application/json', 'X-Lang': getLocale() }, signal, credentials: 'same-origin' };
   if (method !== 'GET') init.headers['X-CSRF-Token'] = csrfToken();
   if (form) {
     init.body = form;

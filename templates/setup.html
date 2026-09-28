@@ -53,7 +53,7 @@
 </main>
 
 <script type="module" nonce="{{ csp_nonce() }}">
-  import { initI18n, applyI18n, t } from "{{ asset('js/i18n.js') }}";
+  import { initI18n, applyI18n, t, getLocale } from "{{ asset('js/i18n.js') }}";
   import { csrfToken } from "{{ asset('js/api.js') }}";
 
   const MIN_LENGTH = 12;
@@ -78,7 +78,7 @@
     try {
       const r = await fetch('/api/setup', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken(), 'X-Lang': getLocale() },
         body: JSON.stringify({ username, password }),
       });
       const d = await r.json();
