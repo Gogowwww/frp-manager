@@ -10,8 +10,11 @@ services:
     # Réseau hôte — le panel écoute directement sur les ports de la machine
     network_mode: host
 
-    # pid: host + privileged permettent à nsenter d'accéder au systemd de l'hôte
-    # sans avoir à installer systemd dans le container
+    # ATTENTION : pid: host + privileged donnent à ce conteneur un accès
+    # ÉQUIVALENT À ROOT SUR L'HÔTE. Le panel s'en sert pour piloter le systemd
+    # de l'hôte avec nsenter (services frp, journaux, nftables, fichiers).
+    # Quiconque se connecte au panel, ou exploite une faille du panel, contrôle
+    # donc la machine hôte. Détails et pistes de réduction : docs/docker.md.
     pid: host
     privileged: true
 
@@ -38,8 +41,16 @@ services:
 
       # ── Socket Docker (détection et contrôle des containers frpc/frps) ──────
       # Permet à frp-manager de voir et gérer les containers frpc/frps
-      # tournant dans d'autres stacks Portainer (start/stop/restart + logs)
+      # tournant dans d'autres stacks Portainer (start/stop/restart + logs).
+      # Le socket Docker est lui aussi un accès équivalent à root sur l'hôte.
       - /var/run/docker.sock:/var/run/docker.sock
 
     environment:
       - FRP_MANAGER_PORT=8765
+      # Nouvelle installation : le panel n'écoute que sur 127.0.0.1 (accès par
+      # tunnel SSH ou reverse proxy local). Pour l'ouvrir au réseau local,
+      # décommenter la ligne suivante, créer l'identifiant sans attendre, et
+      # filtrer l'accès (pare-feu, VPN) :
+      # - FRP_MANAGER_HOST=0.0.0.0
+      # Désactiver les miroirs de téléchargement tiers (ghproxy, ghfast, gh-proxy) :
+      # - FRP_MANAGER_NO_MIRRORS=1
