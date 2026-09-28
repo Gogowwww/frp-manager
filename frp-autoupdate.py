@@ -6,14 +6,17 @@ Sends a Discord notification on success or failure (optional).
 """
 
 import os
+import re
 import sys
 import json
+import hmac
 import shutil
+import hashlib
 import tarfile
 import tempfile
 import platform
 import requests
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -21,17 +24,24 @@ FRP_BIN_DIR    = Path("/usr/local/bin")
 FRP_CONF_DIR   = Path("/etc/frp")
 FRP_LOG_DIR    = Path("/var/log/frp")
 FRP_STATE_FILE = Path("/var/lib/frp-manager/state.json")
+MGR_CONF_FILE  = Path(os.environ.get("FRP_MANAGER_CONFIG") or "/etc/frp-manager/frp-manager.json")
 GITHUB_RELEASES = "https://api.github.com/repos/fatedier/frp/releases/latest"
 VERSION_APIS = [
     "https://api.github.com/repos/fatedier/frp/releases/latest",
-    "https://mirror.ghproxy.com/https://api.github.com/repos/fatedier/frp/releases/latest",
 ]
-RELEASE_MIRRORS = [
-    "https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://mirror.ghproxy.com/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://ghfast.top/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://gh-proxy.com/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
+RELEASE_DOWNLOAD = "https://github.com/fatedier/frp/releases/download/{tag}/{filename}"
+# Miroirs TIERS (voir app.py) : seulement si download_mirrors est vrai dans
+# frp-manager.json, et jamais sans somme SHA-256 pour vérifier l'archive.
+THIRD_PARTY_MIRRORS = [
+    "https://mirror.ghproxy.com/" + RELEASE_DOWNLOAD,
+    "https://ghfast.top/" + RELEASE_DOWNLOAD,
+    "https://gh-proxy.com/" + RELEASE_DOWNLOAD,
 ]
+CHECKSUMS_FILE = "frp_sha256_checksums.txt"
+TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024
+ARCHIVE_MAX_MEMBERS = 1000
+ARCHIVE_MAX_UNPACKED = 300 * 1024 * 1024
 
 # Optional: set DISCORD_WEBHOOK env var or hardcode here
 DISCORD_WEBHOOK = os.environ.get("FRP_DISCORD_WEBHOOK", "")
@@ -58,6 +68,83 @@ def save_state(state):
     FRP_STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+def mirrors_allowed():
+    if os.environ.get("FRP_MANAGER_NO_MIRRORS", "") in ("1", "true", "yes"):
+        return False
+    try:
+        return json.loads(MGR_CONF_FILE.read_text()).get("download_mirrors", True) is not False
+    except Exception:
+        return True
+
+
+def release_urls(tag, filename):
+    tpls = [RELEASE_DOWNLOAD] + (THIRD_PARTY_MIRRORS if mirrors_allowed() else [])
+    return [t.format(tag=tag, filename=filename) for t in tpls]
+
+
+def redact(text):
+    """Pas d'URL de webhook (elle contient un jeton) dans les journaux."""
+    text = str(text)
+    if DISCORD_WEBHOOK:
+        text = text.replace(DISCORD_WEBHOOK, "<webhook masqué>")
+    return re.sub(r"(/api/webhooks/\d+/)[\w-]+", r"\1<masqué>", text)
+
+
+def fetch_checksums(tag):
+    for url in release_urls(tag, CHECKSUMS_FILE):
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            sums = {}
+            for line in r.text[:1_000_000].splitlines():
+                m = re.fullmatch(r"\s*([0-9a-fA-F]{64})\s+\*?(\S+)\s*", line)
+                if m:
+                    sums[m.group(2)] = m.group(1).lower()
+            if sums:
+                if not url.startswith("https://github.com/"):
+                    log(f"  ATTENTION : sommes de contrôle obtenues via le miroir tiers {url.split('/')[2]}")
+                return sums
+        except Exception:
+            continue
+    return {}
+
+
+def extract_binaries(archive, dest):
+    """frps/frpc seulement, sans extractall : chemins suspects, liens et bombes
+    de décompression refusés (même logique que extract_frp_binaries d'app.py)."""
+    found, total, count = {}, 0, 0
+    with tarfile.open(archive, "r:gz") as tf:
+        for m in tf:
+            count += 1
+            if count > ARCHIVE_MAX_MEMBERS:
+                raise ValueError("archive refusée : trop d'entrées")
+            parts = PurePosixPath(m.name).parts
+            if m.name.startswith(("/", "\\")) or ".." in parts or "\\" in m.name:
+                raise ValueError(f"archive refusée : chemin suspect {m.name!r}")
+            base = parts[-1] if parts else ""
+            if m.issym() or m.islnk():
+                if base in ("frps", "frpc"):
+                    raise ValueError(f"archive refusée : {m.name} est un lien")
+                continue
+            if not m.isfile():
+                continue
+            total += m.size
+            if total > ARCHIVE_MAX_UNPACKED:
+                raise ValueError("archive refusée : trop volumineuse une fois décompressée")
+            if base not in ("frps", "frpc") or len(parts) > 2 or base in found:
+                continue
+            src, out = tf.extractfile(m), Path(dest) / base
+            with open(out, "wb") as f:
+                shutil.copyfileobj(src, f, 65536)
+            if out.stat().st_size != m.size:
+                raise ValueError("archive refusée : taille incohérente")
+            with open(out, "rb") as f:
+                if f.read(4) != b"\x7fELF":
+                    raise ValueError(f"archive refusée : {m.name} n'est pas un exécutable Linux")
+            found[base] = out
+    return found
+
+
 def get_arch():
     machine = platform.machine().lower()
     arch_map = {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "arm"}
@@ -72,6 +159,8 @@ def fetch_latest_release():
             r.raise_for_status()
             data = r.json()
             tag     = data["tag_name"]
+            if not TAG_RE.fullmatch(tag):
+                raise ValueError(f"tag inattendu : {tag!r}")
             version = tag.lstrip("v")
             assets  = data.get("assets", [])
             return version, tag, assets
@@ -82,7 +171,8 @@ def fetch_latest_release():
     try:
         r = requests.head("https://github.com/fatedier/frp/releases/latest", timeout=30, allow_redirects=False)
         tag = r.headers.get("Location", "").rstrip("/").rsplit("/releases/tag/", 1)[1]
-        return tag.lstrip("v"), tag, []
+        if TAG_RE.fullmatch(tag):
+            return tag.lstrip("v"), tag, []
     except Exception:
         pass
     raise RuntimeError("Tous les endpoints de version sont inaccessibles")
@@ -102,21 +192,39 @@ def install_version(version, tag, assets):
     filename = f"frp_{version}_linux_{arch}.tar.gz"
 
     log(f"Téléchargement de {filename}…")
+    expected = fetch_checksums(tag).get(filename)
+    if not expected:
+        log(f"  ATTENTION : pas de somme de contrôle pour {filename}, intégrité non vérifiable")
     tmp_path = None
-    for mirror_tpl in RELEASE_MIRRORS:
-        url = mirror_tpl.format(tag=tag, filename=filename)
+    for url in release_urls(tag, filename):
         source = url.split('/')[2]
-        log(f"  Tentative via {source}…")
+        third = not url.startswith("https://github.com/")
+        if third and not expected:
+            log(f"  {source} ignoré : miroir tiers sans somme de contrôle")
+            continue
+        log(f"  Tentative via {source}…" + (" (miroir tiers)" if third else ""))
         try:
+            digest, size, candidate = hashlib.sha256(), 0, None
             with requests.get(url, stream=True, timeout=120) as r:
                 r.raise_for_status()
                 with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+                    candidate = Path(tmp.name)
                     for chunk in r.iter_content(65536):
+                        size += len(chunk)
+                        if size > DOWNLOAD_MAX_BYTES:
+                            raise ValueError("fichier trop volumineux")
+                        digest.update(chunk)
                         tmp.write(chunk)
-                    tmp_path = Path(tmp.name)
-            log(f"  Téléchargé depuis {source}")
+            if expected and not hmac.compare_digest(digest.hexdigest(), expected):
+                candidate.unlink(missing_ok=True)
+                log(f"  {source} : somme SHA-256 différente de celle publiée, fichier rejeté")
+                continue
+            tmp_path = candidate
+            log(f"  Téléchargé depuis {source}" + (", SHA-256 vérifiée" if expected else " (non vérifié)"))
             break
         except Exception as e:
+            if candidate:
+                candidate.unlink(missing_ok=True)
             log(f"  Échec {source}: {e}")
             continue
 
@@ -150,13 +258,11 @@ def install_version(version, tag, assets):
     log("Extraction…")
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            with tarfile.open(tmp_path, "r:gz") as tf:
-                tf.extractall(tmpdir)
-            extracted_dir = next(Path(tmpdir).iterdir())
+            extracted = extract_binaries(tmp_path, tmpdir)
             for binary in ["frps", "frpc"]:
-                src = extracted_dir / binary
+                src = extracted.get(binary)
                 dst = FRP_BIN_DIR / binary
-                if src.exists():
+                if src:
                     shutil.copy2(str(src), str(dst))
                     dst.chmod(0o755)
                     log(f"  → {dst}")
@@ -184,7 +290,7 @@ def send_discord(msg):
     try:
         requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=10)
     except Exception as e:
-        log(f"Discord notification failed: {e}")
+        log(f"Discord notification failed: {redact(e)}")
 
 
 def run_cmd(cmd):
@@ -194,7 +300,6 @@ def run_cmd(cmd):
 
 
 def restart_services(services_to_restart):
-    import subprocess
     for svc in services_to_restart:
         ok = run_cmd(["systemctl", "is-active", "--quiet", svc])
         if ok:
@@ -245,7 +350,7 @@ def main():
         send_discord(
             f"❌ **frp auto-update échoué** sur `{platform.node()}`\n"
             f"• Version cible: `v{latest_version}`\n"
-            f"• Erreur: {e}"
+            f"• Erreur: {redact(e)}"
         )
         # Ne pas faire échouer le service systemd même si l'update rate
         sys.exit(0)
