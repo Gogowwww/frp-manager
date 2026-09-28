@@ -1,344 +1,103 @@
-# 🌐 FRP Manager
+# FRP Manager
 
-> 🚀 **Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/fatedier/frp)** (fast reverse proxy) : pilotez **frps** & **frpc** sans ligne de commande — services, tunnels et ports ouverts, pare-feu nftables, configuration, journaux en direct et mises à jour, dans une interface claire, en clair ou en sombre, sur ordinateur comme sur mobile.
+Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/fatedier/frp) : pilotez **frps** et **frpc** depuis le navigateur, au lieu d'éditer des fichiers TOML, de redémarrer des services systemd et de lire les journaux en SSH.
 
-![License](https://img.shields.io/github/license/Gogowwww/frp-manager)
-![Version](https://img.shields.io/github/v/release/Gogowwww/frp-manager)
-![Platform](https://img.shields.io/badge/platform-Linux-blue)
-![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
-[![Stars](https://img.shields.io/github/stars/Gogowwww/frp-manager?style=flat&color=yellow)](https://github.com/Gogowwww/frp-manager/stargazers)
-[![Built with Claude](https://img.shields.io/badge/Vibecoded%20with-Claude-D97706?logo=anthropic&logoColor=white)](https://claude.ai)
+[![Licence](https://img.shields.io/github/license/Gogowwww/frp-manager)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Gogowwww/frp-manager)](https://github.com/Gogowwww/frp-manager/releases)
+![Plateforme](https://img.shields.io/badge/platform-Linux-blue)
+[![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
+[![Démo en ligne](https://img.shields.io/badge/d%C3%A9mo-demo--frp--manager.gogow.fr-0e9f6e)](https://demo-frp-manager.gogow.fr)
 
-<p align="center">
-  <a href="README.md"><img alt="English" src="https://img.shields.io/badge/🇬🇧_English-555?style=for-the-badge"></a>
-  <a href="README.fr.md"><img alt="Français" src="https://img.shields.io/badge/🇫🇷_Français-2ea44f?style=for-the-badge"></a>
-</p>
+[English](README.md) · **Français**
 
-<p align="center">
-  <a href="https://demo-frp-manager.gogow.fr"><img alt="Démo en ligne" src="https://img.shields.io/badge/▶_Démo_en_ligne-demo--frp--manager.gogow.fr-0e9f6e?style=for-the-badge"></a>
-</p>
+![Tableau de bord de FRP Manager](panel/home.png)
 
-> 🎮 **[Essayer la démo en ligne](https://demo-frp-manager.gogow.fr)** : la vraie interface avec des données fictives, rien à installer. Tout est cliquable, rien n'est réellement modifié.
+## Démarrage rapide
 
----
-
-## 📑 Sommaire
-
-- [🖥️ Aperçu](#️-aperçu)
-- [📖 Présentation](#-présentation)
-- [✨ Fonctionnalités](#-fonctionnalités)
-- [📋 Prérequis](#-prérequis)
-- [⚙️ Installation](#️-installation)
-- [🏷️ Versions et pré-releases](#️-versions-et-pré-releases)
-- [🔧 Configuration du panel](#-configuration-du-panel)
-- [🗂️ Structure des fichiers](#️-structure-des-fichiers)
-- [🌍 Traduire le panel](#-traduire-le-panel)
-- [🔒 Sécurité](#-sécurité)
-- [🗑️ Désinstallation](#️-désinstallation)
-- [🤝 Contribuer](#-contribuer)
-- [📄 Licence](#-licence)
-
----
-
-## 🖥️ Aperçu
-
-> 🎮 Plutôt que des captures, essayez-la dans la **[démo en ligne](https://demo-frp-manager.gogow.fr)**.
-
-| Tableau de bord | Ports |
-|:---:|:---:|
-| ![Tableau de bord](panel/home.png) | ![Ports](panel/tunnels.png) |
-| **Ouverture d'un port** | **Journaux en direct** |
-| ![Ouverture d'un port](panel/tunnel-editor.png) | ![Journaux](panel/logs.png) |
-
-<details>
-<summary>⚙️ Réglages</summary>
-
-![Réglages](panel/settings.png)
-
-</details>
-
----
-
-## 📖 Présentation
-
-**FRP Manager** gère vos instances **frps** (le serveur, sur la machine publique) et **frpc** (le client, qui expose vos services locaux à travers lui) depuis un navigateur.
-
-Il détecte tout seul vos services systemd et vos conteneurs Docker frp, démarre en **HTTPS** avec un certificat auto-signé généré au premier lancement, et fonctionne aussi bien avec une seule instance qu'avec plusieurs serveurs frp en parallèle.
-
-> 💡 **Pourquoi FRP Manager ?**
-> frp est puissant, mais sa gestion reste manuelle : fichiers TOML, redémarrages systemd, logs via SSH. FRP Manager réunit tout ça dans une interface pensée pour être comprise sans connaître frp par cœur, tout en montrant la clé TOML de chaque réglage pour les habitués.
-
----
-
-## ✨ Fonctionnalités
-
-### 📊 Tableau de bord
-- 🔍 **Détection automatique** des services frps/frpc (units systemd, binaires, configs) et des conteneurs Docker frp
-- 🪪 **Une carte par instance** : état en clair (*En marche*, *Arrêté*, *Introuvable*), version, fichier de config, service
-- ▶️ **Démarrer / Arrêter / Redémarrer** en un clic, **démarrage automatique** en interrupteur, rechargement de la config
-- 🛑 **Confirmation avant d'arrêter** un frpc : si vous accédez au panel à travers l'un de ses ports, vous êtes prévenu
-- ✏️ **Surnoms** d'instances (*« Serveur maison »*, *« Accès bureau »*…)
-- 🔔 Alertes utiles en haut de page : panel sans mot de passe, mise à jour disponible
-- ⚡ **État en direct** : poussé par WebSocket dès qu'un service change (repli sur une vérification toutes les 12 s si le WebSocket ne passe pas)
-
-### 🔌 Ports (frpc)
-- 🗺️ **Liste lisible** : chaque port montre son chemin `vps.exemple.net:25565 → 127.0.0.1:25565`
-- 📝 **Éditeur guidé** : `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp`, avec une explication pour chaque type ; port public, domaines ou clé secrète selon le type ; options PROXY protocol v1/v2, chiffrement, compression
-- 🔐 **Visiteurs** (`[[visitors]]`) : accès local à un port privé STCP/XTCP partagé par une autre machine
-- 💾 **Brouillon puis enregistrement** : les modifications s'accumulent, une barre propose *Enregistrer* ou *Enregistrer et redémarrer frpc* ; avertissement si vous quittez sans enregistrer
-- 🧷 **Rien n'est perdu** : les réglages que l'interface ne gère pas (`subdomain`, `plugin`, `[proxies.healthCheck]`…) sont conservés tels quels
-
-### 🛡️ Pare-feu (frps)
-- 🚦 **Qui peut se connecter** aux ports qu'ouvre frps : règles *Autoriser seulement* (liste blanche) ou *Bloquer* (liste noire), sur des ports choisis ou sur **tous les ports frp**
-- 🏢 **Par adresse, réseau ou opérateur entier** : `203.0.113.4`, `198.51.100.0/24` ou un numéro d'AS (`AS16276`), dont les préfixes sont récupérés auprès de RIPEstat et rafraîchis chaque jour
-- 🔎 **Ports détectés tout seuls** : `bindPort`, ports vhost, KCP/QUIC, `allowPorts`, et les ports ouverts par les clients (via le tableau de bord de frps, s'il est activé) ; la liste est suivie automatiquement
-- 🧱 **Filtrage par le noyau** (nftables, table dédiée `inet frp_manager`), avant le NAT de Docker : un frps en conteneur est filtré aussi, et **le filtrage continue si le panel s'arrête**
-- 🙅 Le pare-feu **ne fait que bloquer** : il n'ouvre jamais un port et ne touche ni à ufw ni aux règles de Docker ; le port du panel et la boucle locale ne sont jamais filtrés
-- 🧪 **Tester une adresse** avant d'appliquer, **alerte** si vos règles bloqueraient votre propre IP
-- 📡 **Connexions bloquées en temps réel** (WebSocket, repli automatique) : adresse, opérateur (AS), port, règle, compteur par règle ; un clic bloque l'adresse ou tout son AS
-- 🌍 **Listes communautaires** (à bloquer ou à autoriser seulement) : abonnez-vous en un clic à une liste du catalogue (règle tenue à jour toute seule), ou **publiez** la vôtre : le panel prépare une issue GitHub, vous l'envoyez, elle est vérifiée et ajoutée automatiquement en quelques minutes ; le catalogue vit sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists)
-
-> ℹ️ Nécessite `nftables` sur la machine : s'il manque, la page propose un bouton **Installer nftables** (apt, dnf, yum, apk, pacman ou zypper). La page n'apparaît que si un frps tourne sur la machine.
-
-### ⚙️ Configuration (frps / frpc)
-- 🧩 **Formulaire par sections** : l'essentiel visible (connexion, authentification, tableau de bord frp), le reste replié dans *Réglages avancés* (TLS, ports KCP/QUIC/vhost, limites, journalisation)
-- 🏷️ Chaque champ affiche sa **clé TOML** et une aide courte
-- 🛡️ Les ports d'un frpc sont **préservés** quand vous enregistrez sa configuration
-
-### 📜 Journaux
-- 📂 Source **journal systemd**, **fichier de log** ou **conteneur Docker** (avec ou sans `tty`)
-- 📡 **Flux en direct par WebSocket** (`wss://` sur le panel en HTTPS) sur la source choisie (journal systemd ou fichier), avec repli automatique sur SSE si le WebSocket ne passe pas ; coloration des erreurs et avertissements, **filtre** de lignes
-
-> 🔀 Derrière un reverse proxy, autorisez la mise à niveau WebSocket sur `/ws/` (nginx : `proxy_http_version 1.1;` + en-têtes `Upgrade` et `Connection`). Sans ça, le panel retombe simplement sur SSE.
-
-### ⬆️ Mises à jour
-- **frp** : vérification de la dernière version, installation en un clic avec **miroirs de secours** (ghproxy, ghfast, gh-proxy), **upload manuel** d'une archive si GitHub est inaccessible, test d'accès aux sources
-- **Panel** : mise à jour en un clic (installation classique) ou commande `docker pull` à copier (Docker) ; une **pré-release ne propose jamais de mise à jour** (voir [Versions et pré-releases](#️-versions-et-pré-releases))
-
-### 🎛️ Réglages
-- 🔐 Identifiant et mot de passe du panel
-- 🌐 Adresse et port d'écoute, durée de session
-- 🎨 **Thème** système / clair / sombre, **langue** : français, anglais en aperçu (sortie officielle dans une prochaine version)
-
-### 🐳 Docker
-- Le panel peut tourner **dans un conteneur** et piloter frp **sur l'hôte** (via `nsenter`, sans systemd dans l'image)
-- Il détecte et contrôle aussi les **conteneurs frpc/frps** d'autres stacks (démarrer, arrêter, redémarrer, journaux, ports)
-
----
-
-## 📋 Prérequis
-
-- 🐧 Linux avec **systemd**
-- 🐍 **Python 3.8+** (installation classique) ou **Docker**
-- 🏗️ Architectures : `amd64`, `arm64`, `arm`
-
-> ℹ️ **Pas besoin d'installer frp avant** : `install.sh` télécharge `frps`/`frpc` et crée leurs services systemd. frp se met ensuite à jour depuis la page **Mises à jour**.
-
----
-
-## ⚙️ Installation
-
-### 🥇 Méthode 1 — Script d'installation (recommandée)
+Avec Docker Compose, sur la machine qui fait (ou fera) tourner frps ou frpc :
 
 ```bash
-# 1. Télécharger la dernière release
-curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
-unzip frp-manager.zip && cd frp-manager
-
-# 2. Installer (root requis)
-sudo bash install.sh
-```
-
-Le script installe le panel dans un environnement Python isolé, crée le service systemd `frp-manager` et le démarre. Il **prépare aussi frp** :
-
-- ⬇️ binaires `frps` / `frpc` dans `/usr/local/bin` (dernière version, avec miroirs de secours) ;
-- 📄 configs par défaut `/etc/frp/frps.toml` et `/etc/frp/frpc.toml`, **uniquement si elles n'existent pas** ;
-- 🧱 services `frps.service` et `frpc.service`, créés mais **ni activés ni démarrés** : vous les configurez puis les lancez depuis le panel.
-
-### 🐳 Méthode 2 — Docker / Portainer
-
-**Docker Compose :**
-```bash
-git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
+curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
 docker compose up -d
 ```
 
-**Portainer :** *Stacks → Add stack → Repository*, URL `https://github.com/Gogowwww/frp-manager`, compose path `docker-compose.yml`, puis *Deploy the stack*.
+Le panel n'écoute que sur `127.0.0.1:8765`. Depuis votre ordinateur, ouvrez un tunnel SSH avec `ssh -L 8765:127.0.0.1:8765 utilisateur@serveur`, allez sur `https://127.0.0.1:8765` et créez l'identifiant administrateur. Pour l'ouvrir à votre réseau, voir [Accéder au panel depuis un autre poste](docs/installation.fr.md#accéder-au-panel-depuis-un-autre-poste).
 
-| Image | Contenu |
-|---|---|
-| `ghcr.io/gogowwww/frp-manager:latest` | dernière release stable (**recommandé**) |
-| `ghcr.io/gogowwww/frp-manager:X.Y.Z` | une version précise, pour la figer ou revenir en arrière |
-| `ghcr.io/gogowwww/frp-manager:dev` | dernière pré-release, pour tester avant tout le monde |
-
-> 🔧 Le conteneur utilise `pid: host` et `nsenter` pour atteindre le systemd de l'hôte, et le socket Docker pour les conteneurs frp. Les binaires frp sont lus et écrits dans `/usr/local/bin` de l'hôte via le montage `/host/usr/local/bin`.
-
-L'interface est ensuite accessible sur :
-```
-https://VOTRE_IP:8765
-```
-
-> ⚠️ Le certificat est auto-signé : le navigateur affiche un avertissement au premier accès, c'est normal. Pour un certificat valide, placez le panel derrière un reverse proxy (nginx, Caddy).
-
----
-
-## 🏷️ Versions et pré-releases
-
-Chaque nouvelle version sort d'abord en **pré-release**, pour être testée avant d'être proposée à tout le monde. Les numéros se suivent (`0.0.25`, `0.0.26`…) et une pré-release validée devient la release définitive **avec le même numéro**, sans être reconstruite.
-
-| | Pré-release | Release |
-|---|---|---|
-| Page GitHub | marquée *Pre-release* | *Latest* |
-| Image Docker | `:X.Y.Z` + `:dev` | `:X.Y.Z` + `:latest` |
-| Proposée aux panels stables | ❌ | ✅ |
-| Proposée aux panels en pré-release (installation classique) | ✅ | ✅ |
-
-- **Panel stable** : il ne voit que les releases, jamais les pré-releases.
-- **Panel en pré-release, installation classique** : il suit le canal des pré-releases et le bouton « Mettre à jour » propose la version publiée la plus récente, pré-release ou release.
-- **Panel en pré-release sous Docker** : aucune mise à jour proposée dans l'interface ; changez le tag de l'image (`:dev` pour suivre les pré-releases, `:latest` pour revenir aux releases).
-
-Quand la pré-release installée devient une release définitive, le panel repasse de lui-même sur le canal stable.
-
-> ℹ️ **0.0.26 : l'option « IP réelle » (go-mmproxy) est retirée.** Si vous l'utilisiez, le panel remet automatiquement les tunnels concernés sur leur vrai service au premier démarrage, redémarre frpc, puis supprime les relais, les règles de routage et le binaire `go-mmproxy`. Pour transmettre l'IP des visiteurs, utilisez l'option **PROXY protocol** avec un service qui la prend en charge (nginx, HAProxy…).
-
----
-
-## 🔧 Configuration du panel
-
-Tout se règle depuis la page **Réglages**. Le fichier sous-jacent est `/etc/frp-manager/frp-manager.json` :
-
-```json
-{
-  "bind_host": "0.0.0.0",
-  "bind_port": 8765,
-  "username": "admin",
-  "password_hash": "",
-  "session_timeout": 3600,
-  "ssl_enabled": true,
-  "nicknames": {}
-}
-```
-
-| 🔑 Clé | 📝 Description | 🎯 Défaut |
-|---|---|---|
-| `bind_host` | Adresse d'écoute (`127.0.0.1` derrière un reverse proxy) | `0.0.0.0` |
-| `bind_port` | Port du panel | `8765` |
-| `username` | Identifiant de connexion | `admin` |
-| `password_hash` | Mot de passe haché (géré par l'interface) | `""` *(aucun)* |
-| `session_timeout` | Durée de session en secondes | `3600` |
-| `ssl_enabled` | HTTPS avec certificat auto-signé | `true` |
-| `nicknames` | Surnoms des instances (gérés par l'interface) | `{}` |
-
-> 🔁 `bind_host`, `bind_port` et `ssl_enabled` s'appliquent au prochain redémarrage de `frp-manager`.
-
----
-
-## 🗂️ Structure des fichiers
-
-```
-📦 Dépôt
-  app.py                   # Serveur Flask + API
-  frp-autoupdate.py        # Mise à jour automatique de frp (cron)
-  install.sh               # Installation classique
-  Dockerfile, docker-compose.yml
-  templates/
-    index.html, login.html # Pages (coquille)
-    partials/icons.html    # Icônes SVG
-    assets/
-      css/app.css          # Design system (thèmes clair/sombre)
-      js/                  # Application (modules ES, sans étape de build)
-        pages/             # Tableau de bord, Ports, Configuration, Journaux…
-      locales/fr.js, en.js # Textes de l'interface (français, anglais)
-
-📁 /opt/frp-manager/        # Panel installé (méthode script)
-📁 /etc/frp-manager/        # Configuration du panel + certificats SSL
-📁 /etc/frp/                # Configurations frps/frpc (TOML)
-📁 /var/log/frp/            # Journaux frp
-📁 /var/lib/frp-manager/    # État (versions installées)
-📁 /etc/systemd/system/     # frp-manager.service, frps.service, frpc.service
-📁 /etc/cron.d/             # frp-autoupdate (vérification quotidienne, 03h00)
-```
-
----
-
-## 🌍 Traduire le panel
-
-Tous les textes de l'interface sont dans `templates/assets/locales/` : `fr.js` (langue de référence) et `en.js` (anglais). Pour ajouter une langue :
-
-1. Copier `fr.js` en `<code>.js` (`de.js`, `es.js`…) et traduire les valeurs, sans toucher aux clés ni aux `{paramètres}` ;
-2. Déclarer la langue dans `LOCALES` de `templates/assets/js/i18n.js` ;
-3. Elle apparaît dans **Réglages → Préférences → Langue**, et le navigateur la choisit automatiquement si elle correspond à sa langue.
-
-Une langue encore en préparation va aussi dans `PREVIEW_LOCALES` : elle est proposée dans les Réglages avec la mention *aperçu*, mais jamais choisie d'après le navigateur. C'est le cas de l'anglais jusqu'à sa sortie officielle.
-
-> Les messages renvoyés par le serveur restent pour l'instant en français.
-
----
-
-## 🔒 Sécurité
-
-- 🔑 **Définissez un mot de passe** dès l'installation (**Réglages → Sécurité**) : le tableau de bord vous le rappelle tant qu'il n'y en a pas
-- 🧱 **Limitez l'accès par IP** (pare-feu) ou écoutez sur `127.0.0.1` derrière un reverse proxy
-- 📜 Pour un **certificat valide**, utilisez un reverse proxy (nginx, Caddy) avec Let's Encrypt
-- 🎲 Utilisez un **jeton frp long et unique** par serveur
-
----
-
-## 🗑️ Désinstallation
+Sans Docker, le script d'installation met en place le panel, frp et leurs services systemd :
 
 ```bash
-sudo systemctl disable --now frp-manager
-sudo rm /etc/systemd/system/frp-manager.service
-sudo rm -rf /opt/frp-manager /etc/frp-manager /etc/cron.d/frp-autoupdate
-sudo systemctl daemon-reload
+curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
+unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
 
-> ⚠️ Les configurations frp (`/etc/frp/`) et les binaires (`/usr/local/bin/`) sont conservés.
+Pas encore prêt à installer ? La [démo en ligne](https://demo-frp-manager.gogow.fr) fait tourner la vraie interface avec des données fictives.
 
----
+## Fonctionnalités
 
-## 🤝 Contribuer
+- **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms.
+- **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression. Les réglages que l'éditeur ne gère pas sont conservés tels quels.
+- **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
+- **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
+- **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
+- **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
+- **Interface** : thèmes clair et sombre, ordinateur et mobile, français et anglais (anglais en aperçu : certains messages du serveur restent en français).
 
-Les contributions sont les bienvenues :
+| Ports | Éditeur de port | Journaux en direct |
+|:---:|:---:|:---:|
+| ![Ports](panel/tunnels.png) | ![Éditeur de port](panel/tunnel-editor.png) | ![Journaux](panel/logs.png) |
 
-1. 🍴 Forkez le dépôt
-2. 🌿 Créez une branche : `git checkout -b feature/ma-feature`
-3. 💾 Commitez vos changements
-4. 📬 Ouvrez une Pull Request
+## Pourquoi ce panel
 
-> 🐛 Bug ou idée ? Ouvrez une [issue](https://github.com/Gogowwww/frp-manager/issues).
+frp est un binaire unique configuré par des fichiers TOML. Le piloter à la main fonctionne bien, mais la gestion au quotidien reste manuelle : éditer un fichier en SSH pour chaque nouveau port, redémarrer le bon service, vérifier quel port est déjà pris, retrouver le bon journal. FRP Manager garde ce modèle et ajoute une couche par-dessus :
 
-> 🌍 Une liste d'adresses à bloquer à partager ? Bouton **Publier** sur une règle *Bloquer* du pare-feu, ou directement une Pull Request sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
+| Tâche | frp à la main | FRP Manager |
+|---|---|---|
+| Ajouter ou modifier un tunnel | éditer `frpc.toml`, redémarrer frpc | formulaire guidé, TOML vérifié avant l'enregistrement, enregistrer et redémarrer en un clic |
+| Voir ce qui est exposé | lire les configurations | liste des ports avec leur chemin, par client |
+| Plusieurs instances frps/frpc | un service et un fichier par instance à suivre | détectées automatiquement, une carte chacune |
+| Filtrer qui atteint les ports de frps | écrire des règles nftables ou iptables | règles par IP, réseau ou AS, testées avant application |
+| Suivre les journaux | `journalctl -fu frpc` en SSH | journaux en direct dans le navigateur |
+| Mettre à jour frp | télécharger, vérifier, remplacer les binaires, redémarrer | un clic, SHA-256 vérifiée, services redémarrés |
 
----
+Le panel ne remplace pas frp et ne change pas son format de configuration : les fichiers restent du TOML que vous pouvez toujours éditer à la main, et retirer le panel laisse frp fonctionner comme avant.
 
-## 📄 Licence
+## Sécurité
 
-**Apache 2.0** — voir [LICENSE](LICENSE)
+Le panel contrôle des ports exposés et tourne en root : il est verrouillé par défaut.
 
----
+- **Configuration initiale obligatoire** : aucune page ni route de l'API ne répond tant qu'aucun compte administrateur n'existe (mot de passe de 12 caractères ou plus).
+- **Mot de passe haché** en argon2id (scrypt en repli) ; les anciens hashs SHA-256 sont acceptés une fois puis rehachés automatiquement.
+- **Écoute sur `127.0.0.1`** pour une nouvelle installation ; l'ouvrir au réseau est un choix explicite.
+- **Protection contre la force brute** : tentatives limitées par IP, avec un verrouillage croissant.
+- **Durcissement web** : jeton CSRF sur chaque modification, cookies HttpOnly / SameSite=Strict / Secure, Content-Security-Policy, X-Frame-Options, Referrer-Policy.
+- **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
+- **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.
 
-## 🙏 Remerciements
+> **Avertissement Docker** : le conteneur utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker. **C'est un accès équivalent à root sur l'hôte** : qui contrôle le panel contrôle la machine. Lisez [docs/docker.fr.md](docs/docker.fr.md) avant de le déployer.
 
-- [fatedier/frp](https://github.com/fatedier/frp) — le projet frp sans lequel rien de tout ça n'aurait de sens
-- 💛 La communauté open source pour les retours et contributions
+Modèle de menace et signalement des vulnérabilités : [SECURITY.md](SECURITY.md).
 
----
+## Documentation
 
-## ✨ Vibecoding
+- [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
+- [Docker : privilèges et risques](docs/docker.fr.md)
+- [Politique de sécurité](SECURITY.md)
+- [Journal des modifications](CHANGELOG.md)
 
-<div align="center">
+## Contribuer
 
-*Ce projet a été entièrement conçu, développé et itéré en **vibecoding** avec l'IA.*
+Signalements de bugs, idées, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.md](CONTRIBUTING.md) et le [code de conduite](CODE_OF_CONDUCT.md). Des adresses à bloquer peuvent être partagées avec le bouton **Publier** du pare-feu ou sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
 
-[![Built with Claude](https://img.shields.io/badge/Vibecoded%20with-Claude-D97706?style=for-the-badge&logo=anthropic&logoColor=white)](https://claude.ai)
+## Licence
 
-> *« Vibe, iterate, ship. »*
+[Apache 2.0](LICENSE).
 
-</div>
+## Remerciements
 
----
+[fatedier/frp](https://github.com/fatedier/frp), le projet autour duquel ce panel est construit.
 
-## ⭐ Star History
+## Développement
+
+FRP Manager est développé avec l'aide d'un assistant de programmation IA ([Claude](https://claude.ai)). Chaque nouvelle version sort d'abord en pré-release, pour être testée avant de devenir une release.
 
 [![Star History Chart](https://api.star-history.com/chart?repos=Gogowwww/frp-manager&type=date&legend=bottom-right)](https://www.star-history.com/?repos=Gogowwww%2Ffrp-manager&type=date&legend=bottom-right)
