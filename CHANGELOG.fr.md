@@ -12,7 +12,8 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
-Déjà en ligne sur le site du projet ; sera inclus dans la prochaine version.
+Changements sur main qui ne font pas encore partie d'une version. Le site et
+la démo sont déjà en ligne ; le reste sortira avec la prochaine version.
 
 ### Ajouté
 
@@ -21,6 +22,11 @@ Déjà en ligne sur le site du projet ; sera inclus dans la prochaine version.
   ligne, en anglais et en français (`website/`).
 - Versions anglaises de SECURITY, CONTRIBUTING, CODE_OF_CONDUCT et de ce
   journal (les versions françaises sont désormais les fichiers `.fr.md`).
+- Les messages renvoyés par le serveur (erreurs, confirmations, journaux
+  d'installation de frp et du panel, avis des journaux en direct, libellés des
+  ports du pare-feu) suivent la langue de l'interface, français ou anglais.
+  `install.sh` et `frp-autoupdate.py` parlent la langue du système (français si
+  `LANG` est en français, anglais sinon).
 
 ### Modifié
 

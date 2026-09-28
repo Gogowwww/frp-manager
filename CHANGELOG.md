@@ -12,7 +12,8 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
-Already live on the project website; will be included in the next version.
+Changes on main that are not part of a release yet. The website and the demo
+are already live; the rest ships with the next version.
 
 ### Added
 
@@ -21,6 +22,10 @@ Already live on the project website; will be included in the next version.
   in English and French (`website/`).
 - English versions of SECURITY, CONTRIBUTING, CODE_OF_CONDUCT and this
   changelog (the French ones are now the `.fr.md` files).
+- Messages sent by the server (errors, confirmations, frp and panel install
+  logs, live log notices, firewall port labels) follow the interface language,
+  French or English. `install.sh` and `frp-autoupdate.py` speak the system
+  language (French if `LANG` is French, English otherwise).
 
 ### Changed
 

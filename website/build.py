@@ -266,7 +266,8 @@ HOME = {
              "Run <code>python3 app.py --reset-password</code> in the install directory (or through "
              "<code>docker exec</code>), then restart the panel."),
             ("Which languages are available?",
-             "French and English. English is still a preview: a few messages sent by the server are in French."),
+             "French and English, messages from the server included. English is still marked as a preview: "
+             "choose it in Settings, Preferences."),
         ],
         "final_title": "Take back your ports",
         "final_text": "Open the demo, or install it on the machine that runs frp.",
@@ -397,7 +398,8 @@ HOME = {
              "Lancez <code>python3 app.py --reset-password</code> dans le dossier d'installation (ou par "
              "<code>docker exec</code>), puis redémarrez le panel."),
             ("Quelles langues sont disponibles ?",
-             "Français et anglais. L'anglais est encore en aperçu : quelques messages du serveur restent en français."),
+             "Français et anglais, messages du serveur compris. L'anglais est encore marqué comme aperçu : "
+             "choisissez-le dans Réglages, Préférences."),
         ],
         "final_title": "Reprenez la main sur vos ports",
         "final_text": "Ouvrez la démo, ou installez le panel sur la machine qui fait tourner frp.",

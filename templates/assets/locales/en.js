@@ -571,7 +571,7 @@ export default {
       language: 'Language',
       languageSoon: 'More languages will come in a future version.',
       preview: 'preview',
-      languagePreview: 'English is still being translated: some messages from the server stay in French.',
+      languagePreview: 'Recent translation: please report any mistake on GitHub.',
     },
   },
 

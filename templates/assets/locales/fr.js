@@ -572,7 +572,7 @@ export default {
       language: 'Langue',
       languageSoon: 'D’autres langues arriveront dans une prochaine version.',
       preview: 'aperçu',
-      languagePreview: 'Traduction en cours : certains messages du serveur restent en français.',
+      languagePreview: 'Traduction récente : signalez toute erreur sur GitHub.',
     },
   },
 
