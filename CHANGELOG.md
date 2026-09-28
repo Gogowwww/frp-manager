@@ -10,7 +10,7 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
-## [0.0.51] - non publiée
+## [0.0.51] - 2026-09-28
 
 Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 `install.sh` est transparente : l'ancien mot de passe continue de fonctionner.

@@ -14,7 +14,7 @@ Version française :
 
 > Interface web auto-hébergée pour frp : pilotez frps et frpc, tunnels, pare-feu nftables, journaux en direct et mises à jour depuis le navigateur.
 
-Site web (About → Website) : `https://demo-frp-manager.gogow.fr`
+Site web (About → Website) : `https://frp-manager.gogow.fr`
 
 ## Topics (About → Topics)
 

@@ -6,7 +6,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 [![Release](https://img.shields.io/github/v/release/Gogowwww/frp-manager)](https://github.com/Gogowwww/frp-manager/releases)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
-[![Live demo](https://img.shields.io/badge/live%20demo-demo--frp--manager.gogow.fr-0e9f6e)](https://demo-frp-manager.gogow.fr)
+[![Website](https://img.shields.io/badge/website-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr)
 
 **English** · [Français](README.fr.md)
 
@@ -30,7 +30,7 @@ curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-ma
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
 
-Not ready to install? The [live demo](https://demo-frp-manager.gogow.fr) runs the real interface with sample data.
+Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs the real interface with sample data.
 
 ## Features
 
@@ -79,6 +79,7 @@ Threat model and vulnerability reporting: [SECURITY.md](SECURITY.md).
 
 ## Documentation
 
+- [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
 - [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Docker: privileges and risks](docs/docker.md)
 - [Security policy](SECURITY.md)

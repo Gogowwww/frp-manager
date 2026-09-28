@@ -6,7 +6,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 [![Release](https://img.shields.io/github/v/release/Gogowwww/frp-manager)](https://github.com/Gogowwww/frp-manager/releases)
 ![Plateforme](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
-[![Démo en ligne](https://img.shields.io/badge/d%C3%A9mo-demo--frp--manager.gogow.fr-0e9f6e)](https://demo-frp-manager.gogow.fr)
+[![Site](https://img.shields.io/badge/site-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr/fr/)
 
 [English](README.md) · **Français**
 
@@ -30,7 +30,7 @@ curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-ma
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
 
-Pas encore prêt à installer ? La [démo en ligne](https://demo-frp-manager.gogow.fr) fait tourner la vraie interface avec des données fictives.
+Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr/demo/) fait tourner la vraie interface avec des données fictives.
 
 ## Fonctionnalités
 
@@ -79,6 +79,7 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.md](SECURITY.m
 
 ## Documentation
 
+- [Site du projet](https://frp-manager.gogow.fr/fr/) : présentation, démo en ligne et toute la documentation
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
 - [Docker : privilèges et risques](docs/docker.fr.md)
 - [Politique de sécurité](SECURITY.md)
