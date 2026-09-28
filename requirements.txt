@@ -1,3 +1,7 @@
 flask
 requests
 flask-sock
+# Hachage du mot de passe (argon2id) ; à défaut, le panel utilise scrypt
+argon2-cffi
+# Validation des configs TOML avant écriture (inclus dans Python à partir de 3.11)
+tomli; python_version < "3.11"

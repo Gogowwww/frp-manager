@@ -54,9 +54,14 @@ python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 
 if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-    "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
+    # argon2-cffi peut manquer de paquet précompilé sur certaines architectures :
+    # sans lui, le panel hache le mot de passe avec scrypt (bibliothèque standard).
+    "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt" || {
+        warn "Certaines dépendances n'ont pas pu être installées : installation du minimum."
+        "$VENV_DIR/bin/pip" install --quiet flask requests flask-sock
+    }
 else
-    "$VENV_DIR/bin/pip" install --quiet flask requests
+    "$VENV_DIR/bin/pip" install --quiet flask requests flask-sock
 fi
 
 "$VENV_DIR/bin/pip" install --quiet cryptography 2>/dev/null || \
@@ -217,24 +222,39 @@ fi
 
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 PROTO="https"
+BIND_HOST="127.0.0.1"
+# Le panel crée sa config au premier démarrage : on lui laisse un instant
+for _ in 1 2 3 4 5; do [[ -f /etc/frp-manager/frp-manager.json ]] && break; sleep 1; done
 if [[ -f /etc/frp-manager/frp-manager.json ]]; then
-    SSL_EN=$(python3 -c "
+    read -r SSL_EN BIND_HOST < <(python3 -c "
 import json
 try:
     d=json.load(open('/etc/frp-manager/frp-manager.json'))
-    print('false' if d.get('ssl_enabled',True)==False else 'true')
-except: print('true')
-" 2>/dev/null || echo "true")
+    print('false' if d.get('ssl_enabled',True)==False else 'true', d.get('bind_host') or '127.0.0.1')
+except Exception: print('true 127.0.0.1')
+" 2>/dev/null || echo "true 127.0.0.1")
     [[ "$SSL_EN" == "false" ]] && PROTO="http"
+fi
+if [[ "$BIND_HOST" == "127.0.0.1" || "$BIND_HOST" == "::1" ]]; then
+    PANEL_URL="${PROTO}://127.0.0.1:${MANAGER_PORT}"
+else
+    PANEL_URL="${PROTO}://${LOCAL_IP}:${MANAGER_PORT}"
 fi
 
 echo ""
 echo -e "${BOLD}${GREEN}╔══════════════════════════════════════════════════════╗"
-echo    "║          Installation / Mise à jour terminée ✓       ║"
+echo    "║          Installation / Mise à jour terminée         ║"
 echo -e "╚══════════════════════════════════════════════════════╝${RESET}"
 echo ""
-echo -e "  Interface web : ${BOLD}${PROTO}://${LOCAL_IP}:${MANAGER_PORT}${RESET}"
-[[ "$PROTO" == "https" ]] && echo -e "  ${YELLOW}⚠ Certificat auto-signé — acceptez l'avertissement navigateur.${RESET}"
+echo -e "  Interface web : ${BOLD}${PANEL_URL}${RESET}"
+[[ "$PROTO" == "https" ]] && echo -e "  ${YELLOW}Certificat auto-signé : acceptez l'avertissement du navigateur.${RESET}"
+if [[ "$PANEL_URL" == *"127.0.0.1"* ]]; then
+    echo -e "  ${YELLOW}Le panel n'écoute que sur cette machine (127.0.0.1).${RESET}"
+    echo -e "  Depuis un autre poste : ${CYAN}ssh -L ${MANAGER_PORT}:127.0.0.1:${MANAGER_PORT} root@${LOCAL_IP}${RESET}"
+    echo -e "  puis ouvrez ${PROTO}://127.0.0.1:${MANAGER_PORT}. Pour ouvrir au réseau : bind_host = 0.0.0.0"
+    echo -e "  dans Réglages ou dans /etc/frp-manager/frp-manager.json, puis redémarrez le panel."
+fi
+echo -e "  Première ouverture : créez l'identifiant administrateur (12 caractères minimum)."
 echo ""
 echo -e "  Config panel  : ${CYAN}/etc/frp-manager/frp-manager.json${RESET}"
 echo -e "  Logs          : ${CYAN}${LOG_DIR}/${RESET}"

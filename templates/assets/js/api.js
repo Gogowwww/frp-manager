@@ -13,8 +13,15 @@ export class ApiError extends Error {
   }
 }
 
+// Jeton CSRF de la session, posé par le serveur dans <meta name="csrf-token"> ;
+// exigé sur toute requête qui n'est pas une lecture.
+export function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
 export async function api(path, { method = 'GET', body, form, signal } = {}) {
   const init = { method, headers: { Accept: 'application/json' }, signal, credentials: 'same-origin' };
+  if (method !== 'GET') init.headers['X-CSRF-Token'] = csrfToken();
   if (form) {
     init.body = form;
   } else if (body !== undefined) {

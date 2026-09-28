@@ -5,14 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="csrf-token" content="{{ csrf_token() }}">
-<title>Connexion — FRP Manager</title>
+<meta name="robots" content="noindex">
+<title>Configuration initiale — FRP Manager</title>
 <script nonce="{{ csp_nonce() }}">
   try { var th = localStorage.getItem('frpm.theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Polices chargées sans bloquer l'affichage : sans accès à Google, la page
-     s'affiche tout de suite avec les polices du système. -->
 <link rel="stylesheet" id="fonts" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print">
 <script nonce="{{ csp_nonce() }}">document.getElementById('fonts').addEventListener('load', function () { this.media = 'all'; });</script>
 <link rel="stylesheet" href="{{ asset('css/app.css') }}">
@@ -22,26 +21,33 @@
 <body>
 {% include "partials/icons.html" %}
 
+<!-- Première ouverture du panel : tant qu'aucun mot de passe n'existe, c'est
+     la seule page servie. Elle disparaît dès que les identifiants sont créés. -->
 <main class="auth">
   <div class="auth-card">
     <div class="auth-brand">
       <svg class="brand-logo" viewBox="0 0 26 26" fill="none" aria-hidden="true"><use href="#i-logo"/></svg>
       <div>
-        <h1 class="auth-title" data-i18n="login.title">Connexion à FRP Manager</h1>
-        <p class="auth-sub" data-i18n="login.subtitle"></p>
+        <h1 class="auth-title" data-i18n="setup.title">Configuration initiale</h1>
+        <p class="auth-sub" data-i18n="setup.subtitle"></p>
       </div>
     </div>
-    <form class="card auth-form" id="login-form" novalidate>
+    <form class="card auth-form" id="setup-form" novalidate>
       <div class="field">
-        <label class="field-label" for="username" data-i18n="login.username"></label>
-        <input class="input" id="username" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus>
+        <label class="field-label" for="username" data-i18n="setup.username"></label>
+        <input class="input" id="username" name="username" value="admin" maxlength="64" autocomplete="username" autocapitalize="off" spellcheck="false" required>
       </div>
       <div class="field">
-        <label class="field-label" for="password" data-i18n="login.password"></label>
-        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required>
+        <label class="field-label" for="password" data-i18n="setup.password"></label>
+        <input class="input" id="password" name="password" type="password" minlength="12" autocomplete="new-password" required autofocus>
+        <p class="field-hint" data-i18n="setup.passwordHint"></p>
       </div>
-      <p class="auth-error" id="login-error" role="alert"></p>
-      <button class="btn btn-primary btn-block" type="submit" id="login-submit" data-i18n="login.submit"></button>
+      <div class="field">
+        <label class="field-label" for="confirm" data-i18n="setup.confirm"></label>
+        <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+      </div>
+      <p class="auth-error" id="setup-error" role="alert"></p>
+      <button class="btn btn-primary btn-block" type="submit" id="setup-submit" data-i18n="setup.submit"></button>
     </form>
   </div>
 </main>
@@ -50,32 +56,34 @@
   import { initI18n, applyI18n, t } from "{{ asset('js/i18n.js') }}";
   import { csrfToken } from "{{ asset('js/api.js') }}";
 
+  const MIN_LENGTH = 12;
   await initI18n();
   applyI18n();
-  document.title = `${t('login.docTitle')} — FRP Manager`;
+  document.title = `${t('setup.docTitle')} — FRP Manager`;
 
-  const form = document.getElementById('login-form');
-  const error = document.getElementById('login-error');
-  const submit = document.getElementById('login-submit');
+  const form = document.getElementById('setup-form');
+  const error = document.getElementById('setup-error');
+  const submit = document.getElementById('setup-submit');
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = form.username.value.trim();
     const password = form.password.value;
-    if (!username || !password) { error.textContent = t('login.missing'); return; }
+    if (!username) { error.textContent = t('setup.usernameMissing'); return; }
+    if (password.length < MIN_LENGTH) { error.textContent = t('setup.tooShort', { n: MIN_LENGTH }); return; }
+    if (password !== form.confirm.value) { error.textContent = t('setup.mismatch'); return; }
     error.textContent = '';
     submit.setAttribute('aria-busy', 'true');
     submit.disabled = true;
     try {
-      const r = await fetch('/api/login', {
+      const r = await fetch('/api/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
         body: JSON.stringify({ username, password }),
       });
       const d = await r.json();
-      if (d.ok) { location.href = '/'; return; }
-      error.textContent = d.msg || t('login.failed');
-      form.password.select();
+      if (d.ok || r.status === 409) { location.href = '/'; return; }
+      error.textContent = d.msg || t('errors.generic');
     } catch {
       error.textContent = t('errors.network');
     }

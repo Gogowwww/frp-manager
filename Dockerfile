@@ -5,6 +5,7 @@ RUN apt-get update \
         python3 \
         python3-flask \
         python3-requests \
+        python3-argon2 \
         python3-pip \
         openssl \
         util-linux \

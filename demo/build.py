@@ -134,6 +134,9 @@ def render(template, *, base, version, preload, icons, demo_tag):
     # Pas d'état intégré : l'interface le demande à l'API (simulée)
     text = text.replace("{{ boot|tojson }}", "null")
     text = text.replace("{{ panel_version }}", version)
+    # Ni CSP ni session sur un site statique : pas de nonce, jeton CSRF factice
+    text = text.replace(' nonce="{{ csp_nonce() }}"', "")
+    text = text.replace("{{ csrf_token() }}", "demo")
     # demo.js avant tout module : fetch et WebSocket sont remplacés avant le premier appel
     text = text.replace("</title>", "</title>\n" + demo_tag, 1)
     left = re.findall(r"\{\{.*?\}\}|\{%.*?%\}", text)

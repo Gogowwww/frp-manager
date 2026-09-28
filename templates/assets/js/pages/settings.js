@@ -5,7 +5,7 @@ import { api, apiOk } from '../api.js';
 import { store } from '../store.js';
 import {
   h, button, busy, toast, toastResult, toastError, field, setFieldError, input, select, secretInput,
-  segmented, callout, pageHeader, card,
+  segmented, callout, pageHeader, card, switchRow,
 } from '../ui.js';
 import { getThemePref, setThemePref } from '../theme.js';
 
@@ -31,6 +31,8 @@ export default {
   },
 };
 
+const PASSWORD_MIN = 12;
+
 function securityCard(cfg) {
   const state = cfg.has_password
     ? callout({ type: 'success', iconName: 'shield', text: t('settings.security.protected') })
@@ -46,8 +48,8 @@ function securityCard(cfg) {
     const p1 = pass.input.value;
     const p2 = confirm.input.value;
     setFieldError(confirm.input, p1 && p1 !== p2 ? t('settings.security.mismatch') : '');
-    setFieldError(pass.input, p1 && p1.length < 8 ? t('settings.security.tooShort') : '');
-    if ((p1 && p1 !== p2) || (p1 && p1.length < 8)) return;
+    setFieldError(pass.input, p1 && p1.length < PASSWORD_MIN ? t('settings.security.tooShort') : '');
+    if ((p1 && p1 !== p2) || (p1 && p1.length < PASSWORD_MIN)) return;
     if (!username.value.trim()) { setFieldError(username, t('validation.required')); return; }
     setFieldError(username, '');
     await busy(saveBtn, async () => {
@@ -79,7 +81,7 @@ function securityCard(cfg) {
 }
 
 function networkCard(cfg) {
-  const host = input({ value: cfg.bind_host || '0.0.0.0', mono: true });
+  const host = input({ value: cfg.bind_host || '127.0.0.1', mono: true });
   const port = input({ value: cfg.bind_port || 8765, inputmode: 'numeric', mono: true });
   const timeout = input({ value: Math.round((cfg.session_timeout || 3600) / 60), inputmode: 'numeric', mono: true });
   const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'network-form' });
@@ -110,7 +112,19 @@ function networkCard(cfg) {
         field({ label: t('settings.network.host'), hint: t('settings.network.hostHint'), tomlKey: 'bind_host', control: host }),
         field({ label: t('settings.network.port'), tomlKey: 'bind_port', control: port }),
         field({ label: t('settings.network.timeout'), hint: t('settings.network.timeoutHint'), control: timeout })),
-      callout({ type: 'neutral', text: t('settings.network.restartNote') })),
+      callout({ type: 'neutral', text: t('settings.network.restartNote') }),
+      switchRow({
+        label: t('settings.network.mirrors'),
+        description: t('settings.network.mirrorsDesc'),
+        checked: cfg.download_mirrors !== false,
+        onChange: async (checked) => {
+          try {
+            const d = await api('/api/manager/config', { method: 'POST', body: { download_mirrors: checked } });
+            if (d.ok) toast(t('settings.network.mirrorsSaved'), 'success');
+            else toastResult(d);
+          } catch (err) { toastError(err); }
+        },
+      })),
     foot: [saveBtn],
   });
 }

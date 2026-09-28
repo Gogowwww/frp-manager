@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
 """FRP Manager — backend Flask multi-instances"""
 
-import os, re, sys, json, subprocess, threading, shutil, shlex, tarfile, tempfile, platform, time, secrets, hashlib, ssl, queue, gzip
+import os, re, sys, posixpath, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, hmac, base64, ipaddress, ssl, queue, gzip
 import socket as _socket, http.client as _http_client
-from pathlib import Path
-from datetime import datetime
+from pathlib import Path, PurePosixPath
+from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for, g
 import requests as req
+
+try:
+    # Hachage du mot de passe : argon2id si argon2-cffi est installé, sinon
+    # scrypt (bibliothèque standard). Une mise à jour du panel dont le pip a
+    # échoué démarre donc quand même.
+    from argon2 import PasswordHasher as _PasswordHasher
+    from argon2.exceptions import VerificationError as _Argon2Mismatch, InvalidHashError as _Argon2Invalid
+    _ARGON2 = _PasswordHasher()
+except ImportError:
+    _ARGON2 = None
+
+try:
+    import tomllib as _tomllib
+except ImportError:          # Python < 3.11 : tomli (requirements.txt), s'il est installé
+    try:
+        import tomli as _tomllib
+    except ImportError:
+        _tomllib = None
 
 try:
     # Journaux en direct par WebSocket (wss:// en HTTPS). Facultatif : sans ce
@@ -58,7 +76,8 @@ PANEL_VERSION = _load_panel_version()
 IN_DOCKER = Path("/.dockerenv").exists() or os.environ.get("DOCKER_MODE", "") == "true"
 
 # ── Config fichier manager ────────────────────────────────────────────────────
-MGR_CONF_FILE = Path("/etc/frp-manager/frp-manager.json")
+# FRP_MANAGER_CONFIG : autre emplacement (tests, installations particulières)
+MGR_CONF_FILE = Path(os.environ.get("FRP_MANAGER_CONFIG") or "/etc/frp-manager/frp-manager.json")
 MGR_CONF_DIR  = MGR_CONF_FILE.parent
 
 SSL_CERT_DIR  = MGR_CONF_DIR / "ssl"
@@ -67,14 +86,20 @@ SSL_KEY_FILE  = SSL_CERT_DIR / "key.pem"
 
 def _default_manager_config():
     return {
-        "bind_host":       "0.0.0.0",
-        "bind_port":       8765,
-        "username":        "admin",
-        "password_hash":   "",
-        "secret_key":      secrets.token_hex(32),
-        "session_timeout": 3600,
-        "ssl_enabled":     True,
-        "nicknames":       {},
+        # Nouvelle installation : joignable depuis cette machine seulement.
+        # Pour ouvrir au réseau : Réglages, bind_host, ou FRP_MANAGER_HOST=0.0.0.0.
+        "bind_host":        "127.0.0.1",
+        "bind_port":        8765,
+        "username":         "admin",
+        "password_hash":    "",
+        "secret_key":       secrets.token_hex(32),
+        "session_timeout":  3600,
+        "ssl_enabled":      True,
+        # Miroirs tiers (ghproxy, ghfast, gh-proxy) en repli de github.com pour
+        # télécharger frp : pratique quand GitHub est filtré, mais c'est un
+        # intermédiaire de plus dans la chaîne d'approvisionnement.
+        "download_mirrors": True,
+        "nicknames":        {},
     }
 
 def load_manager_config():
@@ -87,8 +112,43 @@ def load_manager_config():
     return _default_manager_config()
 
 def save_manager_config(cfg):
+    """Écriture atomique, lisible par root seulement (hash du mot de passe,
+    clé de session)."""
     MGR_CONF_DIR.mkdir(parents=True, exist_ok=True)
-    MGR_CONF_FILE.write_text(json.dumps(cfg, indent=2))
+    tmp = MGR_CONF_FILE.with_name(MGR_CONF_FILE.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(cfg, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, MGR_CONF_FILE)
+
+def ensure_manager_config():
+    """Au démarrage : le fichier de config existe, avec sa clé de session, et
+    n'est lisible que par root. Une installation antérieure sans fichier (panel
+    jamais configuré) garde son ancienne adresse d'écoute, 0.0.0.0 : la passer
+    à 127.0.0.1 couperait l'accès à distance à la mise à jour."""
+    global MGR_CFG
+    try:
+        data = json.loads(MGR_CONF_FILE.read_text()) if MGR_CONF_FILE.exists() else None
+    except Exception:
+        print(f"[WARN] {MGR_CONF_FILE} illisible : laissé tel quel")
+        return
+    if data is not None and data.get("secret_key") and "bind_host" in data:
+        try:
+            os.chmod(MGR_CONF_FILE, 0o600)
+        except OSError:
+            pass
+        return
+    cfg = dict(MGR_CFG)
+    if data is None:
+        # Certificat déjà généré par un panel antérieur (install.sh écrit
+        # state.json avant le premier démarrage : pas un indice fiable)
+        if SSL_CERT_FILE.exists():
+            cfg["bind_host"] = "0.0.0.0"
+    elif "bind_host" not in data:
+        cfg["bind_host"] = "0.0.0.0"
+    save_manager_config(cfg)
+    MGR_CFG = cfg
 
 MGR_CFG = load_manager_config()
 
@@ -153,6 +213,16 @@ def get_ssl_context():
 # anciennes versions qui ne connaissent pas de dossier static/.
 app = Flask(__name__, static_folder="templates/assets", static_url_path="/assets")
 app.secret_key = MGR_CFG.get("secret_key") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+    # Secure dès que le panel sert du HTTPS ; derrière un reverse proxy TLS
+    # avec ssl_enabled=false, cookie_secure=true dans frp-manager.json.
+    SESSION_COOKIE_SECURE=bool(MGR_CFG.get("ssl_enabled", True) or MGR_CFG.get("cookie_secure")),
+    PERMANENT_SESSION_LIFETIME=timedelta(seconds=int(MGR_CFG.get("session_timeout") or 3600)),
+    # Archive frp envoyée à la main (~15 Mo) : large marge, mais pas illimité
+    MAX_CONTENT_LENGTH=128 * 1024 * 1024,
+)
 # Les modules JS importés par main.js n'ont pas de ?v=version dans leur URL :
 # max-age=0 force le navigateur à les revalider (304 si inchangés), sans quoi
 # il pourrait garder d'anciens modules en cache après une mise à jour du panel.
@@ -161,6 +231,54 @@ app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 # une connexion WebSocket restée silencieuse (journal sans nouvelle ligne).
 app.config["SOCK_SERVER_OPTIONS"] = {"ping_interval": 25}
 sock = Sock(app) if Sock else None
+
+# ── En-têtes de sécurité, CSP et jeton CSRF ──────────────────────────────────
+# Les scripts en ligne des pages portent un nonce tiré à chaque requête : la CSP
+# refuse tout autre script en ligne. Les styles en ligne restent permis (l'interface
+# en pose quelques-uns depuis le JS), les polices viennent de Google Fonts.
+def csp_nonce():
+    if not hasattr(g, "csp_nonce"):
+        g.csp_nonce = secrets.token_urlsafe(16)
+    return g.csp_nonce
+
+def csrf_token():
+    """Jeton lié à la session, exigé sur toute requête qui modifie quelque chose
+    (en-tête X-CSRF-Token, envoyé par api.js)."""
+    tok = session.get("csrf")
+    if not tok:
+        tok = session["csrf"] = secrets.token_urlsafe(32)
+    return tok
+
+app.jinja_env.globals.update(csp_nonce=csp_nonce, csrf_token=csrf_token)
+
+def _csrf_valid():
+    sent = request.headers.get("X-CSRF-Token") or ""
+    tok = session.get("csrf") or ""
+    return bool(tok and sent) and hmac.compare_digest(sent.encode(), tok.encode())
+
+@app.after_request
+def _security_headers(resp):
+    script_src = f"'self' 'nonce-{g.csp_nonce}'" if hasattr(g, "csp_nonce") else "'self'"
+    host = request.host
+    resp.headers.setdefault("Content-Security-Policy", "; ".join([
+        "default-src 'self'",
+        f"script-src {script_src}",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        f"connect-src 'self' wss://{host} ws://{host}",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ]))
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.path.startswith("/api/"):
+        # Réponses de l'API (configs avec leurs tokens…) jamais gardées en cache
+        resp.headers.setdefault("Cache-Control", "no-store")
+    return resp
 
 # ── Fichiers du site (CSS, JS, traductions) ──────────────────────────────────
 # Servis sous une adresse qui contient leur empreinte (/v/<empreinte>/js/main.js) :
@@ -259,12 +377,17 @@ FALLBACK_VERSION_SOURCES = [
     # Le site lui-même (redirection de /releases/latest) : pas soumis au quota de l'API
     ("github.com", "https://github.com/fatedier/frp/releases/latest"),
 ]
-FALLBACK_DOWNLOAD_MIRRORS = [
-    "https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://mirror.ghproxy.com/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://ghfast.top/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
-    "https://gh-proxy.com/https://github.com/fatedier/frp/releases/download/{tag}/{filename}",
+FRP_RELEASE_DOWNLOAD = "https://github.com/fatedier/frp/releases/download/{tag}/{filename}"
+# Miroirs TIERS, essayés seulement si github.com échoue et si download_mirrors
+# est vrai (Réglages) : ils voient passer et pourraient modifier le fichier, d'où
+# la vérification par la somme SHA-256 publiée avec chaque release de frp.
+THIRD_PARTY_MIRRORS = [
+    "https://mirror.ghproxy.com/" + FRP_RELEASE_DOWNLOAD,
+    "https://ghfast.top/" + FRP_RELEASE_DOWNLOAD,
+    "https://gh-proxy.com/" + FRP_RELEASE_DOWNLOAD,
 ]
+FALLBACK_DOWNLOAD_MIRRORS = [FRP_RELEASE_DOWNLOAD] + THIRD_PARTY_MIRRORS
+FRP_CHECKSUMS_FILE = "frp_sha256_checksums.txt"   # joint à chaque release de fatedier/frp
 
 # Pas de configs par défaut créées automatiquement — l'utilisateur les crée lui-même
 DEFAULT_CONFIGS = {
@@ -273,50 +396,243 @@ DEFAULT_CONFIGS = {
 }
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
-def hash_password(pw):
-    return hashlib.sha256(pw.encode()).hexdigest()
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_MAX_LENGTH = 1024
+_SHA256_HEX = re.compile(r"[0-9a-fA-F]{64}")
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 15, 8, 1
 
-def check_password(pw):
-    stored = MGR_CFG.get("password_hash", "")
-    if not stored:
-        return True
-    return hashlib.sha256(pw.encode()).hexdigest() == stored
+def _b64(data):
+    return base64.b64encode(data).decode()
+
+def _scrypt(pw, salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P):
+    return hashlib.scrypt(pw.encode(), salt=salt, n=n, r=r, p=p, maxmem=128 * 1024 * 1024, dklen=32)
+
+def hash_password(pw):
+    """argon2id (argon2-cffi) ou, à défaut, scrypt ; sel aléatoire dans les deux cas."""
+    if _ARGON2:
+        return _ARGON2.hash(pw)
+    salt = secrets.token_bytes(16)
+    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${_b64(salt)}${_b64(_scrypt(pw, salt))}"
+
+def verify_password(pw, stored):
+    """→ (mot de passe correct, à rehacher). Comparaisons en temps constant.
+    Formats acceptés : argon2id, scrypt, et l'ancien SHA-256 sans sel des versions
+    ≤ 0.0.50, rehaché dès la première connexion réussie."""
+    stored = stored or ""
+    if stored.startswith("$argon2"):
+        if not _ARGON2:
+            print("[ERROR] Mot de passe haché en argon2 mais argon2-cffi est absent : "
+                  "installez-le (pip install argon2-cffi) ou réinitialisez le mot de passe "
+                  "(python3 app.py --reset-password)")
+            return False, False
+        try:
+            _ARGON2.verify(stored, pw)
+        except (_Argon2Mismatch, _Argon2Invalid, ValueError):   # UnicodeError : hash corrompu
+            return False, False
+        return True, _ARGON2.check_needs_rehash(stored)
+    if stored.startswith("scrypt$"):
+        try:
+            _, n, r, p, salt, digest = stored.split("$")
+            params = (int(n), int(r), int(p))
+            ok = hmac.compare_digest(_scrypt(pw, base64.b64decode(salt), *params), base64.b64decode(digest))
+        except (ValueError, TypeError):
+            return False, False
+        return ok, ok and (_ARGON2 is not None or params != (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P))
+    if _SHA256_HEX.fullmatch(stored):
+        ok = hmac.compare_digest(hashlib.sha256(pw.encode()).hexdigest(), stored.lower())
+        return ok, ok
+    return False, False
+
+def needs_setup():
+    """Aucun mot de passe : seule la page de configuration initiale répond."""
+    return not MGR_CFG.get("password_hash")
+
+def _password_fingerprint():
+    """Empreinte du hash courant, gardée dans la session : changer le mot de passe
+    déconnecte les autres sessions."""
+    return hmac.new(app.secret_key.encode(), (MGR_CFG.get("password_hash") or "").encode(),
+                    hashlib.sha256).hexdigest()[:16]
+
+def _session_valid():
+    return bool(session.get("authenticated")) and hmac.compare_digest(
+        str(session.get("pwfp", "")).encode(), _password_fingerprint().encode())
+
+def _start_session():
+    """Nouvelle session après authentification (pas de fixation de session). Le
+    jeton CSRF est gardé : la page déjà ouverte (Réglages, après un changement
+    de mot de passe) continue de fonctionner."""
+    tok = session.get("csrf")
+    session.clear()
+    session.permanent = True
+    session["authenticated"] = True
+    session["pwfp"] = _password_fingerprint()
+    session["csrf"] = tok or secrets.token_urlsafe(32)
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not MGR_CFG.get("password_hash"):
-            return f(*args, **kwargs)
-        if not session.get("authenticated"):
+        if not _session_valid():
             if request.path.startswith("/api/"):
                 return jsonify({"ok": False, "msg": "Non authentifié"}), 401
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
 
+# Seules routes servies tant qu'aucun mot de passe n'existe
+_SETUP_ENDPOINTS = {"setup_page", "api_setup", "versioned_asset", "static"}
+
+@app.before_request
+def _security_gate():
+    if request.method not in ("GET", "HEAD", "OPTIONS") and not _csrf_valid():
+        return jsonify({"ok": False, "msg": "Jeton CSRF absent ou invalide : rechargez la page."}), 403
+    if needs_setup() and request.endpoint not in _SETUP_ENDPOINTS:
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "msg": "Configuration initiale requise", "setup": True}), 401
+        return redirect(url_for("setup_page"))
+    return None
+
+# ── Limitation des tentatives de connexion ───────────────────────────────────
+# Par adresse IP : 5 essais libres, puis verrouillage de 30 s, doublé à chaque
+# nouvel échec (1 h au plus). Oublié 24 h après le dernier échec ou à la
+# première connexion réussie. Derrière un reverse proxy, toutes les requêtes
+# arrivent de son adresse : le verrouillage vaut alors pour tout le monde.
+LOGIN_FREE_ATTEMPTS = 5
+LOGIN_LOCK_BASE     = 30
+LOGIN_LOCK_MAX      = 3600
+LOGIN_FORGET_AFTER  = 86400
+_login_failures     = {}         # ip → {"count", "until", "last"}
+_login_lock         = threading.Lock()
+
+def _login_retry_after(ip, now=None):
+    now = now or time.time()
+    with _login_lock:
+        e = _login_failures.get(ip)
+        return max(0, int(e["until"] - now + 0.999)) if e else 0
+
+def _login_failed(ip, now=None):
+    now = now or time.time()
+    with _login_lock:
+        if len(_login_failures) > 10000:
+            for k in [k for k, e in _login_failures.items() if now - e["last"] > LOGIN_FORGET_AFTER]:
+                del _login_failures[k]
+        e = _login_failures.get(ip)
+        if not e or now - e["last"] > LOGIN_FORGET_AFTER:
+            e = _login_failures[ip] = {"count": 0, "until": 0, "last": now}
+        e["count"] += 1
+        e["last"] = now
+        extra = e["count"] - LOGIN_FREE_ATTEMPTS
+        if extra >= 0:
+            e["until"] = now + min(LOGIN_LOCK_MAX, LOGIN_LOCK_BASE * 2 ** min(extra, 20))
+
+def _login_succeeded(ip):
+    with _login_lock:
+        _login_failures.pop(ip, None)
+
+def _too_many_attempts(wait):
+    resp = jsonify({"ok": False, "msg": f"Trop de tentatives : réessayez dans {wait} s."})
+    resp.status_code = 429
+    resp.headers["Retry-After"] = str(wait)
+    return resp
+
 @app.route("/login", methods=["GET"])
 def login_page():
-    if not MGR_CFG.get("password_hash"):
+    if _session_valid():
         return redirect(url_for("index"))
     return render_template("login.html")
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    data = request.get_json() or {}
-    user = data.get("username", "")
-    pw   = data.get("password", "")
-    if user == MGR_CFG.get("username", "admin") and check_password(pw):
-        session["authenticated"] = True
-        session.permanent = True
-        from datetime import timedelta
-        app.permanent_session_lifetime = timedelta(seconds=MGR_CFG.get("session_timeout", 3600))
-        return jsonify({"ok": True})
-    return jsonify({"ok": False, "msg": "Identifiants incorrects"}), 401
+    global MGR_CFG
+    ip = request.remote_addr or "?"
+    wait = _login_retry_after(ip)
+    if wait:
+        return _too_many_attempts(wait)
+    data = request.get_json(silent=True) or {}
+    user = str(data.get("username", ""))[:256]
+    pw   = str(data.get("password", ""))[:PASSWORD_MAX_LENGTH]
+    # Mot de passe vérifié même si l'identifiant est faux : même durée de réponse
+    pw_ok, rehash = verify_password(pw, MGR_CFG.get("password_hash", ""))
+    user_ok = hmac.compare_digest(user.encode(), str(MGR_CFG.get("username", "admin")).encode())
+    if not (pw_ok and user_ok):
+        _login_failed(ip)
+        wait = _login_retry_after(ip)
+        if wait:
+            return _too_many_attempts(wait)
+        return jsonify({"ok": False, "msg": "Identifiants incorrects"}), 401
+    _login_succeeded(ip)
+    if rehash:
+        # Ancien hash (SHA-256 sans sel, ou scrypt alors qu'argon2 est disponible)
+        cfg = {**MGR_CFG, "password_hash": hash_password(pw)}
+        try:
+            save_manager_config(cfg)
+            MGR_CFG = cfg
+            print("[INFO] Mot de passe rehaché avec " + ("argon2id" if _ARGON2 else "scrypt"))
+        except OSError as e:
+            print(f"[WARN] Rehachage du mot de passe non enregistré : {e}")
+    _start_session()
+    return jsonify({"ok": True})
 
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
     session.clear()
     return jsonify({"ok": True})
+
+# ── Configuration initiale ───────────────────────────────────────────────────
+_setup_lock  = threading.Lock()
+_USERNAME_RE = re.compile(r"[^\x00-\x1f\x7f]{1,64}")
+
+def password_problem(pw):
+    """Message si le mot de passe est refusé, sinon None."""
+    if len(pw) < PASSWORD_MIN_LENGTH:
+        return f"Le mot de passe doit faire au moins {PASSWORD_MIN_LENGTH} caractères."
+    if len(pw) > PASSWORD_MAX_LENGTH:
+        return f"Le mot de passe ne doit pas dépasser {PASSWORD_MAX_LENGTH} caractères."
+    return None
+
+@app.route("/setup", methods=["GET"])
+def setup_page():
+    if not needs_setup():
+        return redirect(url_for("index"))
+    return render_template("setup.html")
+
+@app.route("/api/setup", methods=["POST"])
+def api_setup():
+    """Crée l'identifiant et le mot de passe, une seule fois : dès qu'un mot de
+    passe existe, cette route refuse tout."""
+    global MGR_CFG
+    data = request.get_json(silent=True) or {}
+    user = str(data.get("username", "")).strip()
+    pw = str(data.get("password", ""))
+    if not _USERNAME_RE.fullmatch(user):
+        return jsonify({"ok": False, "msg": "Identifiant invalide (1 à 64 caractères)."}), 400
+    problem = password_problem(pw)
+    if problem:
+        return jsonify({"ok": False, "msg": problem}), 400
+    with _setup_lock:
+        if not needs_setup():
+            return jsonify({"ok": False, "msg": "Le panel est déjà configuré."}), 409
+        cfg = {**MGR_CFG, "username": user, "password_hash": hash_password(pw)}
+        save_manager_config(cfg)
+        MGR_CFG = cfg
+    _start_session()
+    return jsonify({"ok": True})
+
+def reset_password_cli():
+    """python3 app.py --reset-password : nouveaux identifiants depuis la console
+    (mot de passe perdu, ou hash illisible)."""
+    import getpass
+    current = MGR_CFG.get("username", "admin")
+    user = input(f"Identifiant [{current}] : ").strip() or current
+    if not _USERNAME_RE.fullmatch(user):
+        sys.exit("Identifiant invalide (1 à 64 caractères).")
+    pw = getpass.getpass("Nouveau mot de passe : ")
+    problem = password_problem(pw)
+    if problem:
+        sys.exit(problem)
+    if getpass.getpass("Confirmer : ") != pw:
+        sys.exit("Les deux mots de passe sont différents.")
+    save_manager_config({**MGR_CFG, "username": user, "password_hash": hash_password(pw)})
+    print("Identifiants enregistrés. Redémarrez frp-manager (systemctl restart frp-manager).")
 
 # ── State ─────────────────────────────────────────────────────────────────────
 def load_state():
@@ -334,12 +650,41 @@ def save_state(state):
 def build_version_sources():
     return list(FALLBACK_VERSION_SOURCES)
 
+def mirrors_allowed():
+    """Miroirs tiers autorisés ? (Réglages ; FRP_MANAGER_NO_MIRRORS=1 les interdit)"""
+    if os.environ.get("FRP_MANAGER_NO_MIRRORS", "") in ("1", "true", "yes"):
+        return False
+    return MGR_CFG.get("download_mirrors", True) is not False
+
 def build_download_mirrors(tag, filename):
-    return [tpl.format(tag=tag, filename=filename) for tpl in FALLBACK_DOWNLOAD_MIRRORS]
+    tpls = FALLBACK_DOWNLOAD_MIRRORS if mirrors_allowed() else [FRP_RELEASE_DOWNLOAD]
+    return [tpl.format(tag=tag, filename=filename) for tpl in tpls]
+
+def is_third_party(url):
+    return not url.startswith("https://github.com/")
 
 # ── Docker ──────────────────────────────────────────────────────────────────
 # Détection Docker : /.dockerenv est créé par Docker dans chaque container
 _IN_DOCKER = Path("/.dockerenv").exists()
+
+# ── Validation des noms ───────────────────────────────────────────────────────
+# Tout nom qui finit dans une commande (systemctl, journalctl) ou dans une
+# adresse de l'API Docker passe par ces listes blanches. Les commandes sont
+# toujours des listes d'arguments, jamais une chaîne passée à un shell.
+_SERVICE_NAME_RE   = re.compile(r"frp[sc][A-Za-z0-9_.@-]{0,60}")
+_CONTAINER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+_INSTANCE_ID_RE    = re.compile(r"(?:docker_)?[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}")
+
+def valid_service_name(name):
+    """Unité systemd frps*/frpc* (sans .service) : frps, frpc2, frpc-maison…"""
+    return isinstance(name, str) and bool(_SERVICE_NAME_RE.fullmatch(name))
+
+def valid_container_name(name):
+    """Nom (ou identifiant) de conteneur Docker, selon les règles de Docker."""
+    return isinstance(name, str) and bool(_CONTAINER_NAME_RE.fullmatch(name))
+
+def valid_instance_id(iid):
+    return isinstance(iid, str) and bool(_INSTANCE_ID_RE.fullmatch(iid))
 
 # ── Helpers système ───────────────────────────────────────────────────────────
 def run_cmd(cmd, timeout=15):
@@ -392,8 +737,7 @@ def host_write_file(path, content):
             return True
         except Exception:
             return False
-    ok, _, _ = run_host(["sh", "-c", f"cat > {shlex.quote(str(path))}"],
-                        input_text=content)
+    ok, _, _ = run_host(["tee", "--", str(path)], input_text=content)
     return ok
 
 def host_remove_file(path):
@@ -412,6 +756,8 @@ def get_arch():
     return {"x86_64": "amd64", "aarch64": "arm64", "armv7l": "arm"}.get(m, "amd64")
 
 def service_action(name, action):
+    if not valid_service_name(name):
+        return False, f"Nom de service refusé : {name!r}"
     ok, out, err = run_cmd(["systemctl", action, name])
     return ok, err or out
 
@@ -443,7 +789,7 @@ def _docker_api(method, url_path, body=None, timeout=10):
         resp = conn.getresponse()
         raw  = resp.read()
         try:    data = json.loads(raw)
-        except: data = raw.decode(errors="replace")
+        except ValueError: data = raw.decode(errors="replace")
         return resp.status, data
     except Exception as e:
         return 0, str(e)
@@ -525,6 +871,9 @@ class LiveLog:
                 # -F : suit le fichier même après une rotation des logs
                 yield from self._command_lines(["tail", f"-n{self.history}", "-F", str(path)])
             else:
+                if not valid_service_name(self.inst.get("service")):
+                    yield "[frp-manager] nom de service refusé"
+                    return
                 yield from self._command_lines(["journalctl", "-u", self.inst.get("service", ""),
                                                 "-f", f"-n{self.history}", "--no-pager", "-o", "short-iso"])
         except Exception:
@@ -594,6 +943,8 @@ def _detect_docker_frp_containers():
     for c in containers:
         names = c.get("Names") or []
         name  = names[0].lstrip("/") if names else (c.get("Id") or "")[:12]
+        if not valid_container_name(name):
+            continue
         image = c.get("Image", "")
         state = c.get("State", "")
         # Ignorer frp-manager lui-même
@@ -919,7 +1270,8 @@ def fetch_latest_version():
     for name, url in build_version_sources():
         try:
             tag = fetch_version_source(url)
-            if tag:
+            # Le tag finit dans des adresses de téléchargement : format strict
+            if tag and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
                 return tag.lstrip("v"), tag, name
         except Exception:
             continue
@@ -967,9 +1319,33 @@ def _panel_web_release(tag, latest):
         "tag_name": tag,
         "html_url": f"https://github.com/{PANEL_GITHUB_REPO}/releases/tag/{tag}",
         "prerelease": version_newer(tag, latest),
-        "assets": [{"name": "frp-manager.zip",
-                    "browser_download_url": f"https://github.com/{PANEL_GITHUB_REPO}/releases/download/{tag}/frp-manager.zip"}],
+        "assets": [{"name": name,
+                    "browser_download_url": f"https://github.com/{PANEL_GITHUB_REPO}/releases/download/{tag}/{name}"}
+                   for name in ("frp-manager.zip", PANEL_CHECKSUM_ASSET)],
     }
+
+# Somme SHA-256 de frp-manager.zip, jointe aux releases depuis 0.0.51
+PANEL_CHECKSUM_ASSET = "frp-manager.zip.sha256"
+PANEL_ZIP_MAX_BYTES    = 50 * 1024 * 1024
+PANEL_ZIP_MAX_UNPACKED = 100 * 1024 * 1024
+PANEL_ZIP_MAX_MEMBERS  = 2000
+
+def check_panel_zip(zf):
+    """ValueError si l'archive du panel est suspecte : chemins absolus ou avec
+    « .. », liens symboliques, trop d'entrées ou trop gros une fois décompressé."""
+    infos = zf.infolist()
+    if len(infos) > PANEL_ZIP_MAX_MEMBERS:
+        raise ValueError("archive refusée : trop d'entrées")
+    total = 0
+    for info in infos:
+        name = info.filename.replace("\\", "/")
+        if name.startswith("/") or re.match(r"^[A-Za-z]:", name) or ".." in PurePosixPath(name).parts:
+            raise ValueError(f"archive refusée : chemin suspect « {info.filename} »")
+        if (info.external_attr >> 16) & 0o170000 == 0o120000:
+            raise ValueError(f"archive refusée : lien symbolique « {info.filename} »")
+        total += info.file_size
+        if total > PANEL_ZIP_MAX_UNPACKED:
+            raise ValueError("archive refusée : trop volumineuse une fois décompressée")
 
 def fetch_panel_latest(include_prereleases=False):
     """(version, url) de la release cible du panel, ou (None, None)."""
@@ -985,22 +1361,86 @@ def fetch_panel_latest(include_prereleases=False):
     except Exception:
         return None, None
 
+DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024       # archive frp : ~15 Mo
+
+def parse_checksums(text):
+    """Fichier au format sha256sum → {nom de fichier: empreinte hexadécimale}."""
+    sums = {}
+    for line in (text or "").splitlines():
+        m = re.fullmatch(r"\s*([0-9a-fA-F]{64})\s+\*?(\S+)\s*", line)
+        if m:
+            sums[m.group(2)] = m.group(1).lower()
+    return sums
+
+def fetch_frp_checksums(tag, log_fn):
+    """Sommes SHA-256 de la release → (dict, vient de github.com). github.com
+    d'abord ; un miroir tiers seulement s'ils sont autorisés (vérification alors
+    affaiblie : le même intermédiaire pourrait fournir archive et somme)."""
+    for url in build_download_mirrors(tag, FRP_CHECKSUMS_FILE):
+        try:
+            r = req.get(url, timeout=30)
+            r.raise_for_status()
+            sums = parse_checksums(r.text[:1_000_000])
+            if sums:
+                if is_third_party(url):
+                    log_fn(f"[WARN] Sommes de contrôle obtenues via le miroir tiers {url.split('/')[2]} : "
+                           "vérification moins fiable")
+                return sums, not is_third_party(url)
+        except Exception:
+            continue
+    return {}, False
+
+def _download_to_temp(url, suffix, max_bytes=DOWNLOAD_MAX_BYTES):
+    """Télécharge vers un fichier temporaire → (chemin, sha256). Taille plafonnée."""
+    h, size = hashlib.sha256(), 0
+    with req.get(url, stream=True, timeout=120, allow_redirects=True) as r:
+        r.raise_for_status()
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            try:
+                for chunk in r.iter_content(65536):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError(f"fichier plus gros que {max_bytes // 1048576} Mo")
+                    h.update(chunk)
+                    tmp.write(chunk)
+            except Exception:
+                tmp.close()
+                Path(tmp.name).unlink(missing_ok=True)
+                raise
+    return Path(tmp.name), h.hexdigest()
+
 def download_archive(version, tag, log_fn):
+    """Archive frp téléchargée ET vérifiée (SHA-256), ou (None, nom)."""
     arch     = get_arch()
     filename = f"frp_{version}_linux_{arch}.tar.gz"
+    sums, sums_trusted = fetch_frp_checksums(tag, log_fn)
+    expected = sums.get(filename)
+    if not expected:
+        log_fn(f"[WARN] Pas de somme de contrôle publiée pour {filename} : intégrité non vérifiable")
+    if not mirrors_allowed():
+        log_fn("[INFO] Miroirs tiers désactivés : github.com uniquement")
     for url in build_download_mirrors(tag, filename):
         source = url.split("/")[2]
-        log_fn(f"[INFO] Tentative : {source} …")
+        third = is_third_party(url)
+        if third and not expected:
+            log_fn(f"[WARN] {source} ignoré : un miroir tiers n'est utilisé qu'avec une somme de contrôle")
+            continue
+        log_fn(f"[INFO] Tentative : {source} …" + (" (miroir tiers)" if third else ""))
         try:
-            with req.get(url, stream=True, timeout=120, allow_redirects=True) as r:
-                r.raise_for_status()
-                with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
-                    for chunk in r.iter_content(65536):
-                        tmp.write(chunk)
-                log_fn(f"[OK] Téléchargé depuis {source}")
-                return Path(tmp.name), filename
+            path, digest = _download_to_temp(url, ".tar.gz")
         except Exception as e:
             log_fn(f"[WARN] {source} : {e}")
+            continue
+        if expected and not hmac.compare_digest(digest, expected):
+            path.unlink(missing_ok=True)
+            log_fn(f"[ERROR] {source} : somme SHA-256 différente de celle publiée, fichier rejeté")
+            continue
+        if expected:
+            log_fn(f"[OK] Téléchargé depuis {source}, SHA-256 vérifiée"
+                   + ("" if sums_trusted else " (somme obtenue via un miroir tiers)"))
+        else:
+            log_fn(f"[OK] Téléchargé depuis {source} (non vérifié)")
+        return path, filename
     return None, filename
 
 def _stop_running_frp_services():
@@ -1020,6 +1460,55 @@ def _stop_running_frp_services():
         run_cmd(["systemctl", "stop", svc])
     return running
 
+ARCHIVE_MAX_MEMBERS  = 1000
+ARCHIVE_MAX_UNPACKED = 300 * 1024 * 1024
+FRP_BINARIES         = ("frps", "frpc")
+
+def extract_frp_binaries(archive, dest):
+    """Extrait frps/frpc d'une archive .tar.gz dans dest, sans jamais utiliser
+    extractall : chemins absolus ou avec « .. », liens et fichiers spéciaux sont
+    refusés, et la taille décompressée plafonnée (bombe de décompression).
+    → {nom: chemin extrait}. ValueError si l'archive est suspecte."""
+    dest = Path(dest)
+    found, total, count = {}, 0, 0
+    with tarfile.open(archive, "r:gz") as tf:
+        for m in tf:
+            count += 1
+            if count > ARCHIVE_MAX_MEMBERS:
+                raise ValueError("archive refusée : trop d'entrées")
+            parts = PurePosixPath(m.name).parts
+            if m.name.startswith(("/", "\\")) or ".." in parts or "\\" in m.name:
+                raise ValueError(f"archive refusée : chemin suspect « {m.name} »")
+            base = parts[-1] if parts else ""
+            if m.issym() or m.islnk():
+                if base in FRP_BINARIES:
+                    raise ValueError(f"archive refusée : {m.name} est un lien")
+                continue
+            if not m.isfile():
+                continue                          # dossiers, périphériques, FIFO : ignorés
+            total += m.size
+            if total > ARCHIVE_MAX_UNPACKED:
+                raise ValueError("archive refusée : trop volumineuse une fois décompressée")
+            if base not in FRP_BINARIES or len(parts) > 2 or base in found:
+                continue
+            src = tf.extractfile(m)
+            out = dest / base
+            with open(out, "wb") as f:
+                written = 0
+                while True:
+                    chunk = src.read(65536)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > m.size:
+                        raise ValueError("archive refusée : taille incohérente")
+                    f.write(chunk)
+            with open(out, "rb") as f:
+                if f.read(4) != b"\x7fELF":
+                    raise ValueError(f"archive refusée : {m.name} n'est pas un exécutable Linux")
+            found[base] = out
+    return found
+
 def install_from_archive(tmp_path, version, log_fn):
     log_fn("[INFO] Arrêt des services frp …")
     running = _stop_running_frp_services()
@@ -1028,14 +1517,12 @@ def install_from_archive(tmp_path, version, log_fn):
     try:
         log_fn("[INFO] Extraction …")
         with tempfile.TemporaryDirectory() as tmpdir:
-            with tarfile.open(tmp_path, "r:gz") as tf:
-                tf.extractall(tmpdir)
-            extracted = next(Path(tmpdir).iterdir())
+            extracted = extract_frp_binaries(tmp_path, tmpdir)
             installed = []
-            for b in ("frps", "frpc"):
-                src = extracted / b
+            for b in FRP_BINARIES:
+                src = extracted.get(b)
                 dst = FRP_BIN_DIR / b
-                if src.exists():
+                if src:
                     shutil.copy2(str(src), str(dst))
                     dst.chmod(0o755)
                     log_fn(f"[INFO] {b} → {dst}")
@@ -1286,7 +1773,9 @@ def api_instance_delete(iid):
     # ── Instance systemd ──────────────────────────────────────────────────────
     unit = f"{inst['service']}.service"
     _, fragment, _ = run_cmd(["systemctl", "show", unit, "--property=FragmentPath", "--value"])
-    fragment = fragment.strip()
+    fragment = posixpath.normpath(fragment.strip()) if fragment.strip() else ""
+    if not valid_service_name(inst["service"]):
+        return jsonify({"ok": False, "msg": "Nom de service refusé"}), 400
     if fragment and not fragment.startswith(_UNIT_DIR):
         return jsonify({"ok": False,
             "msg": f"{fragment} appartient à un paquet système : supprimez-le avec le gestionnaire de paquets."}), 400
@@ -1349,13 +1838,65 @@ def api_config_save(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": "Instance inconnue"}), 404
-    ok, msg = write_instance_config(INSTANCES[iid], (request.get_json() or {}).get("content", ""))
+    content = (request.get_json(silent=True) or {}).get("content", "")
+    if not isinstance(content, str):
+        return jsonify({"ok": False, "msg": "Contenu invalide"}), 400
+    ok, msg, status = write_instance_config(INSTANCES[iid], content)
     if ok:
         _invalidate_cache(discovery=True)      # serverAddr, fichier créé…
-    return jsonify({"ok": ok, "msg": msg}), (200 if ok else 500)
+    return jsonify({"ok": ok, "msg": msg}), status
+
+# ── Écriture des configs : validation et confinement ─────────────────────────
+# Le panel n'écrit une config que dans les dossiers où il en cherche
+# (CONFIG_SEARCH_PATHS, /etc/frp en tête), après résolution des liens
+# symboliques et des « .. ». Une config TOML doit se lire avant d'être écrite :
+# un fichier cassé n'arrive jamais sur le disque.
+CONFIG_MAX_BYTES = 1024 * 1024
+
+def safe_config_path(path):
+    """Chemin réel d'une config autorisée en écriture, ou ValueError."""
+    real = Path(os.path.realpath(str(path)))
+    if real.suffix not in _CONFIG_SUFFIXES:
+        raise ValueError(f"{path} : extension refusée (attendu {', '.join(_CONFIG_SUFFIXES)})")
+    for root in CONFIG_SEARCH_PATHS:
+        root_real = Path(os.path.realpath(str(root)))
+        if real.parent == root_real or root_real in real.parents:
+            return real
+    raise ValueError(f"{path} est hors des dossiers de configuration autorisés "
+                     f"({', '.join(str(r) for r in CONFIG_SEARCH_PATHS)})")
+
+def validate_config_content(path, content):
+    """ValueError si le contenu ne peut pas être écrit tel quel."""
+    if len(content.encode("utf-8", "surrogatepass")) > CONFIG_MAX_BYTES:
+        raise ValueError("Configuration trop volumineuse (1 Mo au plus)")
+    if "\x00" in content:
+        raise ValueError("Configuration invalide : caractère nul")
+    if Path(path).suffix == ".toml":
+        if _tomllib is None:
+            print("[WARN] tomllib/tomli indisponible : configuration TOML écrite sans vérification")
+            return
+        try:
+            _tomllib.loads(content)
+        except _tomllib.TOMLDecodeError as e:
+            raise ValueError(f"TOML invalide, rien n'a été écrit : {e}")
+
+def _write_config_file(path, content):
+    """→ (ok, message, code HTTP)."""
+    try:
+        real = safe_config_path(path)
+        validate_config_content(real, content)
+    except ValueError as e:
+        return False, str(e), 400
+    try:
+        real.parent.mkdir(parents=True, exist_ok=True)
+        real.write_text(content)
+        return True, f"Sauvegardé : {real}", 200
+    except Exception as e:
+        return False, f"Erreur écriture : {e}", 500
 
 def write_instance_config(inst, content_str):
-    """Écrit la config TOML d'une instance (fichier monté pour un container). → (ok, message)"""
+    """Écrit la config TOML d'une instance (fichier monté pour un container).
+    → (ok, message, code HTTP)"""
     # ── Container Docker : écrire dans le fichier monté ──────────────────────
     if inst.get("source") == "docker":
         container_name = inst.get("container_name", "")
@@ -1386,23 +1927,12 @@ def write_instance_config(inst, content_str):
         # Fallback final
         if not cfg_path:
             cfg_path = FRP_CONF_DIR / "frpc.toml"
-        try:
-            cfg_path.parent.mkdir(parents=True, exist_ok=True)
-            cfg_path.write_text(content_str)
-            return True, f"Sauvegardé : {cfg_path}"
-        except Exception as e:
-            return False, f"Erreur écriture : {e}"
+        return _write_config_file(cfg_path, content_str)
 
     # ── Instance systemd / binaire ────────────────────────────────────────────
     if not inst.get("config"):
-        return False, "Aucun fichier de config associé"
-    cfg = Path(inst["config"])
-    try:
-        cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text(content_str)
-        return True, f"Sauvegardé : {cfg}"
-    except Exception as e:
-        return False, f"Erreur écriture : {e}"
+        return False, "Aucun fichier de config associé", 400
+    return _write_config_file(inst["config"], content_str)
 
 @app.route("/api/logs/<iid>")
 @login_required
@@ -1428,6 +1958,8 @@ def api_logs(iid):
         # run_host : en mode Docker, le fichier de log est sur l'hôte, pas dans le container
         ok, out, err = run_host(["tail", "-n200", str(inst["log"])])
         return jsonify({"ok": True, "content": out if ok else (err or f"Fichier illisible : {inst['log']}")})
+    if not valid_service_name(inst["service"]):
+        return jsonify({"ok": False, "msg": "Nom de service refusé"}), 400
     ok, out, err = run_cmd(["journalctl", "-u", inst["service"],
                              "-n200", "--no-pager", "-o", "short-iso"])
     return jsonify({"ok": True, "content": out if ok else err})
@@ -1485,8 +2017,17 @@ def api_logs_stream(iid):
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+def _same_origin():
+    """Handshake WebSocket venu d'une page du panel (pas de jeton CSRF possible
+    sur une requête GET d'upgrade : on vérifie l'en-tête Origin, s'il est là)."""
+    origin = request.headers.get("Origin")
+    if not origin:
+        return True          # client hors navigateur : il lui faut quand même la session
+    netloc = origin.split("://", 1)[-1].rstrip("/")
+    return netloc in {request.host, request.headers.get("X-Forwarded-Host", "")}
+
 def _ws_authenticated(ws):
-    if MGR_CFG.get("password_hash") and not session.get("authenticated"):
+    if not _session_valid() or not _same_origin():
         ws.close(reason=1008, message="Non authentifié")
         return False
     return True
@@ -1562,17 +2103,43 @@ def api_manager_config_get():
 @login_required
 def api_manager_config_set():
     global MGR_CFG
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     cfg  = dict(MGR_CFG)
-    for k in ("bind_host", "username"):
-        if k in data: cfg[k] = str(data[k]).strip()
-    for k in ("bind_port", "session_timeout"):
-        if k in data: cfg[k] = int(data[k])
+    if "username" in data:
+        user = str(data["username"]).strip()
+        if not _USERNAME_RE.fullmatch(user):
+            return jsonify({"ok": False, "msg": "Identifiant invalide (1 à 64 caractères)."}), 400
+        cfg["username"] = user
+    if "bind_host" in data:
+        host = str(data["bind_host"]).strip()
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            return jsonify({"ok": False, "msg": "Adresse d'écoute invalide (ex. 127.0.0.1, 0.0.0.0 ou ::)."}), 400
+        cfg["bind_host"] = host
+    try:
+        if "bind_port" in data:
+            cfg["bind_port"] = int(data["bind_port"])
+            if not 1 <= cfg["bind_port"] <= 65535:
+                raise ValueError
+        if "session_timeout" in data:
+            cfg["session_timeout"] = int(data["session_timeout"])
+            if not 300 <= cfg["session_timeout"] <= 30 * 86400:
+                raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "msg": "Port (1 à 65535) ou durée de session (5 min à 30 jours) invalide."}), 400
     if "ssl_enabled" in data: cfg["ssl_enabled"] = bool(data["ssl_enabled"])
+    if "download_mirrors" in data: cfg["download_mirrors"] = bool(data["download_mirrors"])
     if data.get("new_password"):
-        cfg["password_hash"] = hash_password(data["new_password"])
+        problem = password_problem(str(data["new_password"]))
+        if problem:
+            return jsonify({"ok": False, "msg": problem}), 400
+        cfg["password_hash"] = hash_password(str(data["new_password"]))
     save_manager_config(cfg)
     MGR_CFG = cfg
+    app.permanent_session_lifetime = timedelta(seconds=int(cfg.get("session_timeout") or 3600))
+    if data.get("new_password"):
+        _start_session()      # cette session reste ouverte, les autres sont déconnectées
     return jsonify({"ok": True, "msg": "Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port."})
 
 @app.route("/api/nicknames", methods=["GET"])
@@ -1584,7 +2151,9 @@ def api_nicknames_get():
 @login_required
 def api_nickname_set(iid):
     global MGR_CFG
-    data = request.get_json() or {}
+    if not valid_instance_id(iid):
+        return jsonify({"ok": False, "msg": "Instance invalide"}), 400
+    data = request.get_json(silent=True) or {}
     nick = str(data.get("nickname", "")).strip()[:64]
     cfg  = dict(MGR_CFG)
     nicks = dict(cfg.get("nicknames", {}))
@@ -1728,11 +2297,12 @@ def api_panel_update():
                 return
 
             # Chercher l'asset zip (frp-manager.zip ou frp-manager-vX.X.X.zip)
-            zip_url = None
+            zip_url = sum_url = None
             for a in assets:
-                if a["name"].endswith(".zip") and "frp-manager" in a["name"]:
+                if a["name"].endswith(".zip") and "frp-manager" in a["name"] and not zip_url:
                     zip_url = a["browser_download_url"]
-                    break
+                elif a["name"] == PANEL_CHECKSUM_ASSET:
+                    sum_url = a["browser_download_url"]
             # Fallback : source code zip
             if not zip_url:
                 zip_url = data.get("zipball_url")
@@ -1741,23 +2311,37 @@ def api_panel_update():
                 _panel_log("[ERROR] Aucun asset .zip trouvé dans la release.")
                 return
 
+            expected = None
+            if sum_url:
+                try:
+                    r = req.get(sum_url, timeout=30)
+                    r.raise_for_status()
+                    m = re.match(r"\s*([0-9a-fA-F]{64})\b", r.text)
+                    expected = m.group(1).lower() if m else None
+                except Exception:
+                    expected = None
+            if not expected:
+                _panel_log("[WARN] Pas de somme SHA-256 publiée pour cette release : intégrité non vérifiée")
+
             _panel_log(f"[INFO] Téléchargement de {tag}…")
             try:
-                with req.get(zip_url, stream=True, timeout=120) as resp:
-                    resp.raise_for_status()
-                    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                        for chunk in resp.iter_content(65536):
-                            tmp.write(chunk)
-                        tmp_path = Path(tmp.name)
+                tmp_path, digest = _download_to_temp(zip_url, ".zip", PANEL_ZIP_MAX_BYTES)
             except Exception as e:
                 _panel_log(f"[ERROR] Téléchargement échoué : {e}")
                 return
+            if expected:
+                if not hmac.compare_digest(digest, expected):
+                    tmp_path.unlink(missing_ok=True)
+                    _panel_log("[ERROR] Somme SHA-256 différente de celle publiée : mise à jour annulée")
+                    return
+                _panel_log("[OK] Somme SHA-256 vérifiée")
 
             _panel_log("[INFO] Extraction…")
             install_dir = Path("/opt/frp-manager")
             try:
                 import zipfile
                 with zipfile.ZipFile(tmp_path, "r") as zf:
+                    check_panel_zip(zf)
                     members = zf.namelist()
                     # Normaliser les backslashes Windows → / dans les noms d'entrées
                     # (Compress-Archive stocke templates\index.html au lieu de templates/index.html,
@@ -1816,7 +2400,7 @@ def api_panel_update():
                 return
             finally:
                 try: tmp_path.unlink()
-                except: pass
+                except OSError: pass
 
             # Sauvegarder la version installée dans state.json
             try:
@@ -1897,7 +2481,7 @@ def api_update_install():
                 install_from_archive(tmp, version, _log)
             finally:
                 try: tmp.unlink()
-                except: pass
+                except OSError: pass
         finally:
             update_lock.release()
     threading.Thread(target=run, daemon=True).start()
@@ -1914,7 +2498,9 @@ def api_update_upload():
         update_lock.release()
         return jsonify({"ok": False, "msg": "Aucun fichier reçu"})
     f       = request.files["file"]
-    version = request.form.get("version","").strip().lstrip("v") or "manual"
+    version = request.form.get("version", "").strip().lstrip("v")
+    if not re.fullmatch(r"[0-9A-Za-z._-]{1,32}", version):
+        version = "manual"
     with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
         f.save(tmp.name)
         tmp_path = Path(tmp.name)
@@ -1923,7 +2509,7 @@ def api_update_upload():
             install_from_archive(tmp_path, version, _log)
         finally:
             try: tmp_path.unlink()
-            except: pass
+            except OSError: pass
             update_lock.release()
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"ok": True})
@@ -2244,7 +2830,7 @@ def migrate_away_from_mmproxy():
             continue
         new_text, changed = _unrelay_frpc_config(text, relays)
         if changed:
-            ok, msg = write_instance_config(inst, new_text)
+            ok, msg, _ = write_instance_config(inst, new_text)
             if not ok:
                 print(f"[WARN] go-mmproxy : {msg} — relais de {iid} conservés")
                 remaining[iid] = relays
@@ -2289,11 +2875,6 @@ def migrate_away_from_mmproxy():
 #     examinées ; la boucle locale ne l'est jamais, le port du panel non plus.
 # Une connexion doit passer chaque règle active qui concerne son port.
 # Si le panel s'arrête, la table reste en place ; au démarrage il la réapplique.
-import ipaddress
-try:
-    import tomllib as _tomllib
-except ImportError:          # Python < 3.11 (installation classique ancienne)
-    _tomllib = None
 
 FW_TABLE        = "frp_manager"
 FW_SYNC_SECONDS = 60
@@ -3073,7 +3654,7 @@ def api_firewall_install():
     if run_host(["nft", "--version"])[0]:
         return jsonify({"ok": True, "msg": "nftables est déjà installé."})
     for manager, steps in _NFT_INSTALLERS:
-        if not run_host(["sh", "-c", f"command -v {manager}"])[0]:
+        if not run_host(["sh", "-c", 'command -v "$1"', "sh", manager])[0]:
             continue
         for cmd in steps:
             ok, out, err = run_host(cmd, timeout=600)
@@ -3145,7 +3726,7 @@ def api_firewall_test():
 def api_firewall_lists():
     """Catalogue des listes communautaires (retéléchargé s'il a plus de 10 min)."""
     cache, err = _lists_get(0 if request.args.get("fresh") == "1" else 600)
-    return jsonify({"ok": True, "lists": sorted(cache["lists"].values(), key=lambda l: l["name"].lower()),
+    return jsonify({"ok": True, "lists": sorted(cache["lists"].values(), key=lambda lst: lst["name"].lower()),
                     "fetched": cache.get("fetched") or None, "error": err,
                     "browse_url": f"https://github.com/{PANEL_GITHUB_REPO}/tree/{FW_LISTS_BRANCH}"})
 
@@ -3246,11 +3827,25 @@ if sock:
             pass
 
 if __name__ == "__main__":
-    host = MGR_CFG.get("bind_host", os.environ.get("FRP_MANAGER_HOST", "0.0.0.0"))
+    if "--reset-password" in sys.argv[1:]:
+        reset_password_cli()
+        sys.exit(0)
+    ensure_manager_config()
+    app.secret_key = MGR_CFG["secret_key"]
+    # FRP_MANAGER_HOST (Docker : docker-compose.yml) passe avant bind_host
+    host = os.environ.get("FRP_MANAGER_HOST") or MGR_CFG.get("bind_host") or "127.0.0.1"
     port = MGR_CFG.get("bind_port", int(os.environ.get("FRP_MANAGER_PORT", 8765)))
     ssl_ctx = get_ssl_context()
+    app.config["SESSION_COOKIE_SECURE"] = bool(ssl_ctx or MGR_CFG.get("cookie_secure"))
     proto = "https" if ssl_ctx else "http"
     print(f"[INFO] FRP Manager démarré sur {proto}://{host}:{port}")
+    if needs_setup():
+        print("[INFO] Aucun mot de passe : ouvrez le panel pour créer l'identifiant administrateur.")
+        if host not in ("127.0.0.1", "::1", "localhost"):
+            print(f"[WARN] Le panel écoute sur {host} sans mot de passe : la première personne "
+                  "qui l'ouvre choisit les identifiants. Configurez-le sans attendre.")
+    if not mirrors_allowed():
+        print("[INFO] Miroirs de téléchargement tiers désactivés")
     threading.Thread(target=migrate_away_from_mmproxy, daemon=True).start()
     threading.Thread(target=_fw_sync_loop, daemon=True).start()
     app.run(host=host, port=port, debug=False, ssl_context=ssl_ctx)
