@@ -1,53 +1,48 @@
-# Code de conduite
+# Code of conduct
 
-*English: this project follows the spirit of the
-[Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
-Be respectful; harassment is not tolerated. Report issues privately to the
-maintainer (see below).*
+**English** · [Français](CODE_OF_CONDUCT.fr.md)
 
-Ce code de conduite s'inspire du
-[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/fr/version/2/1/code_of_conduct/),
-auquel il renvoie pour tout ce qu'il ne précise pas.
+This code of conduct is based on the
+[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/),
+which applies for anything it does not specify.
 
-## Notre engagement
+## Our pledge
 
-Nous voulons que la participation à ce projet soit une expérience sans
-harcèlement pour tout le monde, quels que soient l'âge, le handicap,
-l'origine, l'identité ou l'expression de genre, le niveau d'expérience, la
-nationalité, l'apparence, la religion ou l'orientation sexuelle.
+We want taking part in this project to be a harassment-free experience for
+everyone, regardless of age, disability, ethnicity, gender identity or
+expression, level of experience, nationality, appearance, religion or sexual
+orientation.
 
-## Comportements attendus
+## Expected behavior
 
-- Faire preuve de bienveillance et de patience, en particulier envers les
-  personnes qui débutent avec frp ou avec l'auto-hébergement.
-- Respecter les avis différents et critiquer les idées, pas les personnes.
-- Accepter les retours constructifs et reconnaître ses erreurs.
-- Privilégier ce qui est le mieux pour la communauté et les utilisateurs.
+- Be kind and patient, especially with people who are new to frp or to
+  self-hosting.
+- Respect differing opinions, and criticize ideas, not people.
+- Accept constructive feedback and acknowledge your mistakes.
+- Focus on what is best for the community and the users.
 
-## Comportements inacceptables
+## Unacceptable behavior
 
-- Propos ou images à caractère sexuel, avances non sollicitées.
-- Insultes, commentaires dégradants, attaques personnelles ou politiques.
-- Harcèlement, public ou privé.
-- Publication d'informations privées d'autrui (adresse, adresse IP, données
-  de configuration) sans son accord explicite.
-- Tout autre comportement qu'on jugerait raisonnablement déplacé dans un
-  cadre professionnel.
+- Sexualized language or imagery, unwelcome advances.
+- Insults, derogatory comments, personal or political attacks.
+- Harassment, public or private.
+- Publishing other people's private information (address, IP address,
+  configuration data) without their explicit consent.
+- Any other conduct that could reasonably be considered inappropriate in a
+  professional setting.
 
-## Portée
+## Scope
 
-Ce code s'applique dans tous les espaces du projet (issues, pull requests,
-discussions, dépôts associés) et lorsqu'une personne représente le projet
-ailleurs.
+This code applies in all project spaces (issues, pull requests, discussions,
+related repositories) and when someone represents the project elsewhere.
 
-## Signalement et application
+## Reporting and enforcement
 
-Signalez tout comportement inacceptable en privé au mainteneur
-([@Gogowwww](https://github.com/Gogowwww)), par le formulaire de signalement
-privé du dépôt (onglet **Security**, voir [SECURITY.md](SECURITY.md)), en
-précisant qu'il s'agit du code de conduite. Les signalements sont traités
-avec discrétion.
+Report any unacceptable behavior privately to the maintainer
+([@Gogowwww](https://github.com/Gogowwww)), through the repository's private
+reporting form (**Security** tab, see [SECURITY.md](SECURITY.md)), stating that
+it concerns the code of conduct. Reports are handled discreetly.
 
-Selon la gravité, le mainteneur peut demander de corriger un message, masquer
-ou supprimer un contenu, avertir, ou exclure temporairement ou définitivement
-une personne du projet.
+Depending on the severity, the maintainer may ask for a message to be
+corrected, hide or remove content, give a warning, or exclude someone from the
+project temporarily or permanently.

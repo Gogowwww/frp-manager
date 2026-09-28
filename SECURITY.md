@@ -1,90 +1,84 @@
-# Politique de sécurité
+# Security policy
 
-*English summary: please report vulnerabilities privately through GitHub's
-"Report a vulnerability" button (Security tab), not in a public issue. Only the
-latest release and the latest pre-release receive fixes.*
+**English** · [Français](SECURITY.fr.md)
 
-FRP Manager pilote des services réseau exposés à Internet (frps, frpc), des
-règles de pare-feu et, selon l'installation, le système hôte avec les droits
-root. Une faille dans le panel peut donc avoir des conséquences sérieuses :
-merci de la signaler de façon responsable.
+FRP Manager drives network services exposed to the Internet (frps, frpc),
+firewall rules and, depending on the installation, the host system with root
+privileges. A flaw in the panel can therefore have serious consequences:
+please report it responsibly.
 
-## Signaler une vulnérabilité
+## Reporting a vulnerability
 
-- **Ne l'ouvrez pas en issue publique.**
-- Utilisez le signalement privé de GitHub : onglet **Security** du dépôt, bouton
-  **Report a vulnerability**
-  ([lien direct](https://github.com/Gogowwww/frp-manager/security/advisories/new)).
-- Indiquez la version du panel (en bas de la barre latérale), le mode
-  d'installation (script ou Docker), les étapes pour reproduire et l'impact
-  que vous envisagez.
+- **Do not open a public issue.**
+- Use GitHub's private reporting: the repository's **Security** tab, **Report a
+  vulnerability** button
+  ([direct link](https://github.com/Gogowwww/frp-manager/security/advisories/new)).
+- Include the panel version (at the top of the sidebar), the install method
+  (script or Docker), the steps to reproduce and the impact you have in mind.
 
-Ce projet est maintenu bénévolement : comptez un accusé de réception sous
-7 jours et, pour une faille confirmée, un correctif publié en pré-release dès
-que possible. Le signalement est crédité dans les notes de version si vous le
-souhaitez.
+This project is maintained on a volunteer basis: expect an acknowledgement
+within 7 days and, for a confirmed flaw, a fix released as a pre-release as
+soon as possible. The report is credited in the release notes if you wish.
 
-## Versions prises en charge
+## Supported versions
 
-| Version | Correctifs de sécurité |
+| Version | Security fixes |
 |---|---|
-| Dernière release (`:latest`) | oui |
-| Dernière pré-release (`:dev`) | oui |
-| Versions antérieures | non : mettez à jour |
+| Latest release (`:latest`) | yes |
+| Latest pre-release (`:dev`) | yes |
+| Older versions | no: please update |
 
-## Modèle de menace (résumé)
+## Threat model (summary)
 
-**Ce que le panel protège**
+**What the panel protects**
 
-- L'accès à l'interface et à l'API : identifiant et mot de passe obligatoires
-  (configuration initiale imposée au premier lancement), mot de passe haché en
-  argon2id (scrypt en repli), limitation des tentatives par IP, sessions
-  HttpOnly / SameSite=Strict / Secure en HTTPS, jeton CSRF sur toute requête
-  qui modifie quelque chose.
-- Le navigateur de l'administrateur : Content-Security-Policy stricte pour les
-  scripts (nonce), X-Frame-Options, échappement systématique des données
-  (autoescape Jinja2, DOM construit sans `innerHTML`).
-- Le système : aucune commande passée à un shell avec des données saisies,
-  noms de services et de conteneurs validés par liste blanche, configurations
-  validées (TOML parsé) et confinées aux dossiers de configuration de frp,
-  archives extraites sans `extractall` (chemins, liens, taille contrôlés).
-- La chaîne d'approvisionnement : archives frp vérifiées par la somme SHA-256
-  publiée avec chaque release de fatedier/frp ; miroirs tiers (ghproxy, ghfast,
-  gh-proxy) désactivables et jamais utilisés sans somme de contrôle ; archive
-  de mise à jour du panel vérifiée par sa somme SHA-256 publiée.
+- Access to the interface and the API: username and password required (initial
+  setup enforced on first launch), password hashed with argon2id (scrypt as a
+  fallback), login attempts limited per IP, HttpOnly / SameSite=Strict / Secure
+  (over HTTPS) sessions, CSRF token on every request that changes something.
+- The administrator's browser: strict Content-Security-Policy for scripts
+  (nonce), X-Frame-Options, data escaped everywhere (Jinja2 autoescape, DOM
+  built without `innerHTML`).
+- The system: no command passed to a shell with user input, service and
+  container names allow-listed, configurations validated (TOML parsed) and
+  confined to frp's configuration directories, archives extracted without
+  `extractall` (paths, links and size checked).
+- The supply chain: frp archives checked against the SHA-256 published with
+  each fatedier/frp release; third-party mirrors (ghproxy, ghfast, gh-proxy)
+  can be disabled and are never used without a checksum; the panel update
+  archive is checked against its published SHA-256.
 
-**Ce que le panel ne protège pas**
+**What the panel does not protect**
 
-- **Un administrateur authentifié a, par conception, un pouvoir équivalent à
-  root sur la machine** : il installe des binaires, écrit des unités systemd,
-  modifie le pare-feu. Protéger le mot de passe revient à protéger la machine.
-- **En Docker, `pid: host`, `privileged: true` et le socket Docker donnent au
-  conteneur un accès équivalent à root sur l'hôte** (voir
-  [docs/docker.md](docs/docker.md)). L'isolation du conteneur ne limite pas ce
-  que le panel peut faire.
-- Le certificat HTTPS généré est auto-signé : il chiffre, mais n'authentifie
-  pas le serveur. Pour un accès depuis Internet, placez le panel derrière un
-  reverse proxy avec un certificat valide, ou n'y accédez que par VPN ou
-  tunnel SSH.
-- Derrière un reverse proxy, la limitation des tentatives voit l'adresse du
-  proxy : filtrez aussi l'accès à ce niveau.
-- Les tokens frp sont stockés en clair dans les fichiers TOML, comme frp
-  l'exige ; l'éditeur de configuration les affiche aux administrateurs.
+- **An authenticated administrator has, by design, root-equivalent power over
+  the machine**: they install binaries, write systemd units, change the
+  firewall. Protecting the password means protecting the machine.
+- **With Docker, `pid: host`, `privileged: true` and the Docker socket give the
+  container root-equivalent access to the host** (see
+  [docs/docker.md](docs/docker.md)). Container isolation does not limit what
+  the panel can do.
+- The generated HTTPS certificate is self-signed: it encrypts, but does not
+  authenticate the server. For access from the Internet, put the panel behind
+  a reverse proxy with a valid certificate, or only reach it through a VPN or
+  an SSH tunnel.
+- Behind a reverse proxy, login rate limiting sees the proxy's address: filter
+  access at that level too.
+- frp tokens are stored in plain text in the TOML files, as frp requires; the
+  configuration editor shows them to administrators.
 
-**Recommandations**
+**Recommendations**
 
-1. Laissez le panel sur `127.0.0.1` (valeur par défaut d'une nouvelle
-   installation) et accédez-y par tunnel SSH, VPN ou reverse proxy.
-2. Si vous l'ouvrez au réseau, créez l'identifiant immédiatement et filtrez
-   l'accès par IP.
-3. Utilisez un mot de passe long et unique, et un token frp long et unique
-   par serveur.
-4. Désactivez les miroirs tiers (Réglages → Accès réseau) si github.com vous
-   est accessible.
+1. Keep the panel on `127.0.0.1` (the default for a new install) and reach it
+   through an SSH tunnel, a VPN or a reverse proxy.
+2. If you open it to the network, create the account right away and filter
+   access by IP.
+3. Use a long, unique password, and a long, unique frp token per server.
+4. Disable third-party mirrors (Settings → Network access) if github.com is
+   reachable for you.
 
-## Base de données
+## Database
 
-Le panel n'utilise aucune base de données SQL : sa configuration est un
-fichier JSON (`/etc/frp-manager/frp-manager.json`, lisible par root seulement)
-et son état un autre (`/var/lib/frp-manager/state.json`). Il n'y a donc pas de
-surface d'injection SQL.
+The panel uses no SQL database: its configuration is a JSON file
+(`/etc/frp-manager/frp-manager.json`, readable by root only) and its state
+another one (`/var/lib/frp-manager/state.json`). There is therefore no SQL
+injection surface.

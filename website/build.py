@@ -39,17 +39,19 @@ LANGS = ("en", "fr")
 DOCS = [
     ("installation", {"en": "docs/installation.md", "fr": "docs/installation.fr.md"}),
     ("docker", {"en": "docs/docker.md", "fr": "docs/docker.fr.md"}),
-    ("security", {"fr": "SECURITY.md"}),
-    ("contributing", {"fr": "CONTRIBUTING.md"}),
-    ("code-of-conduct", {"fr": "CODE_OF_CONDUCT.md"}),
-    ("changelog", {"fr": "CHANGELOG.md"}),
+    ("security", {"en": "SECURITY.md", "fr": "SECURITY.fr.md"}),
+    ("contributing", {"en": "CONTRIBUTING.md", "fr": "CONTRIBUTING.fr.md"}),
+    ("code-of-conduct", {"en": "CODE_OF_CONDUCT.md", "fr": "CODE_OF_CONDUCT.fr.md"}),
+    ("changelog", {"en": "CHANGELOG.md", "fr": "CHANGELOG.fr.md"}),
 ]
 # Fichier du dépôt → (langue, page) ; None comme langue = langue de la page qui fait le lien
 DOC_FILES = {
     "installation.md": ("en", "installation"), "installation.fr.md": ("fr", "installation"),
     "docker.md": ("en", "docker"), "docker.fr.md": ("fr", "docker"),
-    "SECURITY.md": (None, "security"), "CONTRIBUTING.md": (None, "contributing"),
-    "CODE_OF_CONDUCT.md": (None, "code-of-conduct"), "CHANGELOG.md": (None, "changelog"),
+    "SECURITY.md": ("en", "security"), "SECURITY.fr.md": ("fr", "security"),
+    "CONTRIBUTING.md": ("en", "contributing"), "CONTRIBUTING.fr.md": ("fr", "contributing"),
+    "CODE_OF_CONDUCT.md": ("en", "code-of-conduct"), "CODE_OF_CONDUCT.fr.md": ("fr", "code-of-conduct"),
+    "CHANGELOG.md": ("en", "changelog"), "CHANGELOG.fr.md": ("fr", "changelog"),
     "README.md": ("en", ""), "README.fr.md": ("fr", ""),
 }
 

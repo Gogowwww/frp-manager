@@ -1,96 +1,96 @@
-# Journal des modifications
+# Changelog
 
-Toutes les évolutions notables de FRP Manager sont notées ici.
+**English** · [Français](CHANGELOG.fr.md)
 
-Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et les
-numéros de version se suivent (`0.0.50`, `0.0.51`…) : chaque version sort
-d'abord en pré-release, puis devient la release définitive avec le même
-numéro. Les versions antérieures à 0.0.51 sont décrites dans les
-[notes de release GitHub](https://github.com/Gogowwww/frp-manager/releases).
+All notable changes to FRP Manager are recorded here.
 
-## [Non publié]
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and version numbers follow each other (`0.0.50`, `0.0.51`…): every version
+first ships as a pre-release, then becomes the final release with the same
+number. Versions older than 0.0.51 are described in the
+[GitHub release notes](https://github.com/Gogowwww/frp-manager/releases).
 
-Déjà en ligne sur le site du projet ; sera inclus dans la prochaine version.
+## [Unreleased]
 
-### Ajouté
+Already live on the project website; will be included in the next version.
 
-- Site du projet, [frp-manager.gogow.fr](https://frp-manager.gogow.fr) : page
-  d'accueil, documentation (générée depuis les fichiers du dépôt) et démo en
-  ligne, en anglais et en français (`website/`).
+### Added
 
-### Modifié
+- Project website, [frp-manager.gogow.fr](https://frp-manager.gogow.fr): home
+  page, documentation (generated from the repository's files) and live demo,
+  in English and French (`website/`).
+- English versions of SECURITY, CONTRIBUTING, CODE_OF_CONDUCT and this
+  changelog (the French ones are now the `.fr.md` files).
 
-- La démo est servie sous `/demo/` du site. Son panel a désormais un mot de
-  passe, comme toute installation depuis 0.0.51, et la connexion ramène sur
-  `/demo/` au lieu de `/demo/index.html`.
-- Captures d'écran du site prises dans la démo, en anglais et en français
+### Changed
+
+- The demo is served under `/demo/` of the website. Its panel now has a
+  password, like every install since 0.0.51, and logging in brings you back to
+  `/demo/` instead of `/demo/index.html`.
+- Website screenshots are taken from the demo, in English and French
   (`website/shots.py`).
 
 ## [0.0.51] - 2026-09-28
 
-Pré-release puis release définitive le même jour.
+Pre-release, then final release, on the same day.
 
-Version consacrée à la sécurité. La mise à jour depuis le panel ou par
-`install.sh` est transparente : l'ancien mot de passe continue de fonctionner.
+A security-focused release. Updating from the panel or with `install.sh` is
+seamless: the existing password keeps working.
 
-### Sécurité
+### Security
 
-- Mot de passe haché en argon2id (argon2-cffi), avec scrypt en repli si le
-  module manque. L'ancien hash SHA-256 sans sel reste accepté et est rehaché
-  automatiquement à la première connexion réussie. Comparaisons en temps
-  constant.
-- Configuration initiale obligatoire : sans mot de passe, le panel n'affiche
-  plus que la page de création de l'identifiant (12 caractères minimum) ;
-  aucune autre page ni route de l'API ne répond.
-- Limitation des tentatives de connexion par adresse IP : 5 essais, puis
-  verrouillage de 30 s doublé à chaque échec (1 h au plus).
-- Jeton CSRF exigé sur toute requête qui modifie quelque chose ; origine des
-  WebSocket vérifiée.
-- Cookies de session HttpOnly et SameSite=Strict, Secure en HTTPS
-  (`cookie_secure` derrière un reverse proxy TLS). Changer le mot de passe
-  déconnecte les autres sessions.
-- En-têtes Content-Security-Policy (scripts à nonce), X-Content-Type-Options,
-  X-Frame-Options et Referrer-Policy ; réponses de l'API jamais mises en cache.
-- Noms de services systemd et de conteneurs Docker validés par liste blanche ;
-  plus aucune commande `sh -c` construite avec des données.
-- Configurations TOML vérifiées (tomllib/tomli) avant d'être écrites ; écriture
-  confinée aux dossiers de configuration de frp, liens symboliques résolus.
-- Archives frp extraites sans `extractall` : chemins absolus ou avec `..`,
-  liens, fichiers non ELF et bombes de décompression refusés ; taille des
-  téléchargements et des envois plafonnée.
-- Archives frp vérifiées par la somme SHA-256 publiée avec chaque release de
-  frp ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables (Réglages ou
-  `FRP_MANAGER_NO_MIRRORS=1`) et jamais utilisés sans somme de contrôle.
-- Mise à jour du panel vérifiée par la somme SHA-256 jointe à la release
-  (`frp-manager.zip.sha256`, publiée à partir de cette version) et archive
-  contrôlée avant extraction.
-- Fichier de configuration du panel écrit de façon atomique, lisible par
-  root seulement ; URL du webhook Discord masquée dans les journaux de
-  `frp-autoupdate.py`.
+- Password hashed with argon2id (argon2-cffi), with scrypt as a fallback if
+  the module is missing. The old unsalted SHA-256 hash is still accepted and is
+  rehashed automatically at the first successful login. Constant-time
+  comparisons.
+- Mandatory initial setup: without a password, the panel only shows the account
+  creation page (12 characters minimum); no other page or API route answers.
+- Login attempts limited per IP address: 5 attempts, then a 30 s lockout that
+  doubles with each failure (1 h at most).
+- CSRF token required on every request that changes something; WebSocket
+  origin checked.
+- HttpOnly and SameSite=Strict session cookies, Secure over HTTPS
+  (`cookie_secure` behind a TLS reverse proxy). Changing the password logs out
+  the other sessions.
+- Content-Security-Policy (nonce-based scripts), X-Content-Type-Options,
+  X-Frame-Options and Referrer-Policy headers; API responses never cached.
+- systemd service and Docker container names checked against an allow-list; no
+  more `sh -c` command built from data.
+- TOML configurations checked (tomllib/tomli) before being written; writing
+  confined to frp's configuration directories, symbolic links resolved.
+- frp archives extracted without `extractall`: absolute or `..` paths, links,
+  non-ELF files and decompression bombs rejected; download and upload sizes
+  capped.
+- frp archives checked against the SHA-256 published with each frp release;
+  third-party mirrors (ghproxy, ghfast, gh-proxy) can be disabled (Settings or
+  `FRP_MANAGER_NO_MIRRORS=1`) and are never used without a checksum.
+- Panel update checked against the SHA-256 attached to the release
+  (`frp-manager.zip.sha256`, published from this version on) and archive
+  inspected before extraction.
+- Panel configuration file written atomically, readable by root only; Discord
+  webhook URL masked in the `frp-autoupdate.py` logs.
 
-### Modifié
+### Changed
 
-- Une nouvelle installation écoute sur `127.0.0.1` au lieu de `0.0.0.0`.
-  Les installations existantes gardent leur adresse d'écoute.
-  `FRP_MANAGER_HOST` passe avant `bind_host`, et `FRP_MANAGER_PORT` fixe le
-  port d'une nouvelle installation.
-- Le panel refuse désormais d'écrire une configuration frp en dehors de
-  `/etc/frp`, `/usr/local/etc/frp`, `/opt/frp` et `/root/frp`, ou une
-  configuration TOML invalide (code 400 avec le détail de l'erreur).
-- Mot de passe de 12 caractères minimum pour tout nouveau mot de passe
-  (les mots de passe existants plus courts restent valides).
-- README restructuré (démarrage rapide, sécurité, comparaison) ; détails
-  déplacés dans `docs/`.
+- A new install listens on `127.0.0.1` instead of `0.0.0.0`. Existing installs
+  keep their listening address. `FRP_MANAGER_HOST` takes precedence over
+  `bind_host`, and `FRP_MANAGER_PORT` sets the port of a new install.
+- The panel now refuses to write an frp configuration outside `/etc/frp`,
+  `/usr/local/etc/frp`, `/opt/frp` and `/root/frp`, or an invalid TOML
+  configuration (HTTP 400 with the error details).
+- 12 characters minimum for any new password (existing shorter passwords stay
+  valid).
+- README restructured (quick start, security, comparison); details moved to
+  `docs/`.
 
-### Ajouté
+### Added
 
-- `python3 app.py --reset-password` pour redéfinir les identifiants depuis la
-  console.
-- Réglage « Miroirs de téléchargement tiers » (Réglages → Accès réseau).
-- SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, modèles d'issues et de
-  pull request.
-- Tests pytest (connexion, migration du hash, validation TOML, noms de
-  services, archives) et intégration continue : tests, ruff, pip-audit.
+- `python3 app.py --reset-password` to reset the credentials from the console.
+- "Third-party download mirrors" setting (Settings → Network access).
+- SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull request
+  templates.
+- pytest tests (login, hash migration, TOML validation, service names,
+  archives) and continuous integration: tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...HEAD
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51

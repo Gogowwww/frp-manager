@@ -1,27 +1,26 @@
-# Contribuer à FRP Manager
+# Contributing to FRP Manager
 
-*English: issues and pull requests are welcome in English or French. The
-steps below apply either way.*
+**English** · [Français](CONTRIBUTING.fr.md)
 
-Merci de votre intérêt ! Signalements de bugs, idées, traductions et pull
-requests sont les bienvenus. En participant, vous acceptez le
-[code de conduite](CODE_OF_CONDUCT.md).
+Thank you for your interest! Bug reports, ideas, translations and pull
+requests are welcome, in English or French. By taking part, you agree to the
+[code of conduct](CODE_OF_CONDUCT.md).
 
-## Signaler un bug ou proposer une idée
+## Reporting a bug or suggesting an idea
 
-- Cherchez d'abord dans les [issues](https://github.com/Gogowwww/frp-manager/issues)
-  existantes.
-- Utilisez le modèle « Bug » ou « Fonctionnalité » : version du panel, mode
-  d'installation (script ou Docker), version de frp, étapes pour reproduire.
-- Retirez tokens, adresses IP publiques et noms de domaine de ce que vous
-  collez (configurations TOML, journaux).
-- **Une faille de sécurité ne se signale pas en issue publique** : voir
+- Search the existing [issues](https://github.com/Gogowwww/frp-manager/issues)
+  first.
+- Use the "Bug" or "Feature request" template: panel version, install method
+  (script or Docker), frp version, steps to reproduce.
+- Remove tokens, public IP addresses and domain names from what you paste
+  (TOML configurations, logs).
+- **Security issues are not reported in a public issue**: see
   [SECURITY.md](SECURITY.md).
 
-## Préparer l'environnement
+## Setting up the environment
 
-Le panel est une application Flask sans étape de build : Python côté serveur
-(`app.py`), modules ES natifs côté navigateur (`templates/assets/js/`).
+The panel is a Flask application with no build step: Python on the server
+(`app.py`), native ES modules in the browser (`templates/assets/js/`).
 
 ```bash
 git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
@@ -29,69 +28,70 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt pytest ruff
 ```
 
-Pour lancer le panel en local sans toucher à `/etc/frp-manager` :
+To run the panel locally without touching `/etc/frp-manager`:
 
 ```bash
 echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
 FRP_MANAGER_CONFIG=/tmp/frpm.json python3 app.py
 ```
 
-La [démo](demo/build.py) (`python3 demo/build.py`) produit une version
-statique de l'interface avec des données fictives, pratique pour travailler
-sur le front sans frp installé.
+The [demo](demo/build.py) (`python3 demo/build.py`) produces a static version
+of the interface with sample data, handy to work on the front end without frp
+installed.
 
-Le site du projet ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) se
-construit avec `python3 website/build.py` : page d'accueil, documentation
-rendue depuis `docs/`, `SECURITY.md`, `CHANGELOG.md`… et démo sous `/demo/`.
-Servez le résultat avec `DEMO_SITE=dist-site python3 demo/serve.py`. Après un
-changement visible de l'interface, `python3 website/shots.py` refait les
-captures du site à partir de la démo (Pillow et Chrome ou Edge requis).
+The project website ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) is
+built with `python3 website/build.py`: home page, documentation rendered from
+`docs/`, `SECURITY.md`, `CHANGELOG.md`… and the demo under `/demo/`. Serve the
+result with `DEMO_SITE=dist-site python3 demo/serve.py`. After a visible change
+to the interface, `python3 website/shots.py` retakes the website screenshots
+from the demo (requires Pillow and Chrome or Edge).
 
-## Avant d'ouvrir une pull request
+## Before opening a pull request
 
 ```bash
 ruff check .
 python3 -m pytest
 ```
 
-- Une pull request = un sujet. Décrivez le problème résolu et comment vous
-  l'avez testé (installation par script, Docker, ou les deux).
-- Gardez le style du code existant : commentaires en français avec les
-  accents, noms explicites, pas de dépendance nouvelle sans raison.
-- Ajoutez un test quand vous touchez à l'authentification, à la validation
-  des entrées ou aux commandes système.
-- Toute commande système se passe en liste d'arguments (jamais `shell=True`
-  ni `sh -c` avec des données interpolées) ; tout nom de service ou de
-  conteneur passe par `valid_service_name` / `valid_container_name`.
-- L'interface ne construit le DOM qu'avec `h()` (`templates/assets/js/ui.js`),
-  jamais avec `innerHTML` sur des données. Pas d'émoji dans l'interface : les
-  icônes sont les SVG embarqués de `templates/partials/icons.html`.
-- Mettez à jour la section « Non publié » de [CHANGELOG.md](CHANGELOG.md).
+- One pull request = one topic. Describe the problem it solves and how you
+  tested it (install script, Docker, or both).
+- Keep the style of the existing code: comments in French with proper
+  accents, explicit names, no new dependency without a reason.
+- Add a test when you touch authentication, input validation or system
+  commands.
+- System commands are always argument lists (never `shell=True` nor `sh -c`
+  with interpolated data); every service or container name goes through
+  `valid_service_name` / `valid_container_name`.
+- The interface only builds the DOM with `h()` (`templates/assets/js/ui.js`),
+  never with `innerHTML` on data. No emoji in the interface: icons are the
+  embedded SVGs of `templates/partials/icons.html`.
+- Update the "Unreleased" section of the changelog, in both languages:
+  [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.fr.md](CHANGELOG.fr.md).
 
-## Traduire le panel
+## Translating the panel
 
-Tous les textes de l'interface sont dans `templates/assets/locales/` :
-`fr.js` (langue de référence) et `en.js`.
+All interface texts live in `templates/assets/locales/`: `fr.js` (reference
+language) and `en.js`.
 
-1. Copiez `fr.js` en `<code>.js` (`de.js`, `es.js`…) et traduisez les valeurs,
-   sans toucher aux clés ni aux `{paramètres}`.
-2. Déclarez la langue dans `LOCALES` de `templates/assets/js/i18n.js`.
-3. Tant qu'elle est incomplète, ajoutez-la aussi à `PREVIEW_LOCALES` : elle est
-   proposée dans les Réglages avec la mention *aperçu*, sans être choisie
-   d'après la langue du navigateur.
+1. Copy `fr.js` to `<code>.js` (`de.js`, `es.js`…) and translate the values,
+   without touching the keys or the `{parameters}`.
+2. Declare the language in `LOCALES` in `templates/assets/js/i18n.js`.
+3. While it is incomplete, also add it to `PREVIEW_LOCALES`: it is offered in
+   Settings marked *preview*, without being picked from the browser language.
 
-Toute clé ajoutée à `fr.js` doit l'être aussi dans `en.js` (sinon l'interface
-retombe silencieusement sur le français). Les README existent en deux langues
-(`README.md` en anglais, `README.fr.md` en français), comme les pages de
-`docs/` : modifiez les deux.
+Every key added to `fr.js` must also be added to `en.js` (otherwise the
+interface silently falls back to French). The documentation exists in two
+languages: `X.md` in English, `X.fr.md` in French (README, SECURITY,
+CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG and the pages of `docs/`). Update
+both.
 
-## Listes de blocage communautaires
+## Community blocklists
 
-Une liste d'adresses à partager ? Bouton **Publier** sur une règle *Bloquer*
-du pare-feu, ou pull request sur la branche
-[`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
+A list of addresses to share? Use the **Publish** button on a *Block* firewall
+rule, or open a pull request on the
+[`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch.
 
-## Licence
+## License
 
-En contribuant, vous acceptez que votre contribution soit publiée sous la
-licence du projet, [Apache 2.0](LICENSE).
+By contributing, you agree that your contribution is published under the
+project's license, [Apache 2.0](LICENSE).
