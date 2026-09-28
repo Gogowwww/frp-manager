@@ -1,6 +1,7 @@
 # ── Données sensibles frp / panel (ne JAMAIS committer) ───────────────────────
 # Configs réelles (tokens, IP, domaines)
 *.toml
+!ruff.toml
 *.ini
 frp-manager.json
 *.local.*

@@ -1,0 +1,11 @@
+# Linter du projet (lancé par la CI) : erreurs réelles d'abord, pas le style.
+target-version = "py38"
+line-length = 120
+
+[lint]
+select = ["E4", "E7", "E9", "F", "S102", "S307", "S506", "S602", "S604", "S605", "S608"]
+# Style du code existant : plusieurs imports ou instructions sur une ligne
+ignore = ["E401", "E701", "E702", "E731"]
+
+[lint.per-file-ignores]
+"tests/*" = ["S"]
