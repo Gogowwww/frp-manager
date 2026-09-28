@@ -21,19 +21,32 @@ SITE = Path(os.environ.get("DEMO_SITE") or Path(__file__).resolve().parent / "si
 class Handler(SimpleHTTPRequestHandler):
     extensions_map = {**SimpleHTTPRequestHandler.extensions_map,
                       ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
-                      ".svg": "image/svg+xml", ".html": "text/html; charset=utf-8"}
+                      ".svg": "image/svg+xml", ".webp": "image/webp", ".html": "text/html; charset=utf-8"}
 
     def list_directory(self, path):
         self.send_error(404)          # pas de liste des dossiers
         return None
 
+    def send_error(self, code, message=None, explain=None):
+        """Page 404 du site (404.html) plutôt que la page d'erreur brute."""
+        page = SITE / "404.html"
+        if code != 404 or not page.is_file() or self.command not in ("GET", "HEAD"):
+            return super().send_error(code, message, explain)
+        body = page.read_bytes()
+        self.send_response(404)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command == "GET":
+            self.wfile.write(body)
+
     def end_headers(self):
-        # Assets sous v/<empreinte>/ : jamais modifiés, gardés en cache ;
+        # Assets sous v/<empreinte>/ (démo) ou assets/<empreinte>/ (site) : jamais modifiés, gardés en cache ;
         # les pages sont relues à chaque visite (nouvelle version de la démo).
         # Pas de chemin quand la requête est illisible (ex. HTTPS envoyé à ce
         # port HTTP) : la réponse d'erreur passe aussi par ici.
         path = getattr(self, "path", "").split("?", 1)[0]
-        if path.startswith("/v/"):
+        if path.startswith(("/v/", "/demo/v/", "/assets/")):
             self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         else:
             self.send_header("Cache-Control", "no-cache")

@@ -198,7 +198,7 @@ transport.useCompression = true
       },
       configs: { frps: FRPS_TOML, frpc: FRPC_TOML, 'docker_frpc-nas': FRPC_NAS_TOML },
       nicknames: { frps: fr ? 'VPS public' : 'Public VPS', frpc: fr ? 'Serveur maison' : 'Home server' },
-      manager: { bind_host: '0.0.0.0', bind_port: PANEL_PORT, username: 'admin', session_timeout: 3600, ssl_enabled: true, has_password: false },
+      manager: { bind_host: '0.0.0.0', bind_port: PANEL_PORT, username: 'admin', session_timeout: 3600, ssl_enabled: true, has_password: true, download_mirrors: true },
       frp: { installed: FRP_INSTALLED },
       firewall: {
         enabled: true,
@@ -787,6 +787,7 @@ transport.useCompression = true
     for (const k of ['bind_host', 'username']) if (k in body) S.manager[k] = String(body[k]).trim();
     for (const k of ['bind_port', 'session_timeout']) if (k in body) S.manager[k] = Number(body[k]);
     if (body.new_password) S.manager.has_password = true;
+    if ('download_mirrors' in body) S.manager.download_mirrors = !!body.download_mirrors;
     save();
     return { ok: true, msg: M('Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.', 'Saved. Restart frp-manager to apply bind_host/port.') };
   });
@@ -1003,16 +1004,19 @@ transport.useCompression = true
       try { sessionStorage.removeItem(STATE_KEY); } catch { /* ignoré */ }
       location.reload();
     });
+    // Démo servie sous /demo/ du site : retour au guide d'installation du site,
+    // hors de l'iframe quand elle est intégrée à la page d'accueil
     const gh = document.createElement('a');
-    gh.href = `https://github.com/${REPO}`;
-    gh.target = '_blank';
-    gh.rel = 'noopener';
+    gh.href = M('../fr/docs/installation/', '../docs/installation/');
+    gh.target = '_top';
     gh.textContent = M('Installer FRP Manager', 'Install FRP Manager');
     const text = document.createElement('span');
     text.innerHTML = M('<strong>Démo</strong> : données fictives, rien n\'est réellement modifié.',
       '<strong>Demo</strong>: sample data, nothing is actually changed.');
     const sep = () => Object.assign(document.createElement('span'), { className: 'sep', textContent: '·' });
     bar.append(text, sep(), reset, sep(), gh);
+    // ?shot : pas de bandeau, pour les captures d'écran du site (website/shots.py)
+    if (new URLSearchParams(location.search).has('shot')) return;
     const main = document.querySelector('.main');
     if (main) main.prepend(bar);
     else document.body.prepend(bar);

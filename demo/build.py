@@ -151,8 +151,10 @@ def main():
     ap.add_argument("--version", default=None)
     ap.add_argument("--bundle", default=None, help="dossier app.py + site/ à produire (contenu remplacé)")
     ap.add_argument("--zip", default=None, help="archive app.py + site/ à produire")
-    ap.add_argument("--site-url", default="https://demo-frp-manager.gogow.fr",
+    ap.add_argument("--site-url", default="https://frp-manager.gogow.fr",
                     help="adresse publique de la démo (canonical, Open Graph, sitemap)")
+    ap.add_argument("--embedded", action="store_true",
+                    help="démo placée dans le site (website/build.py), sous /demo/")
     args = ap.parse_args()
     site = args.site_url.rstrip("/")
     out = Path(args.out)
@@ -200,13 +202,15 @@ def main():
     (out / "login.html").write_text(render(login, **common), encoding="utf-8")
 
     shutil.copyfile(DEMO / "og.png", out / "og.png")
-    (out / "robots.txt").write_text(
-        f"User-agent: *\nAllow: /\n\nSitemap: {site}/sitemap.xml\n", encoding="utf-8")
-    (out / "sitemap.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        f"  <url><loc>{site}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n"
-        "</urlset>\n", encoding="utf-8")
+    # Démo dans le site (website/build.py) : robots.txt et sitemap.xml sont ceux du site
+    if not args.embedded:
+        (out / "robots.txt").write_text(
+            f"User-agent: *\nAllow: /\n\nSitemap: {site}/sitemap.xml\n", encoding="utf-8")
+        (out / "sitemap.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"  <url><loc>{site}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n"
+            "</urlset>\n", encoding="utf-8")
 
     # Hébergeurs Apache : pas de liste des dossiers, pages HTML toujours relues
     # (les assets, sous v/<empreinte>/, peuvent rester en cache indéfiniment).
