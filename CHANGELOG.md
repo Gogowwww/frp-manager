@@ -10,7 +10,25 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+Déjà en ligne sur le site du projet ; sera inclus dans la prochaine version.
+
+### Ajouté
+
+- Site du projet, [frp-manager.gogow.fr](https://frp-manager.gogow.fr) : page
+  d'accueil, documentation (générée depuis les fichiers du dépôt) et démo en
+  ligne, en anglais et en français (`website/`).
+
+### Modifié
+
+- La démo est servie sous `/demo/` du site. Son panel a désormais un mot de
+  passe, comme toute installation depuis 0.0.51, et la connexion ramène sur
+  `/demo/` au lieu de `/demo/index.html`.
+- Captures d'écran du site prises dans la démo, en anglais et en français
+  (`website/shots.py`).
+
 ## [0.0.51] - 2026-09-28
+
+Pré-release puis release définitive le même jour.
 
 Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 `install.sh` est transparente : l'ancien mot de passe continue de fonctionner.
