@@ -83,9 +83,10 @@ title "$(m "Déploiement des fichiers" "Deploying files")"
 
 mkdir -p "$INSTALL_DIR/templates" "$LOG_DIR" "$STATE_DIR"
 
-cp "$SCRIPT_DIR/app.py"            "$INSTALL_DIR/app.py"
-cp "$SCRIPT_DIR/frp-autoupdate.py" "$INSTALL_DIR/frp-autoupdate.py"
-chmod +x "$INSTALL_DIR/frp-autoupdate.py"
+cp "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
+# Mise à jour automatique de frp retirée en 0.0.53 : frp se met à jour depuis
+# la page Mises à jour du panel. On supprime le script et sa tâche cron.
+rm -f "$INSTALL_DIR/frp-autoupdate.py" /etc/cron.d/frp-autoupdate
 
 rm -rf "$INSTALL_DIR/templates"
 cp -r "$SCRIPT_DIR/templates" "$INSTALL_DIR/templates"
@@ -109,7 +110,6 @@ Restart=on-failure
 RestartSec=5s
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${VENV_DIR}/bin/python3 ${INSTALL_DIR}/app.py
-ExecStartPost=/bin/bash -c '${VENV_DIR}/bin/python3 ${INSTALL_DIR}/frp-autoupdate.py >> ${LOG_DIR}/autoupdate.log 2>&1 &'
 StandardOutput=journal
 StandardError=journal
 
@@ -125,11 +125,12 @@ if [[ -x /usr/local/bin/frps && -x /usr/local/bin/frpc ]]; then
     ok "$(m "Binaires frps/frpc déjà présents dans /usr/local/bin." "frps/frpc binaries already in /usr/local/bin.")"
 else
     info "$(m "Récupération de la dernière version de frp depuis GitHub…" "Fetching the latest frp version from GitHub…")"
-    if "$VENV_DIR/bin/python3" "$INSTALL_DIR/frp-autoupdate.py" >> "$LOG_DIR/autoupdate.log" 2>&1; then
+    # Même code que la page Mises à jour du panel (somme SHA-256 vérifiée)
+    if (cd "$INSTALL_DIR" && "$VENV_DIR/bin/python3" app.py --install-frp); then
         ok "$(m "Binaires frps/frpc installés dans /usr/local/bin." "frps/frpc binaries installed in /usr/local/bin.")"
     else
-        warn "$(m "Téléchargement des binaires échoué (réseau ?) — voir" "Binary download failed (network?): see") $LOG_DIR/autoupdate.log."
-        warn "$(m "Le panel relancera la tentative à son démarrage." "The panel will try again when it starts.")"
+        warn "$(m "Téléchargement des binaires échoué (réseau ?)." "Binary download failed (network?).")"
+        warn "$(m "Installez frp plus tard depuis la page Mises à jour du panel." "Install frp later from the panel's Updates page.")"
     fi
 fi
 
@@ -210,14 +211,6 @@ ok "$(m "Service frpc.service créé." "frpc.service created.")"
 warn "$(m "frps/frpc installés mais NON activés/démarrés — gérez-les depuis le panel." \
           "frps/frpc installed but NOT enabled/started: manage them from the panel.")"
 
-title "$(m "Tâche cron de mise à jour de frp (tous les jours à 03h00)" "frp auto-update cron job (daily at 3:00 AM)")"
-
-cat > /etc/cron.d/frp-autoupdate <<EOF
-0 3 * * * root ${VENV_DIR}/bin/python3 ${INSTALL_DIR}/frp-autoupdate.py >> ${LOG_DIR}/autoupdate.log 2>&1
-EOF
-chmod 644 /etc/cron.d/frp-autoupdate
-ok "$(m "Tâche cron créée." "Cron job created.")"
-
 title "$(m "Activation et démarrage" "Enabling and starting")"
 
 systemctl daemon-reload
@@ -276,7 +269,7 @@ echo -e "  $(m "Première ouverture : créez l'identifiant administrateur (12 ca
 echo ""
 echo -e "  $(m "Config panel  :" "Panel config  :") ${CYAN}/etc/frp-manager/frp-manager.json${RESET}"
 echo -e "  $(m "Journaux      :" "Logs          :") ${CYAN}${LOG_DIR}/${RESET}"
-echo -e "  $(m "Mise à jour   :" "Auto-update   :") ${CYAN}/etc/cron.d/frp-autoupdate${RESET} $(m "(03h00)" "(3:00 AM)")"
+echo -e "  $(m "Mises à jour  :" "Updates       :") $(m "page Mises à jour du panel (frp et panel)" "the panel's Updates page (frp and panel)")"
 echo -e "  $(m "Services frp  :" "frp services  :") ${CYAN}frps.service${RESET} + ${CYAN}frpc.service${RESET} $(m "créés (non démarrés)" "created (not started)")"
 echo -e "                  $(m "→ configurez-les puis démarrez-les depuis le panel." "→ configure them, then start them from the panel.")"
 echo ""

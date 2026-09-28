@@ -21,7 +21,8 @@
 - Architectures: `amd64`, `arm64`, `arm`
 
 No need to install frp first: the script downloads `frps`/`frpc` and creates
-their systemd services. frp is then updated from the **Updates** page.
+their systemd services. frp is then updated from the **Updates** page, when
+you decide: nothing is updated automatically.
 
 ## Install script
 
@@ -184,7 +185,6 @@ then `docker restart frp-manager`.
 ```
 Repository
   app.py                   Flask server + API
-  frp-autoupdate.py        Automatic frp updates (cron)
   install.sh               Install script
   Dockerfile, docker-compose.yml
   templates/
@@ -202,7 +202,6 @@ Repository
 /var/log/frp/              frp logs
 /var/lib/frp-manager/      State (installed versions)
 /etc/systemd/system/       frp-manager.service, frps.service, frpc.service
-/etc/cron.d/               frp-autoupdate (daily check, 3:00 AM)
 ```
 
 The panel only writes frp configurations in the directories where it looks
@@ -213,7 +212,7 @@ for them: `/etc/frp`, `/usr/local/etc/frp`, `/opt/frp`, `/root/frp`.
 ```bash
 sudo systemctl disable --now frp-manager
 sudo rm /etc/systemd/system/frp-manager.service
-sudo rm -rf /opt/frp-manager /etc/frp-manager /etc/cron.d/frp-autoupdate
+sudo rm -rf /opt/frp-manager /etc/frp-manager
 sudo systemctl daemon-reload
 ```
 

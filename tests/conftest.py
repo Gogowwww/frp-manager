@@ -29,7 +29,9 @@ def appmod(tmp_path, monkeypatch):
     monkeypatch.setattr(app_module, "MGR_CONF_FILE", conf)
     monkeypatch.setattr(app_module, "MGR_CONF_DIR", tmp_path)
     monkeypatch.setattr(app_module, "MGR_CFG", app_module._default_manager_config())
-    monkeypatch.setenv("LANG", "C.UTF-8")      # messages hors requête : français, quel que soit le poste
+    monkeypatch.setenv("LANG", "fr_FR.UTF-8")  # messages hors requête : français, quel que soit le poste
+    monkeypatch.delenv("LC_ALL", raising=False)
+    monkeypatch.delenv("LC_MESSAGES", raising=False)
     app_module._login_failures.clear()
     app_module.app.config.update(TESTING=True, SESSION_COOKIE_SECURE=False)
     return app_module

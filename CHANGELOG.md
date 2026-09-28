@@ -12,6 +12,14 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Removed
+
+- The frp auto-update is removed (`frp-autoupdate.py`: daily cron job, check
+  at every panel start, Discord notification). frp is only updated from the
+  panel's Updates page. `install.sh` installs frp with `app.py --install-frp`
+  (same verified download as the panel), and an existing install removes the
+  cron job, the script and its line in the systemd service on its next start.
+
 ## [0.0.52] - 2026-09-28
 
 Pre-release, then final release, on the same day.

@@ -58,7 +58,7 @@ def _load_panel_version():
     # 2. Version gravée dans le zip de la release
     if _PANEL_VERSION_FALLBACK:
         return _PANEL_VERSION_FALLBACK
-    # 3. Version notée par la mise à jour automatique
+    # 3. Version notée par la mise à jour du panel
     try:
         p = Path("/var/lib/frp-manager/state.json")
         if p.exists():
@@ -251,7 +251,11 @@ def _lang():
             # Navigateur dans une autre langue : anglais, comme l'interface
             v = request.accept_languages.best_match(["fr", "en"]) or "en"
     else:
-        v = getattr(_tls, "lang", None) or os.environ.get("LANG", "")
+        v = getattr(_tls, "lang", None)
+        if not v:
+            # Ligne de commande : français seulement si le système l'est (comme install.sh)
+            env = os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or ""
+            v = "fr" if env.lower().startswith("fr") else "en"
     return "en" if v.lower().startswith("en") else "fr"
 
 def M(fr, en):
@@ -2470,8 +2474,8 @@ def api_panel_update():
                                    + M("contenu : ", "contents: ")
                                    + f"{[p.name for p in src_dir.iterdir()] if src_dir.exists() else '?'}")
 
-                        # Copier app.py, templates/, frp-autoupdate.py, install.sh
-                        for item in ["app.py", "frp-autoupdate.py", "templates", "install.sh"]:
+                        # Copier app.py, templates/, install.sh
+                        for item in ["app.py", "templates", "install.sh"]:
                             src = src_dir / item
                             dst = install_dir / item
                             if not src.exists():
@@ -2916,6 +2920,56 @@ def _read_instance_config(inst):
         return Path(inst["config"]).read_text() if inst.get("config") else None
     except Exception:
         return None
+
+# ── Retrait de frp-autoupdate.py (0.0.53) ────────────────────────────────────
+# frp ne se met plus à jour tout seul : uniquement depuis la page Mises à jour.
+# Une installation antérieure garde sa tâche cron, le script et la ligne
+# ExecStartPost du service (la mise à jour du panel ne touche qu'aux fichiers) :
+# on les retire au démarrage.
+LEGACY_AUTOUPDATE_CRON   = Path("/etc/cron.d/frp-autoupdate")
+LEGACY_AUTOUPDATE_SCRIPT = Path(app.root_path) / "frp-autoupdate.py"
+PANEL_UNIT_FILE          = Path("/etc/systemd/system/frp-manager.service")
+
+def remove_frp_autoupdate():
+    if IN_DOCKER:
+        return
+    for f in (LEGACY_AUTOUPDATE_CRON, LEGACY_AUTOUPDATE_SCRIPT):
+        try:
+            if f.exists():
+                f.unlink()
+                print(f"[INFO] Mise à jour automatique de frp retirée : {f} supprimé")
+        except OSError as e:
+            print(f"[WARN] {f} non supprimé : {e}")
+    try:
+        text = PANEL_UNIT_FILE.read_text()
+    except OSError:
+        return
+    if "frp-autoupdate.py" in text:
+        kept = "".join(line for line in text.splitlines(keepends=True) if "frp-autoupdate.py" not in line)
+        try:
+            PANEL_UNIT_FILE.write_text(kept)
+            run_cmd(["systemctl", "daemon-reload"])
+            print(f"[INFO] {PANEL_UNIT_FILE} : lancement de frp-autoupdate.py retiré")
+        except OSError as e:
+            print(f"[WARN] {PANEL_UNIT_FILE} non modifié : {e}")
+
+def install_frp_cli():
+    """python3 app.py --install-frp : installe la dernière version de frp si
+    frps/frpc manquent (utilisé par install.sh). → code de sortie."""
+    if all((FRP_BIN_DIR / b).exists() for b in FRP_BINARIES):
+        print(M("frps et frpc sont déjà installés.", "frps and frpc are already installed."))
+        return 0
+    version, tag, source = fetch_latest_version()
+    if not version:
+        print(M("[ERROR] Dernière version de frp introuvable (réseau ?).", "[ERROR] Could not find the latest frp version (network?)."))
+        return 1
+    tmp, _ = download_archive(version, tag, print)
+    if not tmp:
+        return 1
+    try:
+        return 0 if install_from_archive(tmp, version, print) else 1
+    finally:
+        tmp.unlink(missing_ok=True)
 
 def migrate_away_from_mmproxy():
     if not MMPROXY_STATE_FILE.exists():
@@ -3963,7 +4017,10 @@ if __name__ == "__main__":
     if "--reset-password" in sys.argv[1:]:
         reset_password_cli()
         sys.exit(0)
+    if "--install-frp" in sys.argv[1:]:
+        sys.exit(install_frp_cli())
     ensure_manager_config()
+    remove_frp_autoupdate()
     app.secret_key = MGR_CFG["secret_key"]
     # FRP_MANAGER_HOST (Docker : docker-compose.yml) passe avant bind_host
     host = os.environ.get("FRP_MANAGER_HOST") or MGR_CFG.get("bind_host") or "127.0.0.1"

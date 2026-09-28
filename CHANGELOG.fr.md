@@ -12,6 +12,15 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Retiré
+
+- La mise à jour automatique de frp est retirée (`frp-autoupdate.py` : tâche
+  cron quotidienne, vérification à chaque démarrage du panel, notification
+  Discord). frp ne se met plus à jour que depuis la page Mises à jour du panel.
+  `install.sh` installe frp avec `app.py --install-frp` (même téléchargement
+  vérifié que le panel), et une installation existante supprime la tâche cron,
+  le script et sa ligne dans le service systemd à son prochain démarrage.
+
 ## [0.0.52] - 2026-09-28
 
 Pré-release puis release définitive le même jour.

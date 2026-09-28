@@ -183,3 +183,24 @@ def test_mirrors_can_be_disabled(appmod, monkeypatch):
     monkeypatch.setitem(appmod.MGR_CFG, "download_mirrors", False)
     urls = appmod.build_download_mirrors("v0.71.0", "f.tar.gz")
     assert urls == ["https://github.com/fatedier/frp/releases/download/v0.71.0/f.tar.gz"]
+
+
+# ── Retrait de frp-autoupdate.py ─────────────────────────────────────────────
+def test_legacy_autoupdate_removed(appmod, tmp_path, monkeypatch):
+    cron, script, unit = tmp_path / "frp-autoupdate", tmp_path / "frp-autoupdate.py", tmp_path / "frp-manager.service"
+    cron.write_text("0 3 * * * root python3 frp-autoupdate.py\n")
+    script.write_text("print('x')\n")
+    unit.write_text("[Service]\nExecStart=/opt/frp-manager/venv/bin/python3 app.py\n"
+                    "ExecStartPost=/bin/bash -c 'python3 /opt/frp-manager/frp-autoupdate.py &'\n")
+    monkeypatch.setattr(appmod, "IN_DOCKER", False)
+    monkeypatch.setattr(appmod, "LEGACY_AUTOUPDATE_CRON", cron)
+    monkeypatch.setattr(appmod, "LEGACY_AUTOUPDATE_SCRIPT", script)
+    monkeypatch.setattr(appmod, "PANEL_UNIT_FILE", unit)
+    calls = []
+    monkeypatch.setattr(appmod, "run_cmd", lambda cmd, **kw: calls.append(cmd) or (True, "", ""))
+    appmod.remove_frp_autoupdate()
+    assert not cron.exists() and not script.exists()
+    assert "frp-autoupdate" not in unit.read_text() and "ExecStart=" in unit.read_text()
+    assert calls == [["systemctl", "daemon-reload"]]
+    appmod.remove_frp_autoupdate()             # déjà fait : plus rien à changer
+    assert calls == [["systemctl", "daemon-reload"]]

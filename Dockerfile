@@ -16,7 +16,6 @@ RUN apt-get update \
 WORKDIR /opt/frp-manager
 
 COPY app.py .
-COPY frp-autoupdate.py .
 COPY templates/ templates/
 
 # Injecter la version du panel dans l'image via ARG/ENV
