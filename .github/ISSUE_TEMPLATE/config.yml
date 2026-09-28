@@ -1,0 +1,7 @@
+# Issues libres gardées : le bouton « Publier » du pare-feu ouvre une issue
+# pré-remplie (issues/new?title=…&body=…) que blocklists.yml traite.
+blank_issues_enabled: true
+contact_links:
+  - name: Faille de sécurité / Security vulnerability
+    url: https://github.com/Gogowwww/frp-manager/security/advisories/new
+    about: Signalement privé, jamais en issue publique / Private report, never in a public issue

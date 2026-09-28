@@ -1,0 +1,28 @@
+name: Fonctionnalité / Feature request
+description: Proposer une amélioration / Suggest an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Besoin / Problem
+      description: Ce que vous cherchez à faire et ce qui bloque aujourd'hui / What you are trying to do and what gets in the way
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposition / Proposal
+      description: Comment le panel pourrait y répondre / How the panel could help
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives envisagées / Alternatives considered
+  - type: checkboxes
+    id: frp
+    attributes:
+      label: Périmètre / Scope
+      options:
+        - label: La fonctionnalité existe dans frp lui-même (option de configuration documentée) / The feature exists in frp itself (documented option)
