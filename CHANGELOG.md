@@ -12,8 +12,9 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
-Changes on main that are not part of a release yet. The website and the demo
-are already live; the rest ships with the next version.
+## [0.0.52] - 2026-09-28
+
+The panel is now fully bilingual, and gets its own website.
 
 ### Added
 
@@ -29,6 +30,9 @@ are already live; the rest ships with the next version.
 
 ### Changed
 
+- English is now an official language: the panel follows the browser's
+  language (English for any language other than French) and English is no
+  longer marked as a preview in Settings.
 - The demo is served under `/demo/` of the website. Its panel now has a
   password, like every install since 0.0.51, and logging in brings you back to
   `/demo/` instead of `/demo/index.html`.
@@ -97,5 +101,6 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...HEAD
+[0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51
