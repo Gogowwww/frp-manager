@@ -12,6 +12,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.53] - 2026-09-28
+
+Pré-release puis release définitive le même jour.
+
+frp ne se met plus à jour tout seul : vous le mettez à jour depuis le panel, quand vous le décidez.
+
 ### Retiré
 
 - La mise à jour automatique de frp est retirée (`frp-autoupdate.py` : tâche
@@ -20,6 +26,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   `install.sh` installe frp avec `app.py --install-frp` (même téléchargement
   vérifié que le panel), et une installation existante supprime la tâche cron,
   le script et sa ligne dans le service systemd à son prochain démarrage.
+
+### Corrigé
+
+- En ligne de commande (`app.py --reset-password`, `--install-frp`), les
+  messages ne sont en français que si la langue du système l'est, comme
+  `install.sh`.
 
 ## [0.0.52] - 2026-09-28
 
@@ -117,6 +129,7 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...HEAD
+[0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51

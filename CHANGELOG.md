@@ -12,6 +12,12 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.53] - 2026-09-28
+
+Pre-release, then final release, on the same day.
+
+frp is no longer updated automatically: you update it from the panel, when you decide.
+
 ### Removed
 
 - The frp auto-update is removed (`frp-autoupdate.py`: daily cron job, check
@@ -19,6 +25,11 @@ number. Versions older than 0.0.51 are described in the
   panel's Updates page. `install.sh` installs frp with `app.py --install-frp`
   (same verified download as the panel), and an existing install removes the
   cron job, the script and its line in the systemd service on its next start.
+
+### Fixed
+
+- On the command line (`app.py --reset-password`, `--install-frp`), messages
+  are in French only if the system language is French, like `install.sh`.
 
 ## [0.0.52] - 2026-09-28
 
@@ -111,6 +122,7 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...HEAD
+[0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51
