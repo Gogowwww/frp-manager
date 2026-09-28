@@ -199,3 +199,29 @@ def test_config_file_is_private(appmod):
     set_password(appmod)
     if os.name == "posix":
         assert stat.S_IMODE(os.stat(appmod.MGR_CONF_FILE).st_mode) == 0o600
+
+
+# ── Adresse d'écoute : nouvelle installation et rétrocompatibilité ──────────
+def test_new_install_listens_on_localhost(appmod, monkeypatch, tmp_path):
+    monkeypatch.setattr(appmod, "SSL_CERT_FILE", tmp_path / "absent.pem")
+    monkeypatch.setenv("FRP_MANAGER_PORT", "9123")
+    appmod.ensure_manager_config()
+    cfg = saved_config(appmod)
+    assert cfg["bind_host"] == "127.0.0.1" and cfg["bind_port"] == 9123 and cfg["secret_key"]
+
+
+def test_legacy_install_keeps_listening_everywhere(appmod, monkeypatch, tmp_path):
+    cert = tmp_path / "cert.pem"
+    cert.write_text("x")                       # certificat d'un panel antérieur, pas de config
+    monkeypatch.setattr(appmod, "SSL_CERT_FILE", cert)
+    appmod.ensure_manager_config()
+    assert saved_config(appmod)["bind_host"] == "0.0.0.0"
+
+
+def test_existing_config_is_kept(appmod):
+    import json
+    appmod.MGR_CONF_FILE.write_text(json.dumps({"bind_port": 8766, "password_hash": "abc"}))
+    appmod.MGR_CFG = appmod.load_manager_config()
+    appmod.ensure_manager_config()
+    cfg = saved_config(appmod)
+    assert cfg["bind_host"] == "0.0.0.0" and cfg["bind_port"] == 8766 and cfg["password_hash"] == "abc"

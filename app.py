@@ -141,6 +141,11 @@ def ensure_manager_config():
         return
     cfg = dict(MGR_CFG)
     if data is None:
+        # Nouvelle installation : FRP_MANAGER_PORT (docker-compose.yml) donne le port
+        try:
+            cfg["bind_port"] = int(os.environ.get("FRP_MANAGER_PORT") or cfg["bind_port"])
+        except ValueError:
+            pass
         # Certificat déjà généré par un panel antérieur (install.sh écrit
         # state.json avant le premier démarrage : pas un indice fiable)
         if SSL_CERT_FILE.exists():
@@ -3834,7 +3839,7 @@ if __name__ == "__main__":
     app.secret_key = MGR_CFG["secret_key"]
     # FRP_MANAGER_HOST (Docker : docker-compose.yml) passe avant bind_host
     host = os.environ.get("FRP_MANAGER_HOST") or MGR_CFG.get("bind_host") or "127.0.0.1"
-    port = MGR_CFG.get("bind_port", int(os.environ.get("FRP_MANAGER_PORT", 8765)))
+    port = int(MGR_CFG.get("bind_port") or 8765)
     ssl_ctx = get_ssl_context()
     app.config["SESSION_COOKIE_SECURE"] = bool(ssl_ctx or MGR_CFG.get("cookie_secure"))
     proto = "https" if ssl_ctx else "http"
