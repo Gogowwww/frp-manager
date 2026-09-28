@@ -1,56 +1,56 @@
 services:
   frp-manager:
-    # Image pré-buildée sur GitHub Container Registry
+    # Prebuilt image on GitHub Container Registry
     image: ghcr.io/gogowwww/frp-manager:latest
-    # Pour builder depuis les sources : commenter la ligne image et décommenter build
+    # To build from source: comment out the image line and uncomment build
     # build: .
     container_name: frp-manager
     restart: unless-stopped
 
-    # Réseau hôte — le panel écoute directement sur les ports de la machine
+    # Host network: the panel listens directly on the machine's ports
     network_mode: host
 
-    # ATTENTION : pid: host + privileged donnent à ce conteneur un accès
-    # ÉQUIVALENT À ROOT SUR L'HÔTE. Le panel s'en sert pour piloter le systemd
-    # de l'hôte avec nsenter (services frp, journaux, nftables, fichiers).
-    # Quiconque se connecte au panel, ou exploite une faille du panel, contrôle
-    # donc la machine hôte. Détails et pistes de réduction : docs/docker.md.
+    # WARNING: pid: host + privileged give this container ROOT-EQUIVALENT
+    # ACCESS TO THE HOST. The panel uses them to drive the host's systemd
+    # with nsenter (frp services, logs, nftables, files). Anyone who logs into
+    # the panel, or exploits a flaw in it, therefore controls the host.
+    # Details and ways to reduce it: docs/docker.md.
     pid: host
     privileged: true
 
     volumes:
-      # ── Données persistantes du panel ──────────────────────────────────
-      - /etc/frp-manager:/etc/frp-manager        # Config panel + SSL certs
-      - /etc/frp:/etc/frp                          # Configs frps/frpc (TOML)
-      - /var/log/frp:/var/log/frp                  # Logs frp
-      - /var/lib/frp-manager:/var/lib/frp-manager  # État (versions installées)
+      # ── Persistent panel data ──────────────────────────────────────────
+      - /etc/frp-manager:/etc/frp-manager        # Panel config + SSL certs
+      - /etc/frp:/etc/frp                          # frps/frpc configs (TOML)
+      - /var/log/frp:/var/log/frp                  # frp logs
+      - /var/lib/frp-manager:/var/lib/frp-manager  # State (installed versions)
 
-      # ── Systemd de l'hôte (via nsenter) ────────────────────────────────
+      # ── Host systemd (through nsenter) ─────────────────────────────────
       - /run/systemd:/run/systemd
       - /run/dbus:/run/dbus
 
-      # ── Journaux de l'hôte ─────────────────────────────────────────────
+      # ── Host journal ───────────────────────────────────────────────────
       - /var/log/journal:/var/log/journal:ro
       - /run/log/journal:/run/log/journal:ro
       - /etc/machine-id:/etc/machine-id:ro
 
-      # ── Binaires frp de l'hôte ─────────────────────────────────────────
-      # frp-manager détecte /host/usr/local/bin automatiquement et l'utilise
-      # pour lire et installer frps/frpc sur le système hôte
+      # ── Host frp binaries ──────────────────────────────────────────────
+      # frp-manager detects /host/usr/local/bin automatically and uses it to
+      # read and install frps/frpc on the host system
       - /usr/local/bin:/host/usr/local/bin
 
-      # ── Socket Docker (détection et contrôle des containers frpc/frps) ──────
-      # Permet à frp-manager de voir et gérer les containers frpc/frps
-      # tournant dans d'autres stacks Portainer (start/stop/restart + logs).
-      # Le socket Docker est lui aussi un accès équivalent à root sur l'hôte.
+      # ── Docker socket (detection and control of frpc/frps containers) ──
+      # Lets frp-manager see and manage frpc/frps containers running in
+      # other stacks (start/stop/restart + logs).
+      # The Docker socket is root-equivalent access to the host as well.
       - /var/run/docker.sock:/var/run/docker.sock
 
     environment:
       - FRP_MANAGER_PORT=8765
-      # Nouvelle installation : le panel n'écoute que sur 127.0.0.1 (accès par
-      # tunnel SSH ou reverse proxy local). Pour l'ouvrir au réseau local,
-      # décommenter la ligne suivante, créer l'identifiant sans attendre, et
-      # filtrer l'accès (pare-feu, VPN) :
+      # New install: the panel only listens on 127.0.0.1 (reach it through an
+      # SSH tunnel or a local reverse proxy). To open it to your local
+      # network, uncomment the next line, create the account right away and
+      # filter access (firewall, VPN):
       # - FRP_MANAGER_HOST=0.0.0.0
-      # Désactiver les miroirs de téléchargement tiers (ghproxy, ghfast, gh-proxy) :
+      # Disable third-party download mirrors (ghproxy, ghfast, gh-proxy):
       # - FRP_MANAGER_NO_MIRRORS=1
