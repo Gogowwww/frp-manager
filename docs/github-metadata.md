@@ -27,7 +27,7 @@ frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker flask sy
 - **Settings → Code security → Private vulnerability reporting** : activer,
   sinon le lien de signalement de SECURITY.md ne fonctionne pas.
 - **Settings → General → Social preview** : téléverser une image 1280×640
-  (par exemple `demo/og.png`, déjà utilisée par la démo).
+  (par exemple `website/demo/og.png`, déjà utilisée par la démo).
 - **Settings → Actions** : le workflow `.github/workflows/ci.yml` (tests, ruff,
   pip-audit) ne tourne que si GitHub Actions est disponible sur le compte.
 

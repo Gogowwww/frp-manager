@@ -3,7 +3,7 @@
 
     python3 website/shots.py --url http://127.0.0.1:18231 [--browser chemin]
 
-Le site doit être servi (python3 website/build.py puis demo/serve.py). Produit
+Le site doit être servi (python3 website/build.py puis website/demo/serve.py). Produit
 website/img/<page>-<langue>.webp (panel en thème sombre, sans le bandeau de la
 démo). À relancer quand l'interface change ; les images sont versionnées.
 Demande Pillow (conversion en WebP) et Chrome, Chromium ou Edge.

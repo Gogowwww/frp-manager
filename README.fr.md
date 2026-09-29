@@ -10,7 +10,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 
 [English](README.md) · **Français**
 
-![Tableau de bord de FRP Manager](panel/home.png)
+![Tableau de bord de FRP Manager](docs/img/home.png)
 
 ## Démarrage rapide
 
@@ -44,7 +44,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 
 | Ports | Éditeur de port | Journaux en direct |
 |:---:|:---:|:---:|
-| ![Ports](panel/tunnels.png) | ![Éditeur de port](panel/tunnel-editor.png) | ![Journaux](panel/logs.png) |
+| ![Ports](docs/img/tunnels.png) | ![Éditeur de port](docs/img/tunnel-editor.png) | ![Journaux](docs/img/logs.png) |
 
 ## Pourquoi ce panel
 
@@ -75,19 +75,19 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 
 > **Avertissement Docker** : le conteneur utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker. **C'est un accès équivalent à root sur l'hôte** : qui contrôle le panel contrôle la machine. Lisez [docs/docker.fr.md](docs/docker.fr.md) avant de le déployer.
 
-Modèle de menace et signalement des vulnérabilités : [SECURITY.fr.md](SECURITY.fr.md).
+Modèle de menace et signalement des vulnérabilités : [SECURITY.fr.md](docs/SECURITY.fr.md).
 
 ## Documentation
 
 - [Site du projet](https://frp-manager.gogow.fr/fr/) : présentation, démo en ligne et toute la documentation
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
 - [Docker : privilèges et risques](docs/docker.fr.md)
-- [Politique de sécurité](SECURITY.fr.md)
+- [Politique de sécurité](docs/SECURITY.fr.md)
 - [Journal des modifications](CHANGELOG.fr.md)
 
 ## Contribuer
 
-Signalements de bugs, idées, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) et le [code de conduite](CODE_OF_CONDUCT.fr.md). Des adresses à bloquer peuvent être partagées avec le bouton **Publier** du pare-feu ou sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
+Signalements de bugs, idées, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.fr.md](docs/CONTRIBUTING.fr.md) et le [code de conduite](docs/CODE_OF_CONDUCT.fr.md). Des adresses à bloquer peuvent être partagées avec le bouton **Publier** du pare-feu ou sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
 
 ## Licence
 

@@ -76,8 +76,12 @@ jobs:
           set -eu
           mkdir -p dist/frp-manager
           cd src
-          cp -r app.py install.sh requirements.txt templates docs SECURITY.md SECURITY.fr.md CHANGELOG.md CHANGELOG.fr.md \
-                README.md README.fr.md LICENSE docker-compose.yml ../dist/frp-manager/
+          # Même contenu à plat qu'avant le rangement du dépôt dans panel/ : install.sh
+          # et la mise à jour du panel attendent app.py, templates/ et install.sh côte à côte
+          cp -r panel/. docs CHANGELOG.md CHANGELOG.fr.md README.md README.fr.md LICENSE \
+                docker-compose.yml ../dist/frp-manager/
+          # SECURITY à la racine de l'archive, comme dans les versions précédentes
+          cp docs/SECURITY.md docs/SECURITY.fr.md ../dist/frp-manager/
           cd ../dist
           # Version affichée par les installations via install.sh (hors Docker)
           sed -i "s/^_PANEL_VERSION_FALLBACK = \"[^\"]*\"/_PANEL_VERSION_FALLBACK = \"$VERSION\"/" frp-manager/app.py

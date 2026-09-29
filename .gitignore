@@ -1,7 +1,7 @@
 # ── Données sensibles frp / panel (ne JAMAIS committer) ───────────────────────
 # Configs réelles (tokens, IP, domaines)
 *.toml
-!ruff.toml
+!pyproject.toml
 *.ini
 frp-manager.json
 *.local.*
@@ -38,7 +38,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Démo construite (demo/build.py)
+# Démo construite (website/demo/build.py)
 dist-demo/
 frp-manager-demo.zip
 

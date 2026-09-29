@@ -8,10 +8,10 @@
 Produit un site statique bilingue (anglais à la racine, français sous /fr/) :
   /                  page d'accueil
   /docs/<page>/      documentation, rendue depuis les fichiers Markdown du dépôt
-                     (docs/, SECURITY.md, CHANGELOG.md…) : toujours à jour
-  /demo/             la démo (vraie interface, données fictives, demo/build.py)
+                     (docs/, CHANGELOG.md…) : toujours à jour
+  /demo/             la démo (vraie interface, données fictives, website/demo/build.py)
 Bibliothèque standard uniquement. --bundle et --zip produisent app.py
-(demo/serve.py) + site/, comme la démo seule auparavant : c'est ce que publie
+(website/demo/serve.py) + site/, comme la démo seule auparavant : c'est ce que publie
 .forgejo/workflows/demo.yml dans le dépôt frp-manager-demo.
 """
 
@@ -39,9 +39,9 @@ LANGS = ("en", "fr")
 DOCS = [
     ("installation", {"en": "docs/installation.md", "fr": "docs/installation.fr.md"}),
     ("docker", {"en": "docs/docker.md", "fr": "docs/docker.fr.md"}),
-    ("security", {"en": "SECURITY.md", "fr": "SECURITY.fr.md"}),
-    ("contributing", {"en": "CONTRIBUTING.md", "fr": "CONTRIBUTING.fr.md"}),
-    ("code-of-conduct", {"en": "CODE_OF_CONDUCT.md", "fr": "CODE_OF_CONDUCT.fr.md"}),
+    ("security", {"en": "docs/SECURITY.md", "fr": "docs/SECURITY.fr.md"}),
+    ("contributing", {"en": "docs/CONTRIBUTING.md", "fr": "docs/CONTRIBUTING.fr.md"}),
+    ("code-of-conduct", {"en": "docs/CODE_OF_CONDUCT.md", "fr": "docs/CODE_OF_CONDUCT.fr.md"}),
     ("changelog", {"en": "CHANGELOG.md", "fr": "CHANGELOG.fr.md"}),
 ]
 # Fichier du dépôt → (langue, page) ; None comme langue = langue de la page qui fait le lien
@@ -807,7 +807,7 @@ def main():
         shutil.rmtree(child) if child.is_dir() else child.unlink()
 
     # La démo d'abord, dans /demo/ (elle vide son propre dossier)
-    subprocess.run([sys.executable, str(ROOT / "demo" / "build.py"), "--out", str(out / "demo"),
+    subprocess.run([sys.executable, str(HERE / "demo" / "build.py"), "--out", str(out / "demo"),
                     "--version", version, "--site-url", f"{site}/demo", "--embedded"], check=True)
 
     # Fichiers statiques sous /assets/<empreinte>/ : gardés en cache indéfiniment
@@ -826,13 +826,13 @@ def main():
         (adir / name).write_bytes(data)
     for name, data in images.items():
         (adir / "img" / name).write_bytes(data)
-    shutil.copyfile(ROOT / "demo" / "og.png", out / "og.png")
+    shutil.copyfile(HERE / "demo" / "og.png", out / "og.png")
     # Vérification de propriété Google Search Console (fichier à la racine)
     for f in HERE.glob("google*.html"):
         shutil.copyfile(f, out / f.name)
 
     ctx = {"site": site, "version": version, "asset_v": asset_v,
-           "icons": (ROOT / "templates" / "partials" / "icons.html").read_text(encoding="utf-8")}
+           "icons": (ROOT / "panel" / "templates" / "partials" / "icons.html").read_text(encoding="utf-8")}
     pages = []
     for lang in LANGS:
         other = T[lang]["other_lang_code"]
@@ -862,7 +862,7 @@ def main():
     n = sum(1 for f in out.rglob("*") if f.is_file())
     print(f"[site] v{version} -> {out} ({len(pages)} pages, {n} fichiers)")
 
-    files = [(ROOT / "demo" / "serve.py", "app.py")] + [
+    files = [(HERE / "demo" / "serve.py", "app.py")] + [
         (f, "site/" + f.relative_to(out).as_posix()) for f in sorted(out.rglob("*")) if f.is_file()]
     if args.bundle:
         bundle = Path(args.bundle)

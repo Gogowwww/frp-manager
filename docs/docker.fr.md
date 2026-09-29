@@ -39,7 +39,7 @@ Conséquences pratiques :
 2. Une faille du panel exploitable à distance donnerait un accès root à
    l'hôte. D'où la configuration initiale obligatoire, l'écoute sur
    `127.0.0.1` par défaut et les protections décrites dans
-   [SECURITY.fr.md](../SECURITY.fr.md).
+   [SECURITY.fr.md](SECURITY.fr.md).
 3. N'exposez pas le panel sur Internet sans reverse proxy, VPN ou filtrage
    par IP.
 

@@ -190,17 +190,21 @@ En Docker : `docker exec -it frp-manager python3 app.py --reset-password`, puis
 
 ```
 Dépôt
-  app.py                   Serveur Flask + API
-  install.sh               Installation par script
-  Dockerfile, docker-compose.yml
-  templates/
-    index.html, login.html, setup.html
-    partials/icons.html    Icônes SVG (embarquées, sans CDN)
-    assets/
-      css/app.css          Thèmes clair et sombre
-      js/                  Application (modules ES, sans étape de build)
-      locales/fr.js, en.js Textes de l'interface
+  panel/                   Le panel (l'archive de release contient ce dossier)
+    app.py                 Serveur Flask + API
+    install.sh             Installation par script
+    requirements.txt
+    templates/
+      index.html, login.html, setup.html
+      partials/icons.html  Icônes SVG (embarquées, sans CDN)
+      assets/
+        css/app.css        Thèmes clair et sombre
+        js/                Application (modules ES, sans étape de build)
+        locales/fr.js, en.js  Textes de l'interface
+  docs/                    Documentation, politique de sécurité, guide de contribution
+  website/                 Site du projet et démo en ligne (website/demo/)
   tests/                   Tests pytest
+  Dockerfile, docker-compose.yml
 
 /opt/frp-manager/          Panel installé (script)
 /etc/frp-manager/          Configuration du panel + certificats SSL

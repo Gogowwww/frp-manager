@@ -188,17 +188,21 @@ then `docker restart frp-manager`.
 
 ```
 Repository
-  app.py                   Flask server + API
-  install.sh               Install script
-  Dockerfile, docker-compose.yml
-  templates/
-    index.html, login.html, setup.html
-    partials/icons.html    SVG icons (embedded, no CDN)
-    assets/
-      css/app.css          Light and dark themes
-      js/                  Application (ES modules, no build step)
-      locales/fr.js, en.js Interface texts
+  panel/                   The panel (the release archive holds this folder's content)
+    app.py                 Flask server + API
+    install.sh             Install script
+    requirements.txt
+    templates/
+      index.html, login.html, setup.html
+      partials/icons.html  SVG icons (embedded, no CDN)
+      assets/
+        css/app.css        Light and dark themes
+        js/                Application (ES modules, no build step)
+        locales/fr.js, en.js  Interface texts
+  docs/                    Documentation, security policy, contributing guide
+  website/                 Project website and live demo (website/demo/)
   tests/                   pytest tests
+  Dockerfile, docker-compose.yml
 
 /opt/frp-manager/          Installed panel (script)
 /etc/frp-manager/          Panel configuration + SSL certificates

@@ -10,7 +10,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 
 **English** · [Français](README.fr.md)
 
-![FRP Manager dashboard](panel/home.png)
+![FRP Manager dashboard](docs/img/home.png)
 
 ## Quick start
 
@@ -44,7 +44,7 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 
 | Ports | Port editor | Live logs |
 |:---:|:---:|:---:|
-| ![Ports](panel/tunnels.png) | ![Port editor](panel/tunnel-editor.png) | ![Logs](panel/logs.png) |
+| ![Ports](docs/img/tunnels.png) | ![Port editor](docs/img/tunnel-editor.png) | ![Logs](docs/img/logs.png) |
 
 ## Why this panel
 
@@ -75,19 +75,19 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 
 > **Docker warning**: the container uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket. **That is root-equivalent access to the host**: anyone who controls the panel controls the machine. Read [docs/docker.md](docs/docker.md) before deploying it.
 
-Threat model and vulnerability reporting: [SECURITY.md](SECURITY.md).
+Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 
 ## Documentation
 
 - [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
 - [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Docker: privileges and risks](docs/docker.md)
-- [Security policy](SECURITY.md)
+- [Security policy](docs/SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
 ## Contributing
 
-Bug reports, ideas, translations and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). Addresses worth blocking can be shared through the firewall's **Publish** button or on the [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch.
+Bug reports, ideas, translations and pull requests are welcome: see [CONTRIBUTING.md](docs/CONTRIBUTING.md) and the [code of conduct](docs/CODE_OF_CONDUCT.md). Addresses worth blocking can be shared through the firewall's **Publish** button or on the [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch.
 
 ## License
 

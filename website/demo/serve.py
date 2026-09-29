@@ -3,7 +3,7 @@
 application (conteneur, « cloudpod »…). Bibliothèque standard uniquement :
 aucune dépendance à installer.
 
-    python3 app.py      (demo/serve.py, copié sous ce nom par build.py)
+    python3 app.py      (website/demo/serve.py, copié sous ce nom par build.py)
 
 Sert le dossier site/ (placé à côté de ce fichier) sur le port $PORT, ou
 $SERVER_PORT (Pterodactyl), 8080 par défaut ; toutes interfaces ($HOST pour

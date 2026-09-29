@@ -58,7 +58,7 @@ souhaitez.
   modifie le pare-feu. Protéger le mot de passe revient à protéger la machine.
 - **En Docker, `pid: host`, `privileged: true` et le socket Docker donnent au
   conteneur un accès équivalent à root sur l'hôte** (voir
-  [docs/docker.fr.md](docs/docker.fr.md)). L'isolation du conteneur ne limite pas ce
+  [docs/docker.fr.md](docker.fr.md)). L'isolation du conteneur ne limite pas ce
   que le panel peut faire.
 - Le certificat HTTPS généré est auto-signé : il chiffre, mais n'authentifie
   pas le serveur. Pour un accès depuis Internet, placez le panel derrière un

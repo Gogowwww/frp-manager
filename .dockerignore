@@ -1,12 +1,4 @@
-.git
-.gitignore
-*.md
-venv/
-__pycache__/
-*.pyc
-*.pyo
-frp-manager.zip
-.claude/
-install.sh
-demo/
-dist-demo/
+# L'image ne contient que le panel (voir Dockerfile) : tout le reste est exclu
+*
+!panel/app.py
+!panel/templates/

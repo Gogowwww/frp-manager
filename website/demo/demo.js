@@ -4,7 +4,7 @@
 // L'état (instances, configs, règles du pare-feu…) est gardé dans l'onglet
 // (sessionStorage) : il survit à un rechargement ou au changement de langue,
 // et repart de zéro avec « Réinitialiser » ou dans un nouvel onglet.
-// Construit par demo/build.py ; __PANEL_VERSION__ y est remplacé.
+// Construit par website/demo/build.py ; __PANEL_VERSION__ y est remplacé.
 
 (function () {
   'use strict';

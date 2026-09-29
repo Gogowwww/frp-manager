@@ -19,6 +19,16 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   et de dev ; la promotion recopie toute la liste multi-architecture vers
   `:latest`.
 
+### Modifié
+
+- Dépôt rangé : le code du panel (`app.py`, `install.sh`, `requirements.txt`,
+  `templates/`) est dans `panel/`, la politique de sécurité, le guide de
+  contribution et le code de conduite dans `docs/`, la démo dans
+  `website/demo/`, la configuration de ruff dans `pyproject.toml`. L'archive de
+  release garde le même contenu : installation et mise à jour fonctionnent comme
+  avant. Les anciens scripts `build-dev.sh` et `release-docker.sh` sont retirés
+  (remplacés par les workflows Forgejo).
+
 ## [0.0.53] - 2026-09-28
 
 Pré-release puis release définitive le même jour.

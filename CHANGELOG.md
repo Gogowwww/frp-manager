@@ -18,6 +18,15 @@ number. Versions older than 0.0.51 are described in the
   ARM servers): built with buildx and QEMU by the release and dev workflows;
   the promotion copies the whole multi-architecture list to `:latest`.
 
+### Changed
+
+- Tidier repository: the panel's code (`app.py`, `install.sh`, `requirements.txt`,
+  `templates/`) lives in `panel/`, the security policy, contributing guide and
+  code of conduct in `docs/`, the demo in `website/demo/`, the ruff settings in
+  `pyproject.toml`. The release archive keeps the same content, so installing
+  and updating work as before. The old `build-dev.sh` and `release-docker.sh`
+  scripts are removed (replaced by the Forgejo workflows).
+
 ## [0.0.53] - 2026-09-28
 
 Pre-release, then final release, on the same day.

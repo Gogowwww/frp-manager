@@ -36,7 +36,7 @@ In practice:
    that risk.
 2. A remotely exploitable flaw in the panel would give root on the host. Hence
    the mandatory initial setup, listening on `127.0.0.1` by default and the
-   protections described in [SECURITY.md](../SECURITY.md).
+   protections described in [SECURITY.md](SECURITY.md).
 3. Do not expose the panel to the Internet without a reverse proxy, a VPN or
    IP filtering.
 

@@ -1,4 +1,4 @@
-"""Tests de FRP Manager : app.py est importé avec une config dans un dossier
+"""Tests de FRP Manager : panel/app.py est importé avec une config dans un dossier
 temporaire (FRP_MANAGER_CONFIG), jamais celle de /etc/frp-manager."""
 
 import hashlib
@@ -14,7 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 _CONF_DIR = Path(tempfile.mkdtemp(prefix="frpm-tests-"))
 os.environ["FRP_MANAGER_CONFIG"] = str(_CONF_DIR / "frp-manager.json")
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "panel"))
 
 app_module = importlib.import_module("app")
 

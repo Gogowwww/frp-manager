@@ -55,7 +55,7 @@ soon as possible. The report is credited in the release notes if you wish.
   firewall. Protecting the password means protecting the machine.
 - **With Docker, `pid: host`, `privileged: true` and the Docker socket give the
   container root-equivalent access to the host** (see
-  [docs/docker.md](docs/docker.md)). Container isolation does not limit what
+  [docs/docker.md](docker.md)). Container isolation does not limit what
   the panel can do.
 - The generated HTTPS certificate is self-signed: it encrypts, but does not
   authenticate the server. For access from the Internet, put the panel behind

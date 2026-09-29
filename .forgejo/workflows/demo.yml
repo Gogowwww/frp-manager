@@ -15,7 +15,7 @@ name: Site et démo
 on:
   push:
     branches: [main]
-    paths: ['templates/**', 'demo/**', 'website/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
+    paths: ['panel/templates/**', 'website/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
   workflow_dispatch:
 
 env:

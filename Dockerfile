@@ -15,8 +15,8 @@ RUN apt-get update \
 
 WORKDIR /opt/frp-manager
 
-COPY app.py .
-COPY templates/ templates/
+COPY panel/app.py .
+COPY panel/templates/ templates/
 
 # Injecter la version du panel dans l'image via ARG/ENV
 ARG PANEL_VERSION=unknown

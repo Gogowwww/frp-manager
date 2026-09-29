@@ -20,29 +20,29 @@ requests are welcome, in English or French. By taking part, you agree to the
 ## Setting up the environment
 
 The panel is a Flask application with no build step: Python on the server
-(`app.py`), native ES modules in the browser (`templates/assets/js/`).
+(`panel/app.py`), native ES modules in the browser (`panel/templates/assets/js/`).
 
 ```bash
 git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt pytest ruff
+pip install -r panel/requirements.txt pytest ruff
 ```
 
 To run the panel locally without touching `/etc/frp-manager`:
 
 ```bash
 echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
-FRP_MANAGER_CONFIG=/tmp/frpm.json python3 app.py
+FRP_MANAGER_CONFIG=/tmp/frpm.json python3 panel/app.py
 ```
 
-The [demo](demo/build.py) (`python3 demo/build.py`) produces a static version
+The [demo](../website/demo/build.py) (`python3 website/demo/build.py`) produces a static version
 of the interface with sample data, handy to work on the front end without frp
 installed.
 
 The project website ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) is
 built with `python3 website/build.py`: home page, documentation rendered from
-`docs/`, `SECURITY.md`, `CHANGELOG.md`… and the demo under `/demo/`. Serve the
-result with `DEMO_SITE=dist-site python3 demo/serve.py`. After a visible change
+`docs/`, `CHANGELOG.md`… and the demo under `/demo/`. Serve the
+result with `DEMO_SITE=dist-site python3 website/demo/serve.py`. After a visible change
 to the interface, `python3 website/shots.py` retakes the website screenshots
 from the demo (requires Pillow and Chrome or Edge).
 
@@ -62,20 +62,20 @@ python3 -m pytest
 - System commands are always argument lists (never `shell=True` nor `sh -c`
   with interpolated data); every service or container name goes through
   `valid_service_name` / `valid_container_name`.
-- The interface only builds the DOM with `h()` (`templates/assets/js/ui.js`),
+- The interface only builds the DOM with `h()` (`panel/templates/assets/js/ui.js`),
   never with `innerHTML` on data. No emoji in the interface: icons are the
-  embedded SVGs of `templates/partials/icons.html`.
+  embedded SVGs of `panel/templates/partials/icons.html`.
 - Update the "Unreleased" section of the changelog, in both languages:
-  [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.fr.md](CHANGELOG.fr.md).
+  [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.fr.md](../CHANGELOG.fr.md).
 
 ## Translating the panel
 
-All interface texts live in `templates/assets/locales/`: `fr.js` (reference
+All interface texts live in `panel/templates/assets/locales/`: `fr.js` (reference
 language) and `en.js`.
 
 1. Copy `fr.js` to `<code>.js` (`de.js`, `es.js`…) and translate the values,
    without touching the keys or the `{parameters}`.
-2. Declare the language in `LOCALES` in `templates/assets/js/i18n.js`.
+2. Declare the language in `LOCALES` in `panel/templates/assets/js/i18n.js`.
 3. While it is incomplete, also add it to `PREVIEW_LOCALES`: it is offered in
    Settings marked *preview*, without being picked from the browser language.
 
@@ -94,4 +94,4 @@ rule, or open a pull request on the
 ## License
 
 By contributing, you agree that your contribution is published under the
-project's license, [Apache 2.0](LICENSE).
+project's license, [Apache 2.0](../LICENSE).

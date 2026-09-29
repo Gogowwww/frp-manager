@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Démo statique de FRP Manager : la vraie interface (templates/), servie sans
+"""Démo statique de FRP Manager : la vraie interface (panel/templates/), servie sans
 serveur Python. demo.js remplace l'API, les WebSocket et les journaux par des
 données fictives, gardées dans l'onglet (sessionStorage).
 
-    python3 demo/build.py [--out dist-demo] [--version 0.0.51] [--bundle dossier] [--zip demo.zip]
+    python3 website/demo/build.py [--out dist-demo] [--version 0.0.51] [--bundle dossier] [--zip demo.zip]
 
 Le dossier produit (--out) se sert tel quel par n'importe quel serveur web.
 Pour un hébergement qui lance une application (cloudpod Webstrator, egg Python
-Pterodactyl), --bundle et --zip produisent app.py (demo/serve.py) et le site
+Pterodactyl), --bundle et --zip produisent app.py (website/demo/serve.py) et le site
 dans site/, démarrés par « python3 app.py ». C'est ce que publie
 .forgejo/workflows/demo.yml dans le dépôt frp-manager-demo. Rien à installer :
 bibliothèque standard uniquement."""
@@ -21,8 +21,8 @@ import subprocess
 import zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES = ROOT / "templates"
+ROOT = Path(__file__).resolve().parents[2]
+TEMPLATES = ROOT / "panel" / "templates"
 DEMO = Path(__file__).resolve().parent
 
 # Adresses absolues du serveur Flask → pages statiques de la démo.
