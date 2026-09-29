@@ -12,6 +12,10 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.54] - 2026-09-29
+
+Pre-release.
+
 ### Added
 
 - Docker images for `arm64` and `armv7` as well as `amd64` (Raspberry Pi,
@@ -137,7 +141,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...HEAD
+[0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51

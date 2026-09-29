@@ -12,6 +12,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.54] - 2026-09-29
+
+Pré-release.
+
 ### Ajouté
 
 - Images Docker pour `arm64` et `armv7` en plus d'`amd64` (Raspberry Pi,
@@ -146,7 +150,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...HEAD
+[0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52
 [0.0.51]: https://github.com/Gogowwww/frp-manager/compare/v0.0.50...v0.0.51
