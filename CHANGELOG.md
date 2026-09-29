@@ -12,6 +12,12 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- Docker images for `arm64` and `armv7` as well as `amd64` (Raspberry Pi,
+  ARM servers): built with buildx and QEMU by the release and dev workflows;
+  the promotion copies the whole multi-architecture list to `:latest`.
+
 ## [0.0.53] - 2026-09-28
 
 Pre-release, then final release, on the same day.

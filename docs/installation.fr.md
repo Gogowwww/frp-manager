@@ -64,6 +64,10 @@ puis *Deploy the stack*.
 | `ghcr.io/gogowwww/frp-manager:X.Y.Z` | une version précise, pour la figer ou revenir en arrière |
 | `ghcr.io/gogowwww/frp-manager:dev` | dernière pré-release, pour tester avant tout le monde |
 
+Les images sont publiées pour `amd64`, `arm64` (Raspberry Pi 4/5, serveurs ARM)
+et `armv7` à partir de la version 0.0.54 ; Docker choisit automatiquement la
+bonne. Les versions antérieures n'existent qu'en `amd64`.
+
 Le conteneur pilote frp sur l'hôte avec `pid: host` et `nsenter`, ce qui lui
 donne un accès équivalent à root sur l'hôte : lisez
 [docker.fr.md](docker.fr.md) avant de le déployer.

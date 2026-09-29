@@ -11,7 +11,7 @@
 #      entre-temps des commits de README seuls (publiés sans release), fusion
 #      du tag et de ces commits, à condition que le résultat ne diffère du tag
 #      que par des README (jamais de force-push) ;
-#   2. image :X.Y.Z re-taguée en :latest (même image, pas de rebuild) ;
+#   2. image :X.Y.Z re-taguée en :latest (même image, toutes architectures, pas de rebuild) ;
 #   3. release GitHub passée de pré-release à release normale, marquée « latest »
 #      → visible par le bouton « Mettre à jour » des panels installés.
 #
@@ -113,9 +113,9 @@ jobs:
           set -eu
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          docker pull --quiet "$IMAGE:$VERSION"
-          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
-          docker push --quiet "$IMAGE:latest"
+          # Copie de la liste multi-architecture (amd64, arm64, armv7) côté registre ;
+          # un docker pull + tag ne recopierait que l'architecture du runner.
+          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:$VERSION"
 
       - name: Release définitive
         env:

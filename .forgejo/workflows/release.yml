@@ -10,6 +10,7 @@
 #   - pré-release GitHub ; un panel installé en pré-release ne propose aucune
 #     mise à jour (il interroge GitHub sur le statut de sa propre version) ;
 #   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
+#     amd64, arm64 et armv7 (émulation QEMU sur l'hôte du runner) ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
 #
 # Fichiers joints : frp-manager.zip (nom attendu par le README et l'auto-update du panel)
@@ -28,6 +29,7 @@ on:
 env:
   GH_REPO: Gogowwww/frp-manager
   IMAGE: ghcr.io/gogowwww/frp-manager
+  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
   GH_USER: Gogowwww
 
 jobs:
@@ -85,11 +87,23 @@ jobs:
           sha256sum frp-manager.zip > frp-manager.zip.sha256
           ls -l frp-manager.zip frp-manager.zip.sha256
 
+      # Construite pour toutes les architectures AVANT de publier quoi que ce
+      # soit ; le push plus bas repart du cache de ce builder.
       - name: Image Docker
         run: |
           set -eu
-          docker build --network=host --pull --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:dev" src
+          # Architectures de l'image : amd64 (natif), arm64 et armv7 par émulation QEMU,
+          # enregistrée dans le noyau de l'hôte du runner (idempotent)
+          docker run --privileged --rm tonistiigi/binfmt --install arm64,arm >/dev/null
+          # Builder buildx propre à ce job (supprimé en sortie)
+          BUILDER="frpm-$(date +%s)-$$"
+          # network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
+          echo "BUILDER=$BUILDER" >> "$GITHUB_ENV"
+          docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
+            --network=host --allow network.host --pull \
+            --build-arg PANEL_VERSION="$VERSION" src
 
       # ── Publication : tout est construit, on pousse ────────────────────────
       # Le tag d'abord : s'il est refusé (protection e-mail…), rien n'est publié.
@@ -110,9 +124,11 @@ jobs:
         run: |
           set -eu
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_USER" --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          docker push --quiet "$IMAGE:$VERSION"
-          docker push --quiet "$IMAGE:dev"
+          trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true; docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
+            --network=host --allow network.host \
+            --build-arg PANEL_VERSION="$VERSION" \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:dev" --push src
 
       - name: Créer la pré-release GitHub
         env:

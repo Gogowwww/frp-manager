@@ -19,6 +19,7 @@ on:
 
 env:
   IMAGE: ghcr.io/gogowwww/frp-manager
+  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
   GHCR_USER: Gogowwww
 
 jobs:
@@ -45,12 +46,20 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
+          set -eu
           VERSION="dev-$(git -C src rev-parse --short=7 HEAD)"
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          # --network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
-          docker build --network=host --pull \
+          # Architectures de l'image : amd64 (natif), arm64 et armv7 par émulation QEMU,
+          # enregistrée dans le noyau de l'hôte du runner (idempotent)
+          docker run --privileged --rm tonistiigi/binfmt --install arm64,arm >/dev/null
+          # Builder buildx propre à ce job (supprimé en sortie)
+          BUILDER="frpm-$(date +%s)-$$"
+          # network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
+          trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true; docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
+            --network=host --allow network.host --pull \
             --build-arg PANEL_VERSION="$VERSION" \
-            -t "$IMAGE:$VERSION" src
-          docker push --quiet "$IMAGE:$VERSION"
-          echo "OK : $IMAGE:$VERSION"
+            -t "$IMAGE:$VERSION" --push src
+          echo "OK : $IMAGE:$VERSION ($PLATFORMS)"
