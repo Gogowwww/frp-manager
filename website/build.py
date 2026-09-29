@@ -827,6 +827,9 @@ def main():
     for name, data in images.items():
         (adir / "img" / name).write_bytes(data)
     shutil.copyfile(ROOT / "demo" / "og.png", out / "og.png")
+    # Vérification de propriété Google Search Console (fichier à la racine)
+    for f in HERE.glob("google*.html"):
+        shutil.copyfile(f, out / f.name)
 
     ctx = {"site": site, "version": version, "asset_v": asset_v,
            "icons": (ROOT / "templates" / "partials" / "icons.html").read_text(encoding="utf-8")}
