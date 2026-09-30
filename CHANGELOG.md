@@ -29,8 +29,8 @@ Pre-release.
 - Website: structured data (SoftwareApplication, TechArticle, BreadcrumbList),
   breadcrumbs, `hreflang` and `lastmod` in the sitemap, full Open Graph and
   Twitter tags, `llms.txt`, non-blocking fonts, preloaded main image, gzip
-  compression by the site server, and `website/seo_check.py`, an audit run by
-  the CI and before each publication.
+  compression by the site server, and `website/seo_check.py`, an audit run before
+  each publication of the site.
 
 ### Changed
 

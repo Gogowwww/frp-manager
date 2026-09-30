@@ -32,7 +32,7 @@ Pré-release.
   fil d'Ariane, `hreflang` et `lastmod` dans le sitemap, balises Open Graph et
   Twitter complètes, `llms.txt`, polices non bloquantes, image principale
   préchargée, compression gzip par le serveur du site, et
-  `website/seo_check.py`, un audit lancé par la CI et avant chaque publication.
+  `website/seo_check.py`, un audit lancé avant chaque publication du site.
 
 ### Modifié
 
