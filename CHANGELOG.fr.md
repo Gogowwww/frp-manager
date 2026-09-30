@@ -14,7 +14,7 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [0.0.55] - 2026-09-30
 
-Pré-release.
+Pré-release puis release définitive le même jour.
 
 ### Ajouté
 
@@ -42,7 +42,7 @@ Pré-release.
 
 ## [0.0.54] - 2026-09-29
 
-Pré-release.
+Pré-release le 2026-09-29, release définitive le 2026-09-30.
 
 ### Ajouté
 
