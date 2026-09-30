@@ -39,6 +39,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 - **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
 - **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
+- **Notifications** : webhooks vers Discord, Slack, Telegram, ntfy, Gotify ou toute adresse (modèle JSON, signature HMAC) pour les instances arrêtées, les adresses verrouillées et les mises à jour.
 - **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
 - **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
 

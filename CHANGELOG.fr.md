@@ -12,6 +12,34 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.55] - 2026-09-30
+
+Pré-release.
+
+### Ajouté
+
+- Notifications par webhook : une page **Notifications** envoie des alertes vers
+  Discord, Slack / Mattermost, Telegram, ntfy, Gotify, une adresse JSON (modèle
+  et signature HMAC-SHA256 facultatifs) ou en texte brut. Événements : instance
+  arrêtée ou démarrée, adresse verrouillée, connexion, configuration ou pare-feu
+  modifié, mise à jour du panel ou de frp disponible ou installée, panel
+  démarré. Choix des événements par webhook, filtre d'instances, langue des
+  messages, délai entre deux envois, en-têtes supplémentaires, bouton d'essai et
+  historique des derniers envois. Les envois passent par une file et sont
+  retentés ; adresses, secrets et en-têtes ne reviennent jamais dans le
+  navigateur.
+- Site : données structurées (SoftwareApplication, TechArticle, BreadcrumbList),
+  fil d'Ariane, `hreflang` et `lastmod` dans le sitemap, balises Open Graph et
+  Twitter complètes, `llms.txt`, polices non bloquantes, image principale
+  préchargée, compression gzip par le serveur du site, et
+  `website/seo_check.py`, un audit lancé par la CI et avant chaque publication.
+
+### Modifié
+
+- Titres et descriptions du site ramenés aux longueurs des résultats de
+  recherche ; les deux pages d'index de la documentation ont maintenant des
+  titres distincts.
+
 ## [0.0.54] - 2026-09-29
 
 Pré-release.
@@ -150,7 +178,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...HEAD
+[0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52

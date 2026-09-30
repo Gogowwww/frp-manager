@@ -774,3 +774,16 @@ legend.fieldset-title + * { clear: both; }
 .auth-form { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
 .auth-error { color: var(--danger-text); font-size: 13px; }
 .auth-error:empty { display: none; }
+
+/* ── Notifications ──────────────────────────────────────────────────────── */
+.nt-row { grid-template-columns: minmax(0, 230px) minmax(0, 1fr) auto; }
+.nt-row.is-off .row-name, .nt-row.is-off .fw-detail { opacity: .5; }
+.nt-row .row-actions { align-items: center; gap: 6px; }
+.nt-history { margin-top: var(--space-5); }
+.nt-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-4); margin-top: 10px; }
+.nt-group { display: flex; flex-direction: column; gap: 6px; }
+.nt-group-title { font-size: 12px; font-weight: 550; color: var(--text-3); }
+.nt-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; }
+.nt-check span { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nt-check input { accent-color: var(--accent); }
+@media (max-width: 760px) { .nt-row { grid-template-columns: minmax(0, 1fr) auto; } }

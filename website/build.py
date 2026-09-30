@@ -61,6 +61,7 @@ T = {
         "nav_features": "Features", "nav_docs": "Documentation", "nav_demo": "Live demo",
         "nav_source": "Source code", "menu": "Menu", "theme": "Switch theme",
         "other_lang": "Français", "other_lang_code": "fr",
+        "og_alt": "FRP Manager, the self-hosted web panel for frp: the firewall page of the live demo",
         "skip": "Skip to content",
         "footer_about": "Self-hosted web panel for frp, released under the Apache 2.0 license.",
         "footer_ai": "Developed with the help of an AI coding assistant (Claude). "
@@ -71,6 +72,9 @@ T = {
         "edit": "Edit this page on GitHub", "only_fr": "This page is only available in French for now.",
         "docs_intro": "Install, configure and run FRP Manager. These pages are generated from the "
                       "Markdown files of the repository, so they always match the latest version.",
+        "docs_page_title": "FRP Manager documentation: install, configure, secure",
+        "docs_meta": "Install, configure and secure FRP Manager: requirements, Docker images, network access, "
+                     "configuration keys and security policy.",
         "copy": "Copy", "copied": "Copied",
         "notfound_title": "Page not found",
         "notfound_text": "This address does not match any page of the site. It may have moved when the "
@@ -83,16 +87,21 @@ T = {
                                      "configuration keys, lost password, uninstall.",
                      "docker": "What pid: host and nsenter imply, opening the panel to the network, "
                                "reducing privileges.",
-                     "security": "Reporting a vulnerability, supported versions, threat model.",
-                     "contributing": "Development setup, tests, conventions, translations.",
-                     "code-of-conduct": "How we treat each other in the project.",
-                     "changelog": "What changed in each version."},
+                     "security": "Security policy: how to report a vulnerability in FRP Manager, supported versions and "
+                                 "the threat model of a panel that controls exposed ports.",
+                     "contributing": "Contribute to FRP Manager: development setup, running the tests, code "
+                                     "conventions and how to add or fix a translation.",
+                     "code-of-conduct": "The FRP Manager code of conduct: expected behaviour, unacceptable "
+                                        "behaviour and how to report a problem.",
+                     "changelog": "Release notes for every FRP Manager version: what was added, changed, "
+                                  "fixed and secured, from the latest pre-release back to the first releases."},
     },
     "fr": {
         "html_lang": "fr", "locale": "fr_FR",
         "nav_features": "Fonctionnalités", "nav_docs": "Documentation", "nav_demo": "Démo en ligne",
         "nav_source": "Code source", "menu": "Menu", "theme": "Changer de thème",
         "other_lang": "English", "other_lang_code": "en",
+        "og_alt": "FRP Manager, le panel web auto-hébergé pour frp : la page pare-feu de la démo",
         "skip": "Aller au contenu",
         "footer_about": "Panel web auto-hébergé pour frp, publié sous licence Apache 2.0.",
         "footer_ai": "Développé avec l'aide d'un assistant de programmation IA (Claude). "
@@ -103,6 +112,9 @@ T = {
         "edit": "Modifier cette page sur GitHub", "only_fr": "",
         "docs_intro": "Installer, configurer et faire tourner FRP Manager. Ces pages sont générées à partir "
                       "des fichiers Markdown du dépôt : elles correspondent toujours à la dernière version.",
+        "docs_page_title": "Documentation FRP Manager : installer, configurer, sécuriser",
+        "docs_meta": "Installer, configurer et sécuriser FRP Manager : prérequis, images Docker, accès réseau, "
+                     "clés de configuration et politique de sécurité.",
         "copy": "Copier", "copied": "Copié",
         "notfound_title": "Page introuvable",
         "notfound_text": "Cette adresse ne correspond à aucune page du site. Elle a peut-être changé lors de "
@@ -115,15 +127,39 @@ T = {
                                      "accès réseau, clés de configuration, mot de passe perdu, désinstallation.",
                      "docker": "Ce qu'impliquent pid: host et nsenter, ouvrir le panel au réseau, "
                                "réduire les privilèges.",
-                     "security": "Signaler une vulnérabilité, versions prises en charge, modèle de menace.",
-                     "contributing": "Environnement de développement, tests, conventions, traductions.",
-                     "code-of-conduct": "Comment nous nous comportons dans le projet.",
-                     "changelog": "Ce qui a changé à chaque version."},
+                     "security": "Politique de sécurité : signaler une vulnérabilité de FRP Manager, versions prises en "
+                                 "charge et modèle de menace d'un panel qui contrôle des ports exposés.",
+                     "contributing": "Contribuer à FRP Manager : environnement de développement, tests, "
+                                     "conventions de code, ajout ou correction d'une traduction.",
+                     "code-of-conduct": "Le code de conduite de FRP Manager : comportements attendus et "
+                                        "inacceptables, et comment signaler un problème.",
+                     "changelog": "Notes de chaque version de FRP Manager : ce qui a été ajouté, modifié, "
+                                  "corrigé et sécurisé, de la dernière pré-release aux premières versions."},
     },
 }
 
 
 CURRENT = ' aria-current="page"'
+
+_lastmod = {}
+
+
+def lastmod(*paths):
+    """Date (AAAA-MM-JJ) du dernier commit qui touche ces chemins ; None sans historique complet
+    (clone superficiel : toutes les pages auraient la date du dernier commit, ce qui ne dit rien)."""
+    key = tuple(paths)
+    if key not in _lastmod:
+        try:
+            git = ["git", "-C", str(ROOT)]
+            if subprocess.run(git + ["rev-parse", "--is-shallow-repository"], capture_output=True,
+                              text=True, check=True).stdout.strip() == "true":
+                raise ValueError("clone superficiel")
+            out = subprocess.run(git + ["log", "-1", "--format=%cs", "--", *paths], capture_output=True,
+                                 text=True, check=True).stdout.strip()
+            _lastmod[key] = out or None
+        except Exception:
+            _lastmod[key] = None
+    return _lastmod[key]
 
 
 def prefix(lang):
@@ -146,9 +182,8 @@ def esc(text):
 HOME = {
     "en": {
         "title": "FRP Manager: a self-hosted web panel for frp (frps and frpc)",
-        "desc": "FRP Manager is a free, open-source web interface for frp. Manage frps and frpc, "
-                "open ports and tunnels, filter access with an nftables firewall, follow live logs and "
-                "update frp from your browser.",
+        "desc": "Free, open-source web panel for frp. Manage frps and frpc, open ports and tunnels, "
+                "filter access with nftables, follow live logs and get webhook alerts.",
         "h1": "Run frp from your browser",
         "lead": "FRP Manager is a self-hosted web panel for <strong>frps</strong> and <strong>frpc</strong>. "
                 "Open ports, filter who reaches them, read the logs and update frp, without editing TOML "
@@ -195,7 +230,7 @@ HOME = {
             ("config", "Configuration forms", "frps and frpc settings in sections; TOML is checked before it is written."),
             ("download", "One-click updates", "frp downloaded and checked against its published SHA-256; the panel updates itself."),
             ("box", "Docker ready", "Run the panel in a container and drive frp on the host, or manage frp containers."),
-            ("monitor", "Light and dark", "Readable on desktop and mobile, in English and French."),
+            ("bell", "Webhook notifications", "Discord, Slack, Telegram, ntfy, Gotify or any URL: instance down, locked-out address, update available."),
             ("shield", "Locked by default", "Mandatory setup, argon2id passwords, CSRF protection, localhost only."),
         ],
         "demo_title": "Try it before installing",
@@ -274,9 +309,8 @@ HOME = {
     },
     "fr": {
         "title": "FRP Manager : panel web auto-hébergé pour frp (frps et frpc)",
-        "desc": "FRP Manager est une interface web libre et gratuite pour frp. Pilotez frps et frpc, ouvrez "
-                "des ports et des tunnels, filtrez l'accès avec un pare-feu nftables, suivez les journaux en "
-                "direct et mettez frp à jour depuis le navigateur.",
+        "desc": "Panel web libre et gratuit pour frp. Pilotez frps et frpc, ouvrez des ports, filtrez l'accès "
+                "avec nftables, suivez les journaux et recevez des alertes par webhook.",
         "h1": "Pilotez frp depuis votre navigateur",
         "lead": "FRP Manager est un panel web auto-hébergé pour <strong>frps</strong> et <strong>frpc</strong>. "
                 "Ouvrez des ports, filtrez qui les atteint, lisez les journaux et mettez frp à jour, sans éditer "
@@ -324,7 +358,7 @@ HOME = {
             ("config", "Formulaires de configuration", "Réglages de frps et frpc par sections ; le TOML est vérifié avant d'être écrit."),
             ("download", "Mises à jour en un clic", "frp téléchargé et vérifié par sa somme SHA-256 publiée ; le panel se met à jour seul."),
             ("box", "Prêt pour Docker", "Faites tourner le panel en conteneur pour piloter frp sur l'hôte, ou gérez des conteneurs frp."),
-            ("monitor", "Clair ou sombre", "Lisible sur ordinateur et mobile, en français et en anglais."),
+            ("bell", "Notifications webhook", "Discord, Slack, Telegram, ntfy, Gotify ou toute adresse : instance arrêtée, adresse verrouillée, mise à jour disponible."),
             ("shield", "Verrouillé par défaut", "Configuration initiale imposée, mots de passe argon2id, CSRF, écoute locale."),
         ],
         "demo_title": "Essayez avant d'installer",
@@ -408,7 +442,7 @@ HOME = {
 
 
 # ── Gabarit commun ───────────────────────────────────────────────────────────
-def shell(lang, path, alt_path, title, desc, body, ctx, *, section="", noindex=False):
+def shell(lang, path, alt_path, title, desc, body, ctx, *, section="", noindex=False, ld=None, preload=""):
     t = T[lang]
     other = t["other_lang_code"]
     site, version = ctx["site"], ctx["version"]
@@ -423,7 +457,13 @@ def shell(lang, path, alt_path, title, desc, body, ctx, *, section="", noindex=F
         for href, label, key in nav)
     footer_docs = "".join(f'<li><a href="{doc_url(lang, slug)}">{esc(t["doc_names"][slug])}</a></li>'
                           for slug, _ in DOCS)
-    robots = '<meta name="robots" content="noindex">' if noindex else ""
+    robots = ('<meta name="robots" content="noindex">' if noindex else
+              '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">')
+    image_alt = t["og_alt"]
+    ld_tag = (f'<script type="application/ld+json">{json.dumps(ld, ensure_ascii=False, separators=(",", ":"))}</script>'
+              if ld else "")
+    fonts = ("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family="
+             "IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap")
     alternates = "" if noindex else (
         f'<link rel="alternate" hreflang="{lang}" href="{site}{path}">\n'
         f'<link rel="alternate" hreflang="{other}" href="{site}{alt_path}">\n'
@@ -447,16 +487,24 @@ def shell(lang, path, alt_path, title, desc, body, ctx, *, section="", noindex=F
 <meta property="og:image" content="{site}/og.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="{esc(image_alt)}">
 <meta property="og:locale" content="{t['locale']}">
+<meta property="og:locale:alternate" content="{T[other]['locale']}">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{esc(title)}">
+<meta name="twitter:description" content="{esc(desc)}">
+<meta name="twitter:image" content="{site}/og.png">
+<meta name="twitter:image:alt" content="{esc(image_alt)}">
 <meta name="theme-color" content="#0e9f6e">
 <link rel="icon" type="image/svg+xml" href="/assets/{ctx['asset_v']}/favicon.svg">
 <script>try{{var th=localStorage.getItem('frpm.site.theme');if(th==='light'||th==='dark')document.documentElement.dataset.theme=th}}catch(e){{}}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap">
+<link rel="preload" as="style" href="{fonts}" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="{fonts}"></noscript>
 <link rel="stylesheet" href="/assets/{ctx['asset_v']}/site.css">
-<script src="/assets/{ctx['asset_v']}/site.js" defer></script>
+{preload}<script src="/assets/{ctx['asset_v']}/site.js" defer></script>
+{ld_tag}
 </head>
 <body class="page-{section or 'other'}" data-copy="{esc(t['copy'])}" data-copied="{esc(t['copied'])}">
 {ctx['icons']}
@@ -505,6 +553,49 @@ def shell(lang, path, alt_path, title, desc, body, ctx, *, section="", noindex=F
 </body>
 </html>
 """
+
+
+# ── Données structurées (schema.org) ─────────────────────────────────────────
+AUTHOR = {"@type": "Person", "name": "Gogowwww", "url": "https://github.com/Gogowwww"}
+
+
+def home_ld(lang, ctx):
+    c, site = HOME[lang], ctx["site"]
+    url = f"{site}{prefix(lang)}/"
+    img = f"{site}/assets/{ctx['asset_v']}/img"
+    return {"@context": "https://schema.org", "@graph": [
+        {"@type": "SoftwareApplication", "@id": f"{site}/#software", "name": "FRP Manager",
+         "description": c["desc"], "url": url, "inLanguage": lang,
+         "applicationCategory": "DeveloperApplication",
+         "applicationSubCategory": "Network tunnel and reverse proxy management",
+         "operatingSystem": "Linux, Docker", "softwareVersion": ctx["version"],
+         "image": f"{site}/og.png",
+         "screenshot": [f"{img}/{n}-{lang}.webp" for n in ("dashboard", "ports", "firewall", "logs")],
+         "featureList": [title for _, title, _ in c["more"]] + [r["title"] for r in c["rows"]],
+         "downloadUrl": f"{REPO_URL}/releases/latest", "codeRepository": REPO_URL,
+         "releaseNotes": f"{site}{doc_url(lang, 'changelog')}",
+         "license": "https://www.apache.org/licenses/LICENSE-2.0", "isAccessibleForFree": True,
+         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
+         "keywords": "frp, frps, frpc, frp panel, frp dashboard, frp web ui, reverse proxy, tunnel, "
+                     "port forwarding, self-hosted, homelab, nftables firewall",
+         "author": AUTHOR, "sameAs": [REPO_URL]},
+        {"@type": "WebSite", "@id": f"{site}/#website", "name": "FRP Manager", "url": url, "inLanguage": lang,
+         "publisher": AUTHOR},
+    ]}
+
+
+def breadcrumb_ld(lang, ctx, crumbs):
+    """crumbs : [(nom, chemin)] de l'accueil à la page courante."""
+    return {"@type": "BreadcrumbList", "itemListElement": [
+        {"@type": "ListItem", "position": n, "name": name, "item": ctx["site"] + path}
+        for n, (name, path) in enumerate(crumbs, 1)]}
+
+
+def crumbs_html(crumbs):
+    *head, last = crumbs
+    links = "".join(f'<li><a href="{path}">{esc(name)}</a></li>' for name, path in head)
+    return (f'<nav class="crumbs" aria-label="Breadcrumb"><ol>{links}'
+            f'<li aria-current="page">{esc(last[0])}</li></ol></nav>')
 
 
 # ── Page d'accueil ───────────────────────────────────────────────────────────
@@ -719,12 +810,21 @@ def doc_page(lang, slug, sources, ctx):
         pager.append(f'<a class="prev" href="{doc_url(lang, names[i - 1])}">{esc(t["doc_names"][names[i - 1]])}</a>')
     if i + 1 < len(names):
         pager.append(f'<a class="next" href="{doc_url(lang, names[i + 1])}">{esc(t["doc_names"][names[i + 1]])}</a>')
+    crumbs = [("FRP Manager", f"{prefix(lang)}/"), (t["docs_title"], f"{prefix(lang)}/docs/"),
+              (t["doc_names"][slug], doc_url(lang, slug))]
+    modified = lastmod(src)
+    article = {"@type": "TechArticle", "headline": title, "description": t["doc_desc"][slug], "inLanguage": content_lang,
+               "url": ctx["site"] + doc_url(lang, slug), "mainEntityOfPage": ctx["site"] + doc_url(lang, slug),
+               "author": AUTHOR, "publisher": AUTHOR, "image": ctx["site"] + "/og.png",
+               **({"dateModified": modified} if modified else {})}
+    ld = {"@context": "https://schema.org", "@graph": [article, breadcrumb_ld(lang, ctx, crumbs)]}
     html_body = f"""<div class="wrap docs">
   <aside class="docs-side">
     <p class="docs-side-title"><a href="{prefix(lang)}/docs/">{t['docs_title']}</a></p>
     <ul>{side}</ul>
   </aside>
   <article class="prose" lang="{content_lang}">
+    {crumbs_html(crumbs)}
     {notice}
     {body}
     <nav class="pager">{''.join(pager)}</nav>
@@ -736,20 +836,23 @@ def doc_page(lang, slug, sources, ctx):
 </div>"""
     alt = doc_url(T[lang]["other_lang_code"], slug)
     desc = t["doc_desc"][slug]
-    return shell(lang, doc_url(lang, slug), alt, f"{title} — FRP Manager", desc, html_body, ctx, section="docs")
+    return shell(lang, doc_url(lang, slug), alt, f"{title} — FRP Manager", desc, html_body, ctx, section="docs", ld=ld)
 
 
 def docs_index(lang, ctx):
     t = T[lang]
     items = "".join(f'<li><a href="{doc_url(lang, s)}"><strong>{esc(t["doc_names"][s])}</strong>'
                     f'<span>{esc(t["doc_desc"][s])}</span></a></li>' for s, _ in DOCS)
+    crumbs = [("FRP Manager", f"{prefix(lang)}/"), (t["docs_title"], f"{prefix(lang)}/docs/")]
     body = f"""<div class="wrap narrow docs-index">
+  {crumbs_html(crumbs)}
   <h1>{t['docs_title']}</h1>
   <p class="lead">{t['docs_intro']}</p>
   <ul class="doc-list">{items}</ul>
 </div>"""
+    ld = {"@context": "https://schema.org", "@graph": [breadcrumb_ld(lang, ctx, crumbs)]}
     return shell(lang, f"{prefix(lang)}/docs/", f"{prefix(T[lang]['other_lang_code'])}/docs/",
-                 f"{t['docs_title']} — FRP Manager", t["docs_intro"], body, ctx, section="docs")
+                 t["docs_page_title"], t["docs_meta"], body, ctx, section="docs", ld=ld)
 
 
 def not_found(ctx):
@@ -775,6 +878,33 @@ FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 26"><path d
 
 
 # ── Construction ─────────────────────────────────────────────────────────────
+def llms_txt(site):
+    """Résumé du site pour les assistants et moteurs de réponse (convention llms.txt)."""
+    docs = "\n".join(f"- [{T['en']['doc_names'][s]}]({site}{doc_url('en', s)}): {T['en']['doc_desc'][s]}"
+                     for s, _ in DOCS)
+    return f"""# FRP Manager
+
+> {HOME['en']['desc']}
+
+FRP Manager is a self-hosted web panel for frp, the fast reverse proxy. It drives the official frps (server) and
+frpc (client) binaries, systemd services and Docker containers, and keeps their configuration as plain TOML.
+Free and open source (Apache 2.0). Linux with systemd, or Docker. English and French.
+
+## Try and install
+
+- [Live demo]({site}/demo/): the real interface with sample data, nothing to install
+- [Source code and releases]({REPO_URL}): issues, releases, license
+
+## Documentation
+
+{docs}
+
+## French
+
+- [Accueil]({site}/fr/) and [documentation]({site}/fr/docs/) in French
+"""
+
+
 def git_version():
     try:
         out = subprocess.run(["git", "-C", str(ROOT), "describe", "--tags", "--abbrev=0"],
@@ -833,25 +963,39 @@ def main():
 
     ctx = {"site": site, "version": version, "asset_v": asset_v,
            "icons": (ROOT / "panel" / "templates" / "partials" / "icons.html").read_text(encoding="utf-8")}
-    pages = []
+    pages = []          # (chemin, chemin de l'autre langue ou None, dernière modification)
+    docs_mod = max(filter(None, [lastmod(f) for _, srcs in DOCS for f in srcs.values()]), default=None)
+    site_mod = max(filter(None, [lastmod("website/build.py", "website/site.css", "website/img", "panel/templates")]),
+                   default=None)
     for lang in LANGS:
         other = T[lang]["other_lang_code"]
         c = HOME[lang]
         write(out, f"{prefix(lang).lstrip('/')}/index.html".lstrip("/"),
               shell(lang, f"{prefix(lang)}/", f"{prefix(other)}/", c["title"], c["desc"],
-                    home_body(lang, ctx), ctx, section="home"))
-        pages.append(f"{prefix(lang)}/")
+                    home_body(lang, ctx), ctx, section="home", ld=home_ld(lang, ctx),
+                    preload=f'<link rel="preload" as="image" type="image/webp" fetchpriority="high" '
+                            f'href="/assets/{asset_v}/img/dashboard-{lang}.webp">\n'))
+        pages.append((f"{prefix(lang)}/", f"{prefix(other)}/", site_mod))
         write(out, f"{prefix(lang).lstrip('/')}/docs/index.html".lstrip("/"), docs_index(lang, ctx))
-        pages.append(f"{prefix(lang)}/docs/")
+        pages.append((f"{prefix(lang)}/docs/", f"{prefix(other)}/docs/", docs_mod))
         for slug, sources in DOCS:
             write(out, doc_url(lang, slug).lstrip("/") + "index.html", doc_page(lang, slug, sources, ctx))
-            pages.append(doc_url(lang, slug))
+            pages.append((doc_url(lang, slug), doc_url(other, slug), lastmod(sources.get(lang) or sources["fr"])))
     write(out, "404.html", not_found(ctx))
 
     write(out, "robots.txt", f"User-agent: *\nAllow: /\n\nSitemap: {site}/sitemap.xml\n")
-    urls = "".join(f"  <url><loc>{site}{p}</loc></url>\n" for p in pages + ["/demo/"])
+    def sitemap_entry(path, alt, mod):
+        links = ""
+        if alt:
+            en, fr = sorted((path, alt), key=lambda p: p.startswith("/fr/") or p == "/fr")
+            links = "".join(f'<xhtml:link rel="alternate" hreflang="{code}" href="{site}{href}"/>'
+                            for code, href in (("en", en), ("fr", fr), ("x-default", en)))
+        return (f"  <url><loc>{site}{path}</loc>{f'<lastmod>{mod}</lastmod>' if mod else ''}{links}</url>\n")
+    urls = "".join(sitemap_entry(*p) for p in pages + [("/demo/", None, lastmod("panel/templates", "website/demo"))])
     write(out, "sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n'
-          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + urls + "</urlset>\n")
+          '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
+          'xmlns:xhtml="http://www.w3.org/1999/xhtml">\n' + urls + "</urlset>\n")
+    write(out, "llms.txt", llms_txt(site))
     # Hébergeurs Apache : pages relues, assets en cache, page 404 du site
     write(out, ".htaccess", "Options -Indexes\nDirectoryIndex index.html\nErrorDocument 404 /404.html\n"
           "<IfModule mod_headers.c>\n  <FilesMatch \"\\.html$\">\n    Header set Cache-Control \"no-cache\"\n"

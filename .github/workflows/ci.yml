@@ -41,6 +41,20 @@ jobs:
       - name: ruff
         run: ruff check --output-format=github .
 
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Construire le site
+        run: python website/build.py --out dist-site --version ci
+      - name: Audit SEO
+        run: python website/seo_check.py dist-site
+
   audit:
     runs-on: ubuntu-latest
     steps:

@@ -12,6 +12,31 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.55] - 2026-09-30
+
+Pre-release.
+
+### Added
+
+- Webhook notifications: a **Notifications** page sends alerts to Discord, Slack
+  / Mattermost, Telegram, ntfy, Gotify, a JSON address (optional template and
+  HMAC-SHA256 signature) or plain text. Events: instance stopped or started,
+  address locked out, sign-in, configuration or firewall changed, panel or frp
+  update available or installed, panel started. Per-webhook event choice,
+  instance filter, message language, delay between sends, extra headers, test
+  button and history of the last sends. Sends are queued and retried; addresses,
+  secrets and headers never go back to the browser.
+- Website: structured data (SoftwareApplication, TechArticle, BreadcrumbList),
+  breadcrumbs, `hreflang` and `lastmod` in the sitemap, full Open Graph and
+  Twitter tags, `llms.txt`, non-blocking fonts, preloaded main image, gzip
+  compression by the site server, and `website/seo_check.py`, an audit run by
+  the CI and before each publication.
+
+### Changed
+
+- Site titles and descriptions tuned to search-result lengths; the two
+  documentation index pages now have distinct titles.
+
 ## [0.0.54] - 2026-09-29
 
 Pre-release.
@@ -141,7 +166,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...HEAD
+[0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53
 [0.0.52]: https://github.com/Gogowwww/frp-manager/compare/v0.0.51...v0.0.52

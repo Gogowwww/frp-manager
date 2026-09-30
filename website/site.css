@@ -462,3 +462,11 @@ tbody tr:last-child > * { border-bottom: 0; }
 /* Une longue commande ne doit jamais élargir la page : les grilles gardent des colonnes compressibles */
 .steps, .checks { grid-template-columns: minmax(0, 1fr); }
 .steps > li, .feature-text, .hero-text, .route { min-width: 0; }
+
+/* Fil d'Ariane des pages de documentation */
+.crumbs { margin: 0 0 20px; font-size: 13px; color: var(--ink-3); }
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 4px 0; margin: 0; padding: 0; list-style: none; }
+.crumbs li + li::before { content: "/"; margin: 0 8px; opacity: .5; }
+.crumbs a { color: inherit; text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.crumbs [aria-current] { color: var(--ink-2); }

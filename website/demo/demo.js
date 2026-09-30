@@ -792,6 +792,53 @@ transport.useCompression = true
     return { ok: true, msg: M('Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.', 'Saved. Restart frp-manager to apply bind_host/port.') };
   });
 
+  // Notifications : l'interface est réelle, les envois sont simulés
+  const hooks = () => (S.webhooks ||= [
+    { id: 'a1b2c3d4', name: M('Alertes Discord', 'Discord alerts'), enabled: true, format: 'discord', url_hint: 'https://discord.com/…',
+      has_secret: false, has_headers: false, chat_id: '', events: ['instance.down', 'instance.up', 'login.locked'], instances: [],
+      lang: lang() === 'en' ? 'en' : 'fr', cooldown: 60, template: '' },
+    { id: 'e5f6a7b8', name: M('Mises à jour (ntfy)', 'Updates (ntfy)'), enabled: true, format: 'ntfy', url_hint: 'https://ntfy.sh/…',
+      has_secret: false, has_headers: false, chat_id: '', events: ['update.panel', 'update.frp'], instances: [],
+      lang: lang() === 'en' ? 'en' : 'fr', cooldown: 0, template: '' },
+  ]);
+  const hookLog = () => (S.webhookLog ||= [
+    { time: new Date(Date.now() - 3600e3).toISOString(), webhook: 'a1b2c3d4', name: M('Alertes Discord', 'Discord alerts'), event: 'instance.down', ok: true, status: 204, msg: 'OK' },
+    { time: new Date(Date.now() - 3540e3).toISOString(), webhook: 'a1b2c3d4', name: M('Alertes Discord', 'Discord alerts'), event: 'instance.up', ok: true, status: 204, msg: 'OK' },
+  ]);
+  const publicHook = (w, old) => ({
+    id: w.id || Math.random().toString(16).slice(2, 10), name: String(w.name || '').trim(), enabled: w.enabled !== false,
+    format: w.format || 'generic',
+    url_hint: w.url ? `${new URL(w.url).origin}/…` : (old?.url_hint || ''),
+    has_secret: w.secret_clear ? false : !!(w.secret || old?.has_secret), has_headers: w.headers_clear ? false : !!(w.headers || old?.has_headers),
+    chat_id: w.chat_id || '', events: w.events || ['*'], instances: w.instances || [], lang: w.lang || 'fr',
+    cooldown: Number(w.cooldown) || 0, template: w.template || '',
+  });
+  const EVENT_LEVELS = { 'instance.down': 'error', 'instance.up': 'success', 'login.success': 'info', 'login.locked': 'warning',
+    'config.saved': 'info', 'firewall.saved': 'info', 'update.panel': 'info', 'update.frp': 'info', 'update.frp_installed': 'success', 'panel.started': 'info' };
+  on('GET', /^\/api\/webhooks$/, () => ({
+    ok: true, webhooks: hooks(), history: hookLog().slice().reverse(),
+    events: Object.entries(EVENT_LEVELS).map(([id, level]) => ({ id, level })),
+    formats: ['generic', 'discord', 'slack', 'telegram', 'ntfy', 'gotify', 'text'],
+  }));
+  on('POST', /^\/api\/webhooks$/, (m, body) => {
+    const old = Object.fromEntries(hooks().map((w) => [w.id, w]));
+    try {
+      S.webhooks = (body.webhooks || []).map((w) => {
+        if (!String(w.name || '').trim()) throw new Error(M('Donnez un nom au webhook.', 'Give the webhook a name.'));
+        if (!w.url && !old[w.id]) throw new Error(M('Adresse invalide (http:// ou https:// attendu).', 'Invalid address (http:// or https:// expected).'));
+        return publicHook(w, old[w.id]);
+      });
+    } catch (e) { return [{ ok: false, msg: e.message }, 400]; }
+    save();
+    return { ok: true, webhooks: S.webhooks, msg: M('Webhooks enregistrés', 'Webhooks saved') };
+  });
+  on('POST', /^\/api\/webhooks\/test$/, (m, body) => {
+    const w = body.webhook || {};
+    hookLog().push({ time: new Date().toISOString(), webhook: w.id || '', name: w.name || '—', event: 'test', ok: true, status: 204, msg: 'OK' });
+    save();
+    return { ok: true, status: 204, msg: M('Notification envoyée (simulée dans la démo)', 'Notification sent (simulated in the demo)') };
+  });
+
   on('GET', /^\/api\/panel\/version$/, () => ({
     ok: true, current: PANEL_VERSION, latest: PANEL_VERSION, release_url: `https://github.com/${REPO}/releases`,
     update_available: false, prerelease: false, repo: REPO, repo_configured: true, in_docker: false,

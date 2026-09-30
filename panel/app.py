@@ -3,6 +3,7 @@
 
 import os, re, sys, posixpath, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, hmac, base64, ipaddress, ssl, queue, gzip
 import socket as _socket, http.client as _http_client
+from urllib.parse import urlsplit
 from pathlib import Path, PurePosixPath
 from datetime import datetime, timedelta
 from functools import wraps
@@ -100,6 +101,7 @@ def _default_manager_config():
         # intermédiaire de plus dans la chaîne d'approvisionnement.
         "download_mirrors": True,
         "nicknames":        {},
+        "webhooks":         [],
     }
 
 def load_manager_config():
@@ -618,6 +620,12 @@ def api_login():
     if not (pw_ok and user_ok):
         _login_failed(ip)
         wait = _login_retry_after(ip)
+        fails = _login_failures.get(ip, {}).get("count", 0)
+        if wait and (fails == LOGIN_FREE_ATTEMPTS or fails % 10 == 0):
+            webhook_emit("login.locked", (f"Verrouillage de {ip}", f"{ip} locked out"),
+                         (f"{fails} échecs de connexion consécutifs depuis {ip} : adresse verrouillée {wait} s.",
+                          f"{fails} failed sign-ins in a row from {ip}: address locked for {wait} s."),
+                         subject=ip, data={"ip": ip, "failures": fails, "locked_seconds": wait})
         if wait:
             return _too_many_attempts(wait)
         return jsonify({"ok": False, "msg": M("Identifiants incorrects", "Wrong username or password")}), 401
@@ -632,6 +640,9 @@ def api_login():
         except OSError as e:
             print(f"[WARN] Rehachage du mot de passe non enregistré : {e}")
     _start_session()
+    webhook_emit("login.success", (f"Connexion de {user}", f"{user} signed in"),
+                 (f"Connexion au panel depuis {ip}.", f"Panel sign-in from {ip}."),
+                 subject=ip, data={"ip": ip, "user": user})
     return jsonify({"ok": True})
 
 @app.route("/api/logout", methods=["POST"])
@@ -1628,6 +1639,9 @@ def install_from_archive(tmp_path, version, log_fn):
         save_state(state)
         _invalidate_cache(discovery=True)
         log_fn(M(f"[OK] frp {version} installé.", f"[OK] frp {version} installed."))
+        webhook_emit("update.frp_installed", (f"frp {version} installé", f"frp {version} installed"),
+                     (f"frp {version} a été installé depuis le panel.", f"frp {version} was installed from the panel."),
+                     subject=version, data={"version": version})
         return True
     except Exception as e:
         log_fn(f"[ERROR] {e}")
@@ -1699,6 +1713,7 @@ def api_service_action(iid, action):
     if iid not in INSTANCES:
         return jsonify({"ok": False, "msg": M(f"Instance inconnue : {iid}", f"Unknown instance: {iid}")}), 404
     inst = INSTANCES[iid]
+    _wh_panel_action[iid] = time.time()
     # ── Container Docker ──────────────────────────────────────────────────────
     if inst.get("source") == "docker":
         if action not in ("start", "stop", "restart"):
@@ -1941,6 +1956,9 @@ def api_config_save(iid):
     ok, msg, status = write_instance_config(INSTANCES[iid], content)
     if ok:
         _invalidate_cache(discovery=True)      # serverAddr, fichier créé…
+        webhook_emit("config.saved", (f"Configuration de {iid} modifiée", f"Configuration of {iid} changed"),
+                     ("La configuration a été enregistrée depuis le panel.", "The configuration was saved from the panel."),
+                     subject=iid, instance=iid)
     return jsonify({"ok": ok, "msg": msg}), status
 
 # ── Écriture des configs : validation et confinement ─────────────────────────
@@ -2195,7 +2213,7 @@ if sock:
 @app.route("/api/manager/config", methods=["GET"])
 @login_required
 def api_manager_config_get():
-    safe = {k: v for k, v in MGR_CFG.items() if k not in ("password_hash","secret_key")}
+    safe = {k: v for k, v in MGR_CFG.items() if k not in ("password_hash","secret_key","webhooks")}
     safe["has_password"] = bool(MGR_CFG.get("password_hash"))
     return jsonify({"ok": True, "config": safe})
 
@@ -3879,6 +3897,10 @@ def api_firewall_save():
                                               f"nftables rejected the rules, nothing was changed: {msg or 'unknown error'}")}), 500
     MGR_CFG = {**MGR_CFG, "firewall": new}
     save_manager_config(MGR_CFG)
+    webhook_emit("firewall.saved", ("Pare-feu modifié", "Firewall changed"),
+                 (f"{len(rules)} règle(s), pare-feu {'activé' if new['enabled'] else 'désactivé'}.",
+                  f"{len(rules)} rule(s), firewall {'enabled' if new['enabled'] else 'disabled'}."),
+                 data={"rules": len(rules), "enabled": new["enabled"]})
     return jsonify({"ok": True, "rules": rules,
                     "msg": M("Pare-feu appliqué", "Firewall applied") if new["enabled"]
                            else M("Pare-feu désactivé : plus aucun filtrage", "Firewall disabled: no more filtering")})
@@ -4013,6 +4035,390 @@ if sock:
         except Exception:
             pass
 
+# ── Notifications webhook ────────────────────────────────────────────────────
+# Chaque webhook a son adresse, son format (Discord, Slack, Telegram, ntfy,
+# Gotify, JSON signé, texte ou modèle libre), ses événements et sa langue.
+# Les envois passent par une file et un thread : une requête du panel n'attend
+# jamais un service de notification lent ou en panne.
+
+# id → (niveau, français, anglais)
+WEBHOOK_EVENTS = {
+    "instance.down":        ("error",   "Instance arrêtée",                          "Instance stopped"),
+    "instance.up":          ("success", "Instance démarrée",                         "Instance started"),
+    "login.success":        ("info",    "Connexion au panel",                        "Panel sign-in"),
+    "login.locked":         ("warning", "Adresse verrouillée (échecs de connexion)", "Address locked out (failed sign-ins)"),
+    "config.saved":         ("info",    "Configuration modifiée",                    "Configuration changed"),
+    "firewall.saved":       ("info",    "Règles du pare-feu modifiées",              "Firewall rules changed"),
+    "update.panel":         ("info",    "Mise à jour du panel disponible",           "Panel update available"),
+    "update.frp":           ("info",    "Nouvelle version de frp disponible",        "New frp version available"),
+    "update.frp_installed": ("success", "frp mis à jour",                            "frp updated"),
+    "panel.started":        ("info",    "Panel démarré",                             "Panel started"),
+}
+WEBHOOK_FORMATS = ("generic", "discord", "slack", "telegram", "ntfy", "gotify", "text")
+WEBHOOK_MAX          = 20
+WEBHOOK_HISTORY_MAX  = 50
+WEBHOOK_RETRY_DELAYS = (0, 3, 10)          # 3 essais
+WEBHOOK_TIMEOUT      = 10
+WEBHOOK_MONITOR_SECONDS = 15
+WEBHOOK_UPDATE_CHECK_SECONDS = 6 * 3600
+_WEBHOOK_COLORS = {"info": 0x3B82F6, "success": 0x22C55E, "warning": 0xF59E0B, "error": 0xEF4444}
+_WEBHOOK_TEMPLATE_KEYS = ("event", "title", "message", "level", "host", "time", "instance", "subject", "version")
+_HEADER_NAME_RE = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,64}")
+
+_webhook_queue   = queue.Queue(maxsize=200)
+_webhook_history = []                       # plus récent en dernier
+_webhook_lock    = threading.Lock()
+_webhook_recent  = {}                       # (webhook, événement, sujet) → dernier envoi
+_wh_panel_action = {}                       # instance → moment de la dernière action du panel
+
+class WebhookError(ValueError):
+    pass
+
+def _webhooks_active():
+    return [w for w in MGR_CFG.get("webhooks") or [] if w.get("enabled", True)]
+
+def webhook_emit(event, title, text, subject="", instance=None, data=None, level=None):
+    """Met un événement en file ; title et text sont des couples (français, anglais).
+    Ne fait rien (et ne coûte rien) tant qu'aucun webhook n'est actif."""
+    if event not in WEBHOOK_EVENTS or not _webhooks_active():
+        return
+    item = {"event": event, "title": title, "text": text, "subject": subject or "",
+            "instance": instance, "data": data or {}, "level": level or WEBHOOK_EVENTS[event][0],
+            "time": datetime.now().astimezone().isoformat(timespec="seconds")}
+    try:
+        _webhook_queue.put_nowait(item)
+    except queue.Full:
+        print("[WARN] Webhooks : file pleine, notification abandonnée")
+
+def _webhook_render_template(template, values):
+    """Remplace {{clé}} par la valeur échappée pour une chaîne JSON : le modèle
+    s'écrit '{"content": "{{message}}"}'."""
+    def sub(m):
+        return json.dumps(str(values.get(m.group(1), "")), ensure_ascii=False)[1:-1]
+    return re.sub(r"\{\{\s*(\w+)\s*\}\}", sub, template)
+
+def _webhook_headers_parse(text):
+    headers = {}
+    for line in str(text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        name, sep, value = line.partition(":")
+        name, value = name.strip(), value.strip()
+        if not sep or not _HEADER_NAME_RE.fullmatch(name) or any(c in value for c in "\r\n\0"):
+            raise WebhookError(M(f"En-tête invalide : « {line[:60]} » (attendu : Nom: valeur).",
+                                 f"Invalid header: “{line[:60]}” (expected: Name: value)."))
+        headers[name] = value
+    if len(headers) > 10:
+        raise WebhookError(M("10 en-têtes au plus.", "10 headers at most."))
+    return headers
+
+def _webhook_values(item, lang):
+    i = 0 if lang == "fr" else 1
+    return {"event": item["event"], "title": item["title"][i], "message": item["text"][i],
+            "level": item["level"], "host": _socket.gethostname(), "time": item["time"],
+            "instance": item.get("instance") or "", "subject": item.get("subject") or "",
+            "version": PANEL_VERSION}
+
+def _webhook_request(hook, item):
+    """(url, corps en octets, en-têtes) de la notification pour ce webhook."""
+    v = _webhook_values(item, hook.get("lang", "fr"))
+    fmt = hook.get("format", "generic")
+    url = hook["url"]
+    headers = {"Content-Type": "application/json", "User-Agent": f"FRP-Manager/{PANEL_VERSION}",
+               "X-FRPManager-Event": item["event"]}
+    if fmt == "discord":
+        body = {"username": "FRP Manager", "embeds": [{
+            "title": v["title"][:256], "description": v["message"][:4000],
+            "color": _WEBHOOK_COLORS.get(item["level"], _WEBHOOK_COLORS["info"]),
+            "timestamp": datetime.now().astimezone().isoformat(), "footer": {"text": v["host"]}}]}
+    elif fmt == "slack":
+        hexcolor = "#%06x" % _WEBHOOK_COLORS.get(item["level"], _WEBHOOK_COLORS["info"])
+        body = {"attachments": [{"fallback": v["title"], "color": hexcolor, "title": v["title"],
+                                 "text": v["message"], "footer": v["host"], "ts": int(time.time())}]}
+    elif fmt == "telegram":
+        esc = lambda s: s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        if not url.rstrip("/").endswith("/sendMessage"):
+            url = url.rstrip("/") + "/sendMessage"
+        body = {"chat_id": hook.get("chat_id", ""), "parse_mode": "HTML", "disable_web_page_preview": True,
+                "text": f"<b>{esc(v['title'])}</b>\n{esc(v['message'])}\n<i>{esc(v['host'])}</i>"}
+    elif fmt == "ntfy":
+        # Publication en JSON à la racine du serveur : accents et emoji passent (pas d'en-têtes)
+        p = urlsplit(url)
+        url = f"{p.scheme}://{p.netloc}/"
+        prio = {"info": 3, "success": 3, "warning": 4, "error": 5}[item["level"]]
+        tag = {"info": "information_source", "success": "white_check_mark",
+               "warning": "warning", "error": "rotating_light"}[item["level"]]
+        body = {"topic": p.path.strip("/"), "title": v["title"], "message": f"{v['message']}\n{v['host']}",
+                "priority": prio, "tags": [tag]}
+    elif fmt == "gotify":
+        prio = {"info": 4, "success": 4, "warning": 6, "error": 8}[item["level"]]
+        body = {"title": v["title"], "message": f"{v['message']}\n{v['host']}", "priority": prio}
+    elif fmt == "text":
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        body = f"{v['title']}\n{v['message']}\n{v['host']}"
+    elif hook.get("template"):
+        body = _webhook_render_template(hook["template"], v)
+    else:
+        body = {"event": item["event"], "level": item["level"], "title": v["title"], "message": v["message"],
+                "host": v["host"], "time": item["time"], "panel_version": PANEL_VERSION,
+                "instance": item.get("instance"), "data": item.get("data") or {}}
+    raw = body.encode() if isinstance(body, str) else json.dumps(body, ensure_ascii=False).encode()
+    if fmt in ("generic", "text") and hook.get("secret"):
+        sig = hmac.new(hook["secret"].encode(), raw, hashlib.sha256).hexdigest()
+        headers["X-FRPManager-Signature"] = f"sha256={sig}"
+    try:
+        headers.update(_webhook_headers_parse(hook.get("headers")))
+    except WebhookError:
+        pass                                  # refusés à l'enregistrement
+    return url, raw, headers
+
+def _webhook_send(hook, item):
+    """Un envoi avec ses nouveaux essais → (ok, HTTP ou 0, message court)."""
+    url, raw, headers = _webhook_request(hook, item)
+    status, err = 0, ""
+    for delay in WEBHOOK_RETRY_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            r = req.post(url, data=raw, headers=headers, timeout=WEBHOOK_TIMEOUT, allow_redirects=False)
+            status, err = r.status_code, ""
+            if 200 <= status < 300:
+                return True, status, "OK"
+            err = f"HTTP {status}"
+            if status < 500 and status != 429:
+                break                         # refus définitif : inutile de réessayer
+        except req.RequestException as e:
+            status, err = 0, type(e).__name__
+    return False, status, err
+
+def _webhook_record(hook, item, ok, status, msg):
+    entry = {"time": item["time"], "webhook": hook.get("id"), "name": hook.get("name", ""),
+             "event": item["event"], "ok": ok, "status": status, "msg": msg}
+    with _webhook_lock:
+        _webhook_history.append(entry)
+        del _webhook_history[:-WEBHOOK_HISTORY_MAX]
+    if not ok:
+        print(f"[WARN] Webhook « {hook.get('name')} » : {msg}")
+
+def _webhook_matches(hook, item):
+    events = hook.get("events") or []
+    if "*" not in events and item["event"] not in events:
+        return False
+    only = hook.get("instances") or []
+    if only and item.get("instance") and item["instance"] not in only:
+        return False
+    cooldown = int(hook.get("cooldown") or 0)
+    if cooldown:
+        key, now = (hook.get("id"), item["event"], item.get("subject")), time.time()
+        with _webhook_lock:
+            if now - _webhook_recent.get(key, 0) < cooldown:
+                return False
+            _webhook_recent[key] = now
+            if len(_webhook_recent) > 2000:
+                for k in [k for k, t in _webhook_recent.items() if now - t > 86400]:
+                    del _webhook_recent[k]
+    return True
+
+def _webhook_worker():
+    while True:
+        item = _webhook_queue.get()
+        try:
+            for hook in _webhooks_active():
+                if _webhook_matches(hook, item):
+                    _webhook_record(hook, item, *_webhook_send(hook, item))
+        except Exception as e:
+            print(f"[WARN] Webhooks : {e}")
+
+def _webhook_state_note(key, value):
+    """Retient la dernière version annoncée : une mise à jour n'est notifiée qu'une fois."""
+    state = load_state()
+    if state.get(key) == value:
+        return False
+    state[key] = value
+    try:
+        save_state(state)
+    except OSError:
+        pass
+    return True
+
+def _webhook_wants(event):
+    return any("*" in (w.get("events") or []) or event in (w.get("events") or []) for w in _webhooks_active())
+
+def _webhook_check_updates():
+    if _webhook_wants("update.panel") and "VOTRE_USER" not in PANEL_GITHUB_REPO:
+        pre = panel_is_prerelease()
+        ver, url = _github_cached(("panel", pre), lambda: fetch_panel_latest(include_prereleases=pre))
+        if ver and not (pre and IN_DOCKER) and version_newer(ver, PANEL_VERSION) \
+                and _webhook_state_note("notified_panel", ver):
+            webhook_emit("update.panel", (f"Panel {ver} disponible", f"Panel {ver} available"),
+                         (f"Version installée : {PANEL_VERSION}. {url}", f"Installed version: {PANEL_VERSION}. {url}"),
+                         subject=ver, data={"current": PANEL_VERSION, "latest": ver, "url": url})
+    if _webhook_wants("update.frp"):
+        ver = _github_cached("frp", fetch_latest_version)[0]
+        installed = load_state().get("installed_version")
+        if ver and installed and version_newer(ver, installed) and _webhook_state_note("notified_frp", ver):
+            webhook_emit("update.frp", (f"frp {ver} disponible", f"frp {ver} available"),
+                         (f"Version installée : {installed}.", f"Installed version: {installed}."),
+                         subject=ver, data={"current": installed, "latest": ver})
+
+def _webhook_instance_events(instances, seen, pending):
+    """Compare l'état des instances au précédent ; un changement doit tenir deux
+    relevés d'affilée avant d'être annoncé (redémarrage rapide, appel raté)."""
+    for iid, inst in instances.items():
+        if not inst.get("binary_found", True):
+            seen.pop(iid, None)
+            pending.pop(iid, None)
+            continue
+        running = bool(inst["status"].get("running"))
+        if iid not in seen:
+            seen[iid] = running
+        elif running == seen[iid]:
+            pending.pop(iid, None)
+        elif pending.get(iid) != running:
+            pending[iid] = running            # premier relevé différent : à confirmer
+        else:
+            seen[iid] = running
+            pending.pop(iid, None)
+            name = (MGR_CFG.get("nicknames") or {}).get(iid) or inst.get("service") or iid
+            by_panel = time.time() - _wh_panel_action.get(iid, 0) < 120
+            src = (" (action lancée depuis le panel)", " (action started from the panel)") if by_panel else ("", "")
+            if running:
+                webhook_emit("instance.up", (f"{name} est démarrée", f"{name} is running"),
+                             ("L'instance tourne." + src[0], "The instance is running." + src[1]),
+                             subject=iid, instance=iid, data={"by_panel": by_panel})
+            else:
+                webhook_emit("instance.down", (f"{name} est arrêtée", f"{name} is stopped"),
+                             ("L'instance ne tourne plus." + src[0], "The instance is no longer running." + src[1]),
+                             subject=iid, instance=iid, data={"by_panel": by_panel})
+
+def _webhook_monitor_loop():
+    time.sleep(10)
+    seen, pending, last_updates = {}, {}, 0
+    while True:
+        try:
+            if _webhooks_active():
+                _webhook_instance_events(detect_frp(force=False), seen, pending)
+                if time.time() - last_updates >= WEBHOOK_UPDATE_CHECK_SECONDS:
+                    last_updates = time.time()
+                    _webhook_check_updates()
+            else:
+                seen.clear()
+                pending.clear()
+        except Exception as e:
+            print(f"[WARN] Webhooks : {e}")
+        time.sleep(WEBHOOK_MONITOR_SECONDS)
+
+def _webhook_public(w):
+    """Un webhook tel que l'interface le voit : l'adresse (souvent porteuse d'un
+    jeton), le secret et les en-têtes ne sortent jamais du serveur."""
+    p = urlsplit(w.get("url", ""))
+    return {"id": w["id"], "name": w.get("name", ""), "enabled": w.get("enabled", True),
+            "format": w.get("format", "generic"), "url_hint": f"{p.scheme}://{p.netloc}/…" if p.netloc else "",
+            "has_secret": bool(w.get("secret")), "has_headers": bool(w.get("headers")),
+            "chat_id": w.get("chat_id", ""), "events": w.get("events") or [], "instances": w.get("instances") or [],
+            "lang": w.get("lang", "fr"), "cooldown": int(w.get("cooldown") or 0), "template": w.get("template", "")}
+
+def _webhook_normalize(raw, old=None):
+    """Webhook validé ; l'adresse, le secret et les en-têtes laissés vides
+    reprennent ceux de l'enregistrement précédent."""
+    old = old or {}
+    if not isinstance(raw, dict):
+        raise WebhookError(M("Webhook invalide.", "Invalid webhook."))
+    name = str(raw.get("name") or "").strip()[:64]
+    if not name:
+        raise WebhookError(M("Donnez un nom au webhook.", "Give the webhook a name."))
+    fmt = raw.get("format") or "generic"
+    if fmt not in WEBHOOK_FORMATS:
+        raise WebhookError(M("Format inconnu.", "Unknown format."))
+    url = str(raw.get("url") or "").strip() or old.get("url", "")
+    p = urlsplit(url)
+    if p.scheme not in ("http", "https") or not p.hostname or len(url) > 2048 or any(c in url for c in " \r\n\0"):
+        raise WebhookError(M(f"« {name} » : adresse invalide (http:// ou https:// attendu).",
+                             f"“{name}”: invalid address (http:// or https:// expected)."))
+    if fmt == "ntfy" and not p.path.strip("/"):
+        raise WebhookError(M(f"« {name} » : ajoutez le sujet ntfy à l'adresse (https://ntfy.sh/mon-sujet).",
+                             f"“{name}”: add the ntfy topic to the address (https://ntfy.sh/my-topic)."))
+    chat_id = str(raw.get("chat_id") or "").strip()[:64]
+    if fmt == "telegram" and not chat_id:
+        raise WebhookError(M(f"« {name} » : identifiant de conversation Telegram requis.",
+                             f"“{name}”: Telegram chat ID required."))
+    events = raw.get("events")
+    if not isinstance(events, list) or not events or any(e != "*" and e not in WEBHOOK_EVENTS for e in events):
+        raise WebhookError(M(f"« {name} » : choisissez au moins un événement.", f"“{name}”: pick at least one event."))
+    instances = [str(i) for i in (raw.get("instances") or []) if valid_instance_id(str(i))][:50]
+    lang = "en" if raw.get("lang") == "en" else "fr"
+    try:
+        cooldown = int(raw.get("cooldown") or 0)
+        if not 0 <= cooldown <= 86400:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise WebhookError(M("Délai entre deux envois : 0 à 86 400 secondes.",
+                             "Delay between two sends: 0 to 86,400 seconds."))
+    secret = "" if raw.get("secret_clear") else str(raw.get("secret") or "") or old.get("secret", "")
+    headers = "" if raw.get("headers_clear") else str(raw.get("headers") or "").strip() or old.get("headers", "")
+    _webhook_headers_parse(headers)
+    template = str(raw.get("template") or "").strip()[:4000] if fmt == "generic" else ""
+    if template:
+        try:
+            json.loads(_webhook_render_template(template, {k: "x" for k in _WEBHOOK_TEMPLATE_KEYS}))
+        except ValueError:
+            raise WebhookError(M(f"« {name} » : le modèle n'est pas un JSON valide une fois rempli.",
+                                 f"“{name}”: the template is not valid JSON once filled in."))
+    return {"id": old.get("id") or secrets.token_hex(4), "name": name, "enabled": bool(raw.get("enabled", True)),
+            "format": fmt, "url": url, "secret": secret, "headers": headers, "chat_id": chat_id,
+            "events": events, "instances": instances, "lang": lang, "cooldown": cooldown, "template": template}
+
+@app.route("/api/webhooks", methods=["GET"])
+@login_required
+def api_webhooks_get():
+    with _webhook_lock:
+        history = list(reversed(_webhook_history))
+    return jsonify({"ok": True, "webhooks": [_webhook_public(w) for w in MGR_CFG.get("webhooks") or []],
+                    "history": history,
+                    "events": [{"id": k, "level": v[0]} for k, v in WEBHOOK_EVENTS.items()],
+                    "formats": list(WEBHOOK_FORMATS)})
+
+@app.route("/api/webhooks", methods=["POST"])
+@login_required
+def api_webhooks_save():
+    global MGR_CFG
+    raws = (request.get_json(silent=True) or {}).get("webhooks")
+    if not isinstance(raws, list) or len(raws) > WEBHOOK_MAX:
+        return jsonify({"ok": False, "msg": M(f"{WEBHOOK_MAX} webhooks au plus.", f"{WEBHOOK_MAX} webhooks at most.")}), 400
+    known = {w["id"]: w for w in MGR_CFG.get("webhooks") or []}
+    try:
+        hooks = [_webhook_normalize(r, known.get(str(r.get("id"))) if isinstance(r, dict) else None) for r in raws]
+    except WebhookError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    MGR_CFG = {**MGR_CFG, "webhooks": hooks}
+    save_manager_config(MGR_CFG)
+    return jsonify({"ok": True, "webhooks": [_webhook_public(w) for w in hooks],
+                    "msg": M("Webhooks enregistrés", "Webhooks saved")})
+
+@app.route("/api/webhooks/test", methods=["POST"])
+@login_required
+def api_webhooks_test():
+    """Envoie une notification d'essai au webhook décrit (enregistré ou en cours de saisie)."""
+    raw = (request.get_json(silent=True) or {}).get("webhook")
+    raw = raw if isinstance(raw, dict) else {}
+    old = next((w for w in MGR_CFG.get("webhooks") or [] if w["id"] == str(raw.get("id"))), None)
+    try:
+        hook = _webhook_normalize({**raw, "events": ["*"]}, old)
+    except WebhookError as e:
+        return jsonify({"ok": False, "msg": str(e)}), 400
+    item = {"event": "test", "level": "info",
+            "title": ("Notification d'essai", "Test notification"),
+            "text": (f"Ce webhook fonctionne. FRP Manager {PANEL_VERSION}.",
+                     f"This webhook works. FRP Manager {PANEL_VERSION}."),
+            "subject": "test", "instance": None, "data": {"test": True},
+            "time": datetime.now().astimezone().isoformat(timespec="seconds")}
+    ok, status, msg = _webhook_send(hook, item)
+    _webhook_record(hook, item, ok, status, msg)
+    return jsonify({"ok": ok, "status": status,
+                    "msg": M("Notification envoyée", "Notification sent") if ok
+                           else M(f"Échec de l'envoi : {msg}", f"Sending failed: {msg}")})
+
 if __name__ == "__main__":
     if "--reset-password" in sys.argv[1:]:
         reset_password_cli()
@@ -4038,4 +4444,8 @@ if __name__ == "__main__":
         print("[INFO] Miroirs de téléchargement tiers désactivés")
     threading.Thread(target=migrate_away_from_mmproxy, daemon=True).start()
     threading.Thread(target=_fw_sync_loop, daemon=True).start()
+    threading.Thread(target=_webhook_worker, daemon=True).start()
+    threading.Thread(target=_webhook_monitor_loop, daemon=True).start()
+    webhook_emit("panel.started", ("Panel démarré", "Panel started"),
+                 (f"FRP Manager {PANEL_VERSION} écoute sur {host}:{port}.", f"FRP Manager {PANEL_VERSION} is listening on {host}:{port}."))
     app.run(host=host, port=port, debug=False, ssl_context=ssl_ctx)

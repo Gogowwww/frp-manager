@@ -174,6 +174,44 @@ matches the one published with the frp release, and says so in the install
 log. If github.com is reachable for you, disable the mirrors
 (**Settings → Network access**).
 
+## Webhook notifications
+
+The **Notifications** page sends a message to an address of your choice when something happens on the
+machine. Each webhook has its own destination, format, events and language, so you can send outages to
+Discord, updates to ntfy and security events to your own service.
+
+| Format | Address to enter |
+| --- | --- |
+| Discord | the webhook address of a channel (Settings, Integrations); sent as a coloured card |
+| Slack / Mattermost | an Incoming Webhook address |
+| Telegram | `https://api.telegram.org/bot<token>` and the chat ID |
+| ntfy | the topic address, `https://ntfy.sh/my-topic` or your own server; priority follows severity |
+| Gotify | `https://gotify.example.org/message?token=…` |
+| JSON (generic) | any address; body `{event, level, title, message, host, time, panel_version, instance, data}`, or your own template |
+| Plain text | any address; title, message and machine name as text |
+
+Events: instance stopped or started (checked every 15 seconds, and confirmed by a second reading so a quick
+restart does not raise an alert), address locked out after failed sign-ins, sign-in, configuration or
+firewall changed, panel or frp update available (checked every 6 hours, announced once per version), frp
+updated, panel started. Optional settings: limit to some instances, a delay between two sends of the same
+event, the message language, extra HTTP headers, and a signing secret.
+
+The generic format supports a JSON template with the variables `{{event}}`, `{{title}}`, `{{message}}`,
+`{{level}}`, `{{host}}`, `{{time}}`, `{{instance}}`, `{{subject}}` and `{{version}}`, escaped for JSON:
+`{"content": "{{title}}: {{message}}"}`. With a signing secret, each request carries
+`X-FRPManager-Signature: sha256=<HMAC-SHA256 of the body>`:
+
+```python
+import hashlib, hmac
+expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+ok = hmac.compare_digest(expected, request.headers["X-FRPManager-Signature"])
+```
+
+Sends are queued and retried three times on a network error, a 5xx or a 429; the last ones are listed on the
+page. The address, secret and headers are stored in the configuration file (readable by root only) and are
+never sent back to the browser: leave a field empty when editing to keep the saved value. Redirections are not
+followed.
+
 ## Lost password
 
 ```bash

@@ -39,6 +39,7 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 - **Firewall (frps)**: allow-only or block rules by address, network or whole provider (AS number), applied in the kernel with nftables before Docker's NAT; blocked connections in real time; optional community lists.
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
 - **Logs**: systemd journal, log file or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
+- **Notifications**: webhooks to Discord, Slack, Telegram, ntfy, Gotify or any URL (JSON template, HMAC signature) for stopped instances, locked-out addresses and updates.
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
 - **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
 

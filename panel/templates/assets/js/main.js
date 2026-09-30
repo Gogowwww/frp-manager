@@ -13,6 +13,7 @@ import firewall from './pages/firewall.js';
 import config from './pages/config.js';
 import logs from './pages/logs.js';
 import updates from './pages/updates.js';
+import notifications from './pages/notifications.js';
 import settings from './pages/settings.js';
 
 const WELCOME_KEY = 'frpMgrWelcomeSeen';
@@ -75,7 +76,7 @@ async function boot() {
   applyI18n();
   setupShell();
 
-  [dashboard, tunnels, firewall, config, logs, updates, settings].forEach(registerPage);
+  [dashboard, tunnels, firewall, config, logs, notifications, updates, settings].forEach(registerPage);
 
   // Détection d'abord : toutes les pages en dépendent. Elle arrive avec la
   // page ; sinon (ancienne page en cache), on la demande à l'API.

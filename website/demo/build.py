@@ -41,10 +41,9 @@ LOGIN_PATCHES = [("location.href = '/';", "location.href = './';")]   # /demo/ e
 
 # ── Référencement de la démo ────────────────────────────────────────────────
 REPO_URL = "https://github.com/Gogowwww/frp-manager"
-SEO_TITLE = "FRP Manager — live demo of the self-hosted web panel for frp (frps & frpc)"
-SEO_DESC = ("Try FRP Manager in your browser: a free, open-source web GUI and dashboard for frp. "
-            "Manage frps and frpc tunnels, open ports, an nftables firewall, live logs and updates "
-            "without the command line. Sample data, nothing to install.")
+SEO_TITLE = "FRP Manager live demo: web panel for frp (frps and frpc)"
+SEO_DESC = ("Try FRP Manager in your browser: a free, open-source web GUI for frp. Tunnels, ports, "
+            "nftables firewall, live logs and updates, with sample data. Nothing to install.")
 
 
 def seo_head(site, version):

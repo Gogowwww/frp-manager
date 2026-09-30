@@ -176,6 +176,45 @@ si sa somme SHA-256 correspond à celle publiée avec la release de frp, et le
 signale dans le journal d'installation. Si github.com vous est accessible,
 désactivez les miroirs (**Réglages → Accès réseau**).
 
+## Notifications par webhook
+
+La page **Notifications** envoie un message à l'adresse de votre choix quand quelque chose se passe sur la
+machine. Chaque webhook a sa destination, son format, ses événements et sa langue : les pannes vers Discord,
+les mises à jour vers ntfy, les événements de sécurité vers votre propre service.
+
+| Format | Adresse à saisir |
+| --- | --- |
+| Discord | l'adresse du webhook d'un salon (Paramètres, Intégrations) ; envoyé sous forme de carte colorée |
+| Slack / Mattermost | l'adresse d'un Incoming Webhook |
+| Telegram | `https://api.telegram.org/bot<jeton>` et l'identifiant de conversation |
+| ntfy | l'adresse du sujet, `https://ntfy.sh/mon-sujet` ou votre serveur ; la priorité suit la gravité |
+| Gotify | `https://gotify.example.org/message?token=…` |
+| JSON (générique) | n'importe quelle adresse ; corps `{event, level, title, message, host, time, panel_version, instance, data}`, ou votre propre modèle |
+| Texte brut | n'importe quelle adresse ; titre, message et nom de la machine en texte |
+
+Événements : instance arrêtée ou démarrée (contrôlée toutes les 15 secondes et confirmée par un second
+relevé : un redémarrage rapide ne déclenche pas d'alerte), adresse verrouillée après des échecs de
+connexion, connexion, configuration ou pare-feu modifié, mise à jour du panel ou de frp disponible
+(vérifiée toutes les 6 heures, annoncée une seule fois par version), frp mis à jour, panel démarré.
+Réglages facultatifs : limiter à certaines instances, un délai entre deux envois du même événement, la
+langue des messages, des en-têtes HTTP supplémentaires et un secret de signature.
+
+Le format générique accepte un modèle JSON avec les variables `{{event}}`, `{{title}}`, `{{message}}`,
+`{{level}}`, `{{host}}`, `{{time}}`, `{{instance}}`, `{{subject}}` et `{{version}}`, échappées pour le JSON :
+`{"content": "{{title}} : {{message}}"}`. Avec un secret de signature, chaque requête porte
+`X-FRPManager-Signature: sha256=<HMAC-SHA256 du corps>` :
+
+```python
+import hashlib, hmac
+expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+ok = hmac.compare_digest(expected, request.headers["X-FRPManager-Signature"])
+```
+
+Les envois passent par une file et sont retentés trois fois en cas d'erreur réseau, de 5xx ou de 429 ; les
+derniers sont listés sur la page. L'adresse, le secret et les en-têtes sont stockés dans le fichier de
+configuration (lisible par root seulement) et ne reviennent jamais dans le navigateur : laissez un champ
+vide en modifiant pour garder la valeur enregistrée. Les redirections ne sont pas suivies.
+
 ## Mot de passe perdu
 
 ```bash

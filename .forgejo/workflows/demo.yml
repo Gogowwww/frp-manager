@@ -28,13 +28,14 @@ jobs:
       image: python:3.12-alpine
     steps:
       - name: Récupérer le code
+        # Historique complet : les dates « lastmod » du sitemap viennent de git log
         run: |
           apk add --no-cache --quiet git
           rm -rf src
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            clone --quiet --depth 1 --branch "${{ github.ref_name }}" \
+            clone --quiet --branch "${{ github.ref_name }}" \
             "${{ github.server_url }}/${{ github.repository }}.git" src
-          git -C src -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" fetch --quiet --tags --depth 1
+          git -C src -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" fetch --quiet --tags
           git -C src log -1 --format='Commit %h : %s'
 
       - name: Construire et publier le site
@@ -62,6 +63,8 @@ jobs:
           VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           SHA=$(git -C src rev-parse --short HEAD)
           python3 src/website/build.py --out dist-site --version "${VERSION:-dev}" --bundle out
+          # Audit SEO : un titre en double, un lien cassé ou un JSON-LD invalide bloque la publication
+          python3 src/website/seo_check.py dist-site
           cat > out/README.md <<EOF
           # FRP Manager — site et démo
 
