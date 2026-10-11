@@ -68,6 +68,19 @@ souhaitez.
   proxy : filtrez aussi l'accès à ce niveau.
 - Les tokens frp sont stockés en clair dans les fichiers TOML, comme frp
   l'exige ; l'éditeur de configuration les affiche aux administrateurs.
+- **Les permissions marquées « sensible » reviennent à donner root sur la
+  machine** : modifier une configuration frp (les plugins frpc peuvent exposer
+  des fichiers locaux), le pare-feu, installer frp, mettre à jour le panel, les
+  réglages, les comptes. Ne les accordez qu'à qui vous donneriez un accès root.
+  Un compte limité à certaines instances ne garde que les permissions sur ces
+  instances, mais `config.write` sur une seule instance reste sensible.
+- **La connexion unique fait confiance au fournisseur d'identité** : qui
+  contrôle ses comptes ou ses groupes contrôle qui se connecte (et avec quel
+  rôle, si les rôles suivent les groupes). Le jeton d'identité est reçu
+  directement du point d'accès /token du fournisseur en HTTPS : sa signature
+  n'est donc pas vérifiée (OpenID Connect Core §3.1.3.7) ; son émetteur, son
+  audience, son expiration et son nonce le sont. Un compte n'est lié par e-mail
+  que si le fournisseur indique l'e-mail comme vérifié.
 
 **Recommandations**
 

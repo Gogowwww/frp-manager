@@ -12,6 +12,36 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.56] - 2026-10-11
+
+Pre-release.
+
+### Added
+
+- **Users and permissions (ACL)**: a **Users** page creates more accounts besides
+  the owner (the account from the initial setup, always administrator). Each
+  account has a role — administrator, operator, viewer — or a custom set among
+  17 permissions (see instances, control, delete, read or edit configurations,
+  logs, ports, firewall, updates, panel update, notifications, settings,
+  accounts), and can be limited to some instances. Every API route and
+  WebSocket checks them; changes, disabling and deletion apply at once, open
+  sessions included. An account that manages users can't grant permissions it
+  doesn't have. The interface hides what the account can't do; configuration,
+  ports and firewall become read-only without the edit permission.
+- **Single sign-on with OpenID Connect**: a "Sign in with …" button on the sign-in
+  page (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…).
+  Authorization code flow with PKCE, `state` and `nonce`. Accounts are prepared
+  by email (linked on the first sign-in whose email the provider has verified)
+  or created on first sign-in, optionally restricted to some email domains;
+  roles can follow the provider's groups. Password sign-in always remains
+  available.
+- **My account** in Settings: every local account changes its own password.
+
+### Changed
+
+- Settings are only shown to accounts allowed to change them; only the owner
+  changes the owner's username and password there.
+
 ## [0.0.55] - 2026-09-30
 
 Pre-release, then final release, on the same day.
@@ -166,7 +196,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...HEAD
+[0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53

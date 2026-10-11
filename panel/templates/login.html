@@ -22,7 +22,7 @@
 <body>
 {% include "partials/icons.html" %}
 
-<main class="auth">
+<main class="auth" data-oidc-error="{{ oidc_error }}">
   <div class="auth-card">
     <div class="auth-brand">
       <svg class="brand-logo" viewBox="0 0 26 26" fill="none" aria-hidden="true"><use href="#i-logo"/></svg>
@@ -43,6 +43,14 @@
       <p class="auth-error" id="login-error" role="alert"></p>
       <button class="btn btn-primary btn-block" type="submit" id="login-submit" data-i18n="login.submit"></button>
     </form>
+    {% if oidc_enabled %}
+    <div class="auth-sso">
+      <div class="auth-sep" role="presentation"><span data-i18n="login.or"></span></div>
+      <a class="btn btn-secondary btn-block" href="/auth/oidc/login" id="login-sso">
+        <svg class="icon"><use href="#i-shield"/></svg><span id="login-sso-label" data-label="{{ oidc_label }}"></span>
+      </a>
+    </div>
+    {% endif %}
   </div>
 </main>
 
@@ -53,6 +61,12 @@
   await initI18n();
   applyI18n();
   document.title = `${t('login.docTitle')} — FRP Manager`;
+
+  // Connexion unique : libellé choisi par l'administrateur, erreur au retour du fournisseur
+  const sso = document.getElementById('login-sso-label');
+  if (sso) sso.textContent = t('login.sso', { name: sso.dataset.label });
+  const oidcError = document.querySelector('main.auth').dataset.oidcError;
+  if (oidcError) document.getElementById('login-error').textContent = t(`login.oidcError.${oidcError}`);
 
   const form = document.getElementById('login-form');
   const error = document.getElementById('login-error');

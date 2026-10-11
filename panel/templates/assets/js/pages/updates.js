@@ -2,7 +2,7 @@
 
 import { t } from '../i18n.js';
 import { api } from '../api.js';
-import { store, refreshStatus } from '../store.js';
+import { store, can, refreshStatus } from '../store.js';
 import {
   h, icon, button, busy, toast, toastError, field, input, callout, pageHeader, card, confirmDialog, copyButton,
 } from '../ui.js';
@@ -14,6 +14,7 @@ const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); fn(
 export default {
   id: 'updates',
   title: () => t('nav.updates'),
+  perm: 'updates.view',
 
   mount(view) {
     const page = h('div', { class: 'page' },
@@ -34,7 +35,7 @@ export default {
           h('div', null,
             h('h2', { class: 'section-title' }, t('updates.toolsTitle')),
             h('p', { class: 'section-desc' }, t('updates.toolsDesc')))),
-        h('div', { class: 'card' }, manualCard(), connectivityCard())));
+        h('div', { class: 'card' }, can('updates.install') && manualCard(), connectivityCard())));
   },
 
   unmount() {
@@ -106,7 +107,7 @@ function frpCard() {
       cells.latest.dd.title = t('updates.source', { source: d.source || '—' });
       if (d.update_available) {
         setStatus(cells.status, 'warn', d.installed ? t('updates.available') : t('updates.notInstalled'));
-        installBtn.hidden = false;
+        installBtn.hidden = !can('updates.install');
         installBtn.replaceChildren(icon('download'), d.installed ? t('updates.installVersion', { v: d.latest }) : t('updates.installFrp', { v: d.latest }));
       } else {
         setStatus(cells.status, 'success', t('updates.upToDate'));
@@ -265,7 +266,7 @@ function panelCard() {
         setStatus(cells.status, 'warn', t(d.prerelease ? 'updates.prereleaseAvailable' : 'updates.available'));
         releaseLink.href = d.release_url || `https://github.com/${d.repo}/releases`;
         releaseLink.hidden = false;
-        updateBtn.hidden = !!d.in_docker;
+        updateBtn.hidden = !!d.in_docker || !can('updates.panel');
         if (d.in_docker) {
           extra.append(
             callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.panelDockerTitle'), text: t('updates.panelDockerText') }),

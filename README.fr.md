@@ -41,6 +41,8 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 - **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
 - **Notifications** : webhooks vers Discord, Slack, Telegram, ntfy, Gotify ou toute adresse (modèle JSON, signature HMAC) pour les instances arrêtées, les adresses verrouillées et les mises à jour.
 - **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
+- **Utilisateurs et permissions** : plusieurs comptes, chacun avec un rôle (administrateur, opérateur, lecteur) ou des permissions choisies une à une, éventuellement limités à certaines instances ; les changements s'appliquent aussitôt, sessions ouvertes comprises.
+- **Connexion unique** : OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), avec des comptes préparés par e-mail ou créés à la première connexion, et des rôles tirés des groupes du fournisseur.
 - **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
 
 | Ports | Éditeur de port | Journaux en direct |
@@ -70,6 +72,8 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Mot de passe haché** en argon2id (scrypt en repli) ; les anciens hashs SHA-256 sont acceptés une fois puis rehachés automatiquement.
 - **Écoute sur `127.0.0.1`** pour une nouvelle installation ; l'ouvrir au réseau est un choix explicite.
 - **Protection contre la force brute** : tentatives limitées par IP, avec un verrouillage croissant.
+- **Moindre privilège** : chaque route de l'API et chaque WebSocket vérifie les permissions du compte ; un compte qui gère les utilisateurs ne peut pas accorder plus qu'il n'a, et seul un administrateur complet configure la connexion unique.
+- **OpenID Connect** : flux « authorization code » avec PKCE, `state` et `nonce` ; émetteur, audience et expiration du jeton d'identité vérifiés ; comptes liés par fournisseur et sujet, ou par un e-mail vérifié par le fournisseur.
 - **Durcissement web** : jeton CSRF sur chaque modification, cookies HttpOnly / SameSite=Strict / Secure, Content-Security-Policy, X-Frame-Options, Referrer-Policy.
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
 - **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.

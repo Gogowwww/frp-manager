@@ -792,6 +792,110 @@ transport.useCompression = true
     return { ok: true, msg: M('Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.', 'Saved. Restart frp-manager to apply bind_host/port.') };
   });
 
+  // Comptes et permissions : l'interface est réelle, les comptes restent dans l'onglet
+  const PERMS = [
+    ['instances.view', 1, 0], ['instances.control', 1, 0], ['instances.delete', 1, 1], ['config.read', 1, 1],
+    ['config.write', 1, 1], ['logs.view', 1, 0], ['ports.view', 0, 0], ['ports.manage', 0, 1], ['firewall.view', 0, 0],
+    ['firewall.manage', 0, 1], ['updates.view', 0, 0], ['updates.install', 0, 1], ['updates.panel', 0, 1],
+    ['webhooks.view', 0, 0], ['webhooks.manage', 0, 1], ['settings.manage', 0, 1], ['users.manage', 0, 1],
+  ];
+  const IMPLIES = {
+    'instances.control': ['instances.view'], 'instances.delete': ['instances.view'], 'config.read': ['instances.view'],
+    'config.write': ['config.read'], 'logs.view': ['instances.view'], 'ports.view': ['instances.view'],
+    'ports.manage': ['ports.view'], 'firewall.view': ['instances.view'], 'firewall.manage': ['firewall.view'],
+    'updates.install': ['updates.view'], 'updates.panel': ['updates.view'], 'webhooks.manage': ['webhooks.view'],
+  };
+  const ROLES = {
+    operator: ['instances.control', 'config.write', 'logs.view', 'ports.manage', 'firewall.view', 'updates.view', 'webhooks.view'],
+    viewer: ['instances.view', 'logs.view', 'ports.view', 'firewall.view', 'updates.view'],
+  };
+  const expandPerms = (perms) => {
+    const out = new Set();
+    const todo = [...perms];
+    while (todo.length) {
+      const p = todo.pop();
+      if (!out.has(p)) { out.add(p); todo.push(...(IMPLIES[p] || [])); }
+    }
+    return [...out].sort();
+  };
+  const effective = (u) => {
+    let perms = u.role === 'admin' ? PERMS.map((p) => p[0]) : expandPerms(ROLES[u.role] || u.permissions || []);
+    if (u.instances !== '*' && u.role !== 'admin') perms = perms.filter((p) => PERMS.find((x) => x[0] === p)[1]);
+    return perms;
+  };
+  const users = () => (S.users ||= [
+    { id: 'owner', username: 'admin', display_name: '', email: '', source: 'local', enabled: true, owner: true, role: 'admin',
+      permissions: [], instances: '*', last_login: new Date().toISOString(), linked: false },
+    { id: '3f2a9c1d7b01', username: 'camille', display_name: 'Camille Martin', email: 'camille@example.org', source: 'oidc',
+      enabled: true, owner: false, role: 'operator', permissions: [], instances: '*',
+      last_login: new Date(Date.now() - 86400000).toISOString(), linked: true },
+    { id: '8e41b07c2d55', username: 'monitoring', display_name: '', email: '', source: 'local', enabled: true, owner: false,
+      role: 'viewer', permissions: [], instances: '*', last_login: null, linked: false },
+  ]);
+  const userView = (u) => ({ ...u, effective: effective(u) });
+  const userFields = (body, base) => {
+    const u = { ...base };
+    for (const k of ['username', 'role', 'instances', 'enabled', 'email']) if (k in body) u[k] = body[k];
+    u.permissions = u.role === 'custom' ? body.permissions || base.permissions || [] : [];
+    if (u.role === 'admin') u.instances = '*';
+    return u;
+  };
+  const unknownUser = () => [{ ok: false, msg: M('Compte inconnu.', 'Unknown account.') }, 404];
+
+  on('GET', /^\/api\/me$/, () => {
+    const u = userView(users()[0]);
+    return { ok: true, user: { ...u, permissions: u.effective } };
+  });
+  on('POST', /^\/api\/me\/password$/, () => ({ ok: true, msg: M('Mot de passe modifié.', 'Password changed.') }));
+  on('GET', /^\/api\/users$/, () => ({
+    ok: true, me: 'owner', users: users().map(userView),
+    permissions: PERMS.map(([id, scoped, sensitive]) => ({ id, scoped: !!scoped, sensitive: !!sensitive })),
+    implies: IMPLIES,
+    roles: { admin: PERMS.map((p) => p[0]), operator: expandPerms(ROLES.operator), viewer: expandPerms(ROLES.viewer) },
+    instances: Object.keys(detect()), oidc: !!S.oidc?.enabled, can_configure_oidc: true,
+  }));
+  on('POST', /^\/api\/users$/, (m, body) => {
+    const name = String(body.username || '').trim();
+    if (!name || users().some((u) => u.username.toLowerCase() === name.toLowerCase())) {
+      return [{ ok: false, msg: M('Cet identifiant est déjà pris.', 'This username is already taken.') }, 409];
+    }
+    const id = Array.from({ length: 12 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+    const u = userFields({ ...body, username: name }, {
+      id, source: body.source || 'local', enabled: true, owner: false, last_login: null, linked: false, display_name: '', email: '',
+    });
+    users().push(u);
+    save();
+    return { ok: true, user: userView(u), msg: M('Compte créé.', 'Account created.') };
+  });
+  on('PUT', /^\/api\/users\/([^/]+)$/, (m, body) => {
+    const i = users().findIndex((u) => u.id === m[1]);
+    if (i < 1) return unknownUser();
+    users()[i] = userFields(body, users()[i]);
+    save();
+    return { ok: true, user: userView(users()[i]), msg: M('Compte modifié.', 'Account updated.') };
+  });
+  on('DELETE', /^\/api\/users\/([^/]+)$/, (m) => {
+    const i = users().findIndex((u) => u.id === m[1]);
+    if (i < 1) return unknownUser();
+    users().splice(i, 1);
+    save();
+    return { ok: true, msg: M('Compte supprimé.', 'Account deleted.') };
+  });
+  const oidc = () => (S.oidc ||= {
+    enabled: false, issuer: '', client_id: '', has_secret: false, scopes: 'openid profile email', label: '', redirect_uri: '',
+    username_claim: 'preferred_username', auto_create: false, default_role: 'viewer', allowed_domains: [],
+    groups_claim: 'groups', group_roles: {},
+  });
+  on('GET', /^\/api\/oidc$/, () => ({ ok: true, oidc: oidc(), redirect_uri: `${location.origin}/auth/oidc/callback` }));
+  on('POST', /^\/api\/oidc$/, (m, body) => {
+    const { client_secret: secret, ...rest } = body;
+    Object.assign(oidc(), rest, { has_secret: oidc().has_secret || !!secret });
+    if (typeof oidc().allowed_domains === 'string') oidc().allowed_domains = oidc().allowed_domains.split(/[\s,]+/).filter(Boolean);
+    save();
+    return { ok: true, oidc: oidc(), msg: M('Connexion unique enregistrée.', 'Single sign-on saved.') };
+  });
+  on('POST', /^\/api\/oidc\/test$/, () => ({ ok: false, msg: M('Non disponible dans la démo', 'Not available in the demo') }));
+
   // Notifications : l'interface est réelle, les envois sont simulés
   const hooks = () => (S.webhooks ||= [
     { id: 'a1b2c3d4', name: M('Alertes Discord', 'Discord alerts'), enabled: true, format: 'discord', url_hint: 'https://discord.com/…',

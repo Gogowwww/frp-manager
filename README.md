@@ -41,6 +41,8 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 - **Logs**: systemd journal, log file or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
 - **Notifications**: webhooks to Discord, Slack, Telegram, ntfy, Gotify or any URL (JSON template, HMAC signature) for stopped instances, locked-out addresses and updates.
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
+- **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included.
+- **Single sign-on**: OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), with accounts prepared by email or created on first sign-in, and roles taken from the provider's groups.
 - **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
 
 | Ports | Port editor | Live logs |
@@ -70,6 +72,8 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 - **Password hashing** with argon2id (scrypt as a fallback); older SHA-256 hashes are accepted once and rehashed automatically.
 - **Listens on `127.0.0.1`** in a new install; opening it to the network is an explicit choice.
 - **Brute-force protection**: attempts limited per IP, with a growing lockout.
+- **Least privilege**: every API route and WebSocket checks the account's permissions; an account that manages users can't grant more than it has, and only a full administrator configures single sign-on.
+- **OpenID Connect**: authorization code flow with PKCE, `state` and `nonce`; the ID token's issuer, audience and expiry are checked; accounts are linked by provider and subject, or by an email the provider has verified.
 - **Web hardening**: CSRF token on every change, HttpOnly / SameSite=Strict / Secure cookies, Content-Security-Policy, X-Frame-Options, Referrer-Policy.
 - **System hardening**: no shell commands built from user input, allow-listed service and container names, configs confined to frp's directories, safe archive extraction.
 - **Supply chain**: frp archives and panel updates checked against their published SHA-256; third-party mirrors (ghproxy, ghfast, gh-proxy) can be disabled and are never used without a checksum.

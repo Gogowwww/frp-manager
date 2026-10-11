@@ -3,7 +3,8 @@
 import { initI18n, applyI18n, t } from './i18n.js';
 import { api } from './api.js';
 import {
-  store, usedFrpcIds, usedFrpsIds, detect, loadBoot, connectStatus, loadNicknames, loadManagerState, checkUpdatesQuietly,
+  store, can, usedFrpcIds, usedFrpsIds, detect, loadBoot, connectStatus, loadNicknames, loadManagerState, loadMe,
+  checkUpdatesQuietly,
 } from './store.js';
 import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
@@ -15,6 +16,10 @@ import logs from './pages/logs.js';
 import updates from './pages/updates.js';
 import notifications from './pages/notifications.js';
 import settings from './pages/settings.js';
+import users from './pages/users.js';
+
+const PAGES = [dashboard, tunnels, firewall, config, logs, notifications, updates, users, settings];
+const canOpen = (page) => !page.perm || can(page.perm);
 
 const WELCOME_KEY = 'frpMgrWelcomeSeen';
 
@@ -31,11 +36,26 @@ function setupShell() {
     try { await api('/api/logout', { method: 'POST' }); } finally { location.href = '/login'; }
   });
 
-  // Navigation : Ports seulement s'il existe un frpc réellement utilisé,
-  // Pare-feu seulement s'il existe un frps réellement utilisé ; pastille de mise à jour
+  // Navigation : pages permises au compte connecté ; Ports seulement s'il existe
+  // un frpc réellement utilisé, Pare-feu seulement s'il existe un frps réellement
+  // utilisé ; pastille de mise à jour
   store.subscribe(() => {
-    document.querySelector('[data-route="ports"]').hidden = !store.ready || !usedFrpcIds().length;
-    document.querySelector('[data-route="firewall"]').hidden = !store.ready || !usedFrpsIds().length;
+    PAGES.forEach((page) => {
+      const link = document.querySelector(`[data-route="${page.id}"]`);
+      if (link) link.hidden = !canOpen(page);
+    });
+    if (!document.querySelector('[data-route="ports"]').hidden) {
+      document.querySelector('[data-route="ports"]').hidden = !store.ready || !usedFrpcIds().length;
+    }
+    if (!document.querySelector('[data-route="firewall"]').hidden) {
+      document.querySelector('[data-route="firewall"]').hidden = !store.ready || !usedFrpsIds().length;
+    }
+    const who = document.getElementById('sidebar-user');
+    who.hidden = !store.me;
+    if (store.me) {
+      who.textContent = store.me.display_name || store.me.username;
+      who.title = t(`users.roles.${store.me.role}`);
+    }
     const upd = store.updates.frp || store.updates.panel;
     document.getElementById('updates-badge').hidden = !upd;
   });
@@ -76,21 +96,21 @@ async function boot() {
   applyI18n();
   setupShell();
 
-  [dashboard, tunnels, firewall, config, logs, notifications, updates, settings].forEach(registerPage);
+  PAGES.forEach(registerPage);
 
   // Détection d'abord : toutes les pages en dépendent. Elle arrive avec la
   // page ; sinon (ancienne page en cache), on la demande à l'API.
-  if (!loadBoot()) {
-    await Promise.all([loadNicknames(), loadManagerState()]);
+  if (!loadBoot() || !store.me) {
+    await Promise.all([loadNicknames(), loadManagerState(), loadMe()]);
     try { await detect(); } catch { store.set({ ready: true }); }
   }
 
-  await startRouter({ root: document.getElementById('view'), defaultRoute: 'dashboard', onRouteChange });
-  showWelcome();
+  await startRouter({ root: document.getElementById('view'), defaultRoute: 'dashboard', onRouteChange, canOpen });
+  if (store.me?.owner) showWelcome();
   checkUpdatesQuietly();
 
   // État des instances poussé en direct (WebSocket), repli sur une vérification périodique
-  connectStatus();
+  if (can('instances.view')) connectStatus();
 }
 
 boot();

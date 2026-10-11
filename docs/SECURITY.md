@@ -65,6 +65,18 @@ soon as possible. The report is credited in the release notes if you wish.
   access at that level too.
 - frp tokens are stored in plain text in the TOML files, as frp requires; the
   configuration editor shows them to administrators.
+- **Permissions marked "sensitive" amount to root on the machine**: editing an
+  frp configuration (frpc plugins can expose local files), the firewall, frp
+  installation, the panel update, settings, accounts. Only grant them to people
+  you would give root access to. An account limited to some instances keeps
+  only instance permissions, but `config.write` on one instance remains
+  sensitive.
+- **Single sign-on trusts the identity provider**: whoever controls its
+  accounts or groups controls who signs in (and with which role, if roles follow
+  the groups). The ID token is received straight from the provider's token
+  endpoint over HTTPS, so its signature is not checked (OpenID Connect Core
+  §3.1.3.7); its issuer, audience, expiry and nonce are. Accounts are linked by
+  email only when the provider marks the email as verified.
 
 **Recommendations**
 

@@ -14,6 +14,8 @@ export const store = {
   nicknames: {},
   hasPassword: true,
   updates: { frp: false, panel: false },
+  // Compte connecté : { id, username, role, owner, source, permissions[], instances }
+  me: null,
 
   set(patch) {
     Object.assign(this, patch);
@@ -24,6 +26,11 @@ export const store = {
     return () => listeners.delete(fn);
   },
 };
+
+/** Le compte connecté a-t-il cette permission ? (le serveur vérifie de toute façon) */
+export function can(perm) {
+  return !!store.me && store.me.permissions.includes(perm);
+}
 
 /** Identifiants triés : frps d'abord, puis ordre alphabétique. */
 export function instanceIds(filter) {
@@ -75,7 +82,7 @@ export function loadBoot() {
   try {
     const d = JSON.parse(el.textContent);
     store.nicknames = d.nicknames || {};
-    store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, hasPassword: !!d.has_password, ready: true });
+    store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, hasPassword: !!d.has_password, me: d.me || null, ready: true });
     return true;
   } catch { return false; }
 }
@@ -153,6 +160,13 @@ export async function loadNicknames() {
   } catch { /* non bloquant */ }
 }
 
+export async function loadMe() {
+  try {
+    const d = await api('/api/me');
+    if (d.ok) store.set({ me: d.user });
+  } catch { /* non bloquant */ }
+}
+
 export async function loadManagerState() {
   try {
     const d = await api('/api/manager/config');
@@ -162,6 +176,7 @@ export async function loadManagerState() {
 
 /** Vérifie en arrière-plan les mises à jour (pastille dans la navigation). */
 export async function checkUpdatesQuietly() {
+  if (!can('updates.view')) return;
   const updates = { ...store.updates };
   const tasks = [
     api('/api/panel/version').then((d) => { updates.panel = !!(d.ok && d.update_available); }),

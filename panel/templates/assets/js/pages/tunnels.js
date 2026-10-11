@@ -4,11 +4,11 @@
 
 import { t } from '../i18n.js';
 import { api, apiOk, post } from '../api.js';
-import { frpcIds, displayName, waitRunning } from '../store.js';
+import { can, frpcIds, displayName, waitRunning } from '../store.js';
 import {
   h, icon, button, toast, toastError, openDialog, confirmDialog,
   field, setFieldError, input, select, secretInput, switchRow, segmented, emptyState,
-  pageHeader, badge, saveBar,
+  pageHeader, badge, saveBar, callout,
 } from '../ui.js';
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
@@ -27,7 +27,8 @@ const S = {
 };
 
 const snapshotOf = () => JSON.stringify([S.proxies, S.visitors]);
-const isDirty = () => S.snapshot !== '' && snapshotOf() !== S.snapshot;
+// Lecture seule (pas de config.write) : jamais de modification à enregistrer
+const isDirty = () => can('config.write') && S.snapshot !== '' && snapshotOf() !== S.snapshot;
 
 function beforeUnload(e) {
   if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
@@ -36,6 +37,7 @@ function beforeUnload(e) {
 export default {
   id: 'ports',
   title: () => t('nav.tunnels'),
+  perm: 'config.read',
 
   async mount(view, params) {
     const ids = frpcIds();
@@ -57,7 +59,7 @@ export default {
       actions.push(sel);
     }
     const addBtn = button(t('tunnels.add'), { variant: 'primary', iconName: 'plus', onClick: () => editProxy(null) });
-    if (S.iid) actions.push(addBtn);
+    if (S.iid && can('config.write')) actions.push(addBtn);
 
     S.els.proxies = h('div', { class: 'card' });
     S.els.visitors = h('div', { class: 'card' });
@@ -70,13 +72,14 @@ export default {
 
     view.append(h('div', { class: 'page' },
       pageHeader({ title: t('tunnels.title'), description: t('tunnels.description'), actions }),
+      !can('config.write') && callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }),
       S.els.proxies,
       h('section', null,
         h('div', { class: 'section-head' },
           h('div', null,
             h('h2', { class: 'section-title' }, t('visitors.title')),
             h('p', { class: 'section-desc' }, t('visitors.description'))),
-          S.iid && button(t('visitors.add'), { iconName: 'plus', onClick: () => editVisitor(null) })),
+          S.iid && can('config.write') && button(t('visitors.add'), { iconName: 'plus', onClick: () => editVisitor(null) })),
         S.els.visitors),
       S.els.savebar));
 

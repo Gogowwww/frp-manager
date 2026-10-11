@@ -13,6 +13,7 @@ const POLL_MS = 5000;          // repli sans WebSocket
 const AGO_MS = 5000;           // rafraîchit « il y a … » sans rien redemander
 const WS_MAX_FAILS = 3;        // WebSocket jamais ouvert (proxy) : on reste en repli
 import { navigate } from '../router.js';
+import { can } from '../store.js';
 
 const S = {
   data: null,
@@ -30,7 +31,8 @@ function stopLive() {
 }
 
 const snapshotOf = () => JSON.stringify([S.enabled, S.rules]);
-const isDirty = () => S.snapshot !== '' && snapshotOf() !== S.snapshot;
+// Lecture seule (pas de firewall.manage) : jamais de modification à enregistrer
+const isDirty = () => can('firewall.manage') && S.snapshot !== '' && snapshotOf() !== S.snapshot;
 
 function beforeUnload(e) {
   if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
@@ -39,6 +41,7 @@ function beforeUnload(e) {
 export default {
   id: 'firewall',
   title: () => t('nav.firewall'),
+  perm: 'firewall.view',
 
   async mount(view) {
     S.snapshot = '';
@@ -111,7 +114,7 @@ function build() {
     root.replaceChildren(head, callout({
       type: 'danger', title: t('firewall.noNftTitle'),
       text: t(d.in_docker ? 'firewall.noNftTextDocker' : 'firewall.noNftText', { detail: d.nft }),
-      actions: [button(t('firewall.installNft'), { variant: 'primary', iconName: 'download', onClick: installNft })],
+      actions: can('firewall.manage') ? [button(t('firewall.installNft'), { variant: 'primary', iconName: 'download', onClick: installNft })] : [],
     }));
     return;
   }
@@ -132,7 +135,7 @@ function build() {
           h('p', { class: 'section-desc' }, t('firewall.rulesDesc'))),
         h('div', { class: 'fw-head-actions' },
           button(t('firewall.lists.open'), { iconName: 'globe', onClick: openCatalog }),
-          button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) }))),
+          can('firewall.manage') && button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) }))),
       S.els.rules),
     h('section', null,
       h('div', { class: 'section-head' },
@@ -209,7 +212,7 @@ function renderRules() {
   if (!S.rules.length) {
     host.replaceChildren(emptyState({
       iconName: 'shield', title: t('firewall.emptyTitle'), text: t('firewall.emptyText'),
-      actions: [button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) })],
+      actions: can('firewall.manage') ? [button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) })] : [],
     }));
     return;
   }
@@ -219,11 +222,11 @@ function renderRules() {
     const state = !before ? 'new' : JSON.stringify(before) === JSON.stringify(rule) ? '' : 'changed';
     const count = S.data.counters[rule.id];
     const sw = switchControl({
-      checked: rule.enabled, label: t('firewall.ruleEnabled'),
+      checked: rule.enabled, label: t('firewall.ruleEnabled'), disabled: !can('firewall.manage'),
       onChange: (on) => { rule.enabled = on; render(); },
     });
     sw.addEventListener('click', (e) => e.stopPropagation());
-    const open = () => editRule(rule);
+    const open = () => { if (can('firewall.manage')) editRule(rule); };
     return h('li', {
       class: `row fw-row${state ? ` is-${state}` : ''}${rule.enabled ? '' : ' is-off'}`,
       dataset: { state: state ? t(`common.state.${state}`) : '' },

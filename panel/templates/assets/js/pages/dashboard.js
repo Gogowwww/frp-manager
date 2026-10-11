@@ -3,7 +3,7 @@
 import { t } from '../i18n.js';
 import { api, post } from '../api.js';
 import {
-  store, instanceIds, displayName, technicalLabel, statusOf, isDocker, detect, refreshStatus, loadNicknames,
+  store, can, instanceIds, displayName, technicalLabel, statusOf, isDocker, detect, refreshStatus, loadNicknames,
 } from '../store.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, confirmDialog, promptDialog, menuButton,
@@ -17,6 +17,7 @@ let lastSignature = '';
 export default {
   id: 'dashboard',
   title: () => t('nav.dashboard'),
+  perm: 'instances.view',
 
   mount(view) {
     const alerts = h('div', { class: 'form-stack' });
@@ -53,13 +54,13 @@ export default {
 
 function renderAlerts(host) {
   const items = [];
-  if (!store.hasPassword) {
+  if (!store.hasPassword && store.me?.owner) {
     items.push(callout({
       type: 'danger', title: t('dashboard.noPasswordTitle'), text: t('dashboard.noPasswordText'),
       actions: [button(t('dashboard.setPassword'), { variant: 'primary', size: 'sm', onClick: () => navigate('settings') })],
     }));
   }
-  if (store.updates.frp || store.updates.panel) {
+  if ((store.updates.frp || store.updates.panel) && can('updates.view')) {
     const what = store.updates.frp && store.updates.panel ? 'both' : store.updates.frp ? 'frp' : 'panel';
     items.push(callout({
       type: 'info', iconName: 'download', title: t(`dashboard.update.${what}`),
@@ -84,7 +85,7 @@ function renderGrid(grid) {
       iconName: 'server',
       title: t('dashboard.emptyTitle'),
       text: store.inDocker ? t('dashboard.emptyTextDocker') : t('dashboard.emptyText'),
-      actions: store.inDocker ? [] : [button(t('dashboard.installFrp'), { variant: 'primary', iconName: 'download', onClick: () => navigate('updates') })],
+      actions: store.inDocker || !can('updates.install') ? [] : [button(t('dashboard.installFrp'), { variant: 'primary', iconName: 'download', onClick: () => navigate('updates') })],
     })));
     return;
   }
@@ -127,7 +128,7 @@ function serviceCard(iid) {
   }
 
   // Démarrage automatique (systemd uniquement)
-  if (!docker && status !== 'missing') {
+  if (!docker && status !== 'missing' && can('instances.control')) {
     const sw = switchControl({
       checked: !!inst.status.enabled,
       label: t('dashboard.autostart'),
@@ -151,7 +152,7 @@ function serviceCard(iid) {
 
   // ── Actions ──
   const actions = [];
-  if (status !== 'missing') {
+  if (status !== 'missing' && can('instances.control')) {
     const primary = running
       ? button(t('actions.stop'), { iconName: 'stop', onClick: () => stopService(iid, primary) })
       : button(t('actions.start'), { variant: 'primary', iconName: 'play', onClick: () => serviceAction(iid, 'start', primary) });
@@ -159,23 +160,26 @@ function serviceCard(iid) {
     actions.push(primary, restart);
   }
   actions.push(h('span', { class: 'spacer' }));
-  if (inst.type === 'frpc') {
+  if (inst.type === 'frpc' && can('config.read')) {
     actions.push(button(t('nav.tunnels'), { variant: 'ghost', size: 'sm', iconName: 'tunnels', onClick: () => navigate('ports', { iid }) }));
-  } else if (inst.type === 'frps') {
+  } else if (inst.type === 'frps' && can('firewall.view')) {
     actions.push(button(t('nav.firewall'), { variant: 'ghost', size: 'sm', iconName: 'shield', onClick: () => navigate('firewall') }));
   }
 
-  const menuItems = [
-    { label: t('dashboard.rename'), icon: 'edit', onSelect: () => rename(iid) },
-    { label: t('dashboard.viewLogs'), icon: 'logs', onSelect: () => navigate('logs', { iid }) },
-  ];
+  // Menu limité à ce que le compte connecté a le droit de faire
+  const menuItems = [];
+  if (can('instances.control')) menuItems.push({ label: t('dashboard.rename'), icon: 'edit', onSelect: () => rename(iid) });
+  if (can('logs.view')) menuItems.push({ label: t('dashboard.viewLogs'), icon: 'logs', onSelect: () => navigate('logs', { iid }) });
   if (!docker) {
-    menuItems.push({ label: t('dashboard.editConfig'), icon: 'config', onSelect: () => navigate('config', { iid }) });
-    if (status !== 'missing') {
+    if (can('config.read')) menuItems.push({ label: t('dashboard.editConfig'), icon: 'config', onSelect: () => navigate('config', { iid }) });
+    if (status !== 'missing' && can('instances.control')) {
       menuItems.push('sep', { label: t('dashboard.reload'), icon: 'refresh', onSelect: () => serviceAction(iid, 'reload') });
     }
   }
-  menuItems.push('sep', { label: t('common.delete'), icon: 'trash', danger: true, onSelect: () => deleteInstance(iid) });
+  if (can('instances.delete')) {
+    menuItems.push('sep', { label: t('common.delete'), icon: 'trash', danger: true, onSelect: () => deleteInstance(iid) });
+  }
+  if (menuItems[0] === 'sep') menuItems.shift();
 
   return h('article', { class: `card svc${running ? ' is-running' : ''}`, 'aria-label': displayName(iid) },
     h('div', { class: 'svc-head' },
@@ -183,7 +187,7 @@ function serviceCard(iid) {
       h('div', { class: 'svc-title' },
         h('h2', { class: 'svc-name', title: displayName(iid) }, displayName(iid)),
         h('div', { class: 'svc-meta' }, statusBadge, h('p', { class: 'svc-sub', title: technicalLabel(iid) }, technicalLabel(iid)))),
-      menuButton(menuItems)),
+      menuItems.length ? menuButton(menuItems) : null),
     h('div', { class: 'svc-body' }, body),
     h('div', { class: 'svc-actions' }, actions));
 }

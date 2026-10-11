@@ -4,7 +4,7 @@
 
 import { t, hasKey } from '../i18n.js';
 import { apiOk, post } from '../api.js';
-import { store, instanceIds, displayName, isDocker, waitRunning } from '../store.js';
+import { store, can, instanceIds, displayName, isDocker, waitRunning } from '../store.js';
 import {
   h, icon, button, toast, toastError, confirmDialog, field, input, select, secretInput, switchRow,
   callout, emptyState, pageHeader, card, saveBar,
@@ -145,13 +145,15 @@ function values() {
   }
   return v;
 }
-const isDirty = () => S.snapshot !== '' && JSON.stringify(values()) !== S.snapshot;
+// Lecture seule (pas de config.write) : jamais de modification à enregistrer
+const isDirty = () => can('config.write') && S.snapshot !== '' && JSON.stringify(values()) !== S.snapshot;
 function updateSaveBar() { if (S.els.savebar) S.els.savebar.hidden = !isDirty(); }
 function beforeUnload(e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } }
 
 export default {
   id: 'config',
   title: () => t('nav.config'),
+  perm: 'config.read',
 
   async mount(view, params) {
     const ids = instanceIds();
@@ -184,6 +186,7 @@ export default {
     });
     view.append(h('div', { class: 'page' },
       pageHeader({ title: t('config.title'), description: t('config.description'), actions }),
+      !can('config.write') && callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }),
       S.els.body, S.els.savebar));
 
     if (!S.iid) {

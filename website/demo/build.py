@@ -136,6 +136,9 @@ def render(template, *, base, version, preload, icons, demo_tag):
     # Ni CSP ni session sur un site statique : pas de nonce, jeton CSRF factice
     text = text.replace(' nonce="{{ csp_nonce() }}"', "")
     text = text.replace("{{ csrf_token() }}", "demo")
+    # Page de connexion : pas de connexion unique dans la démo
+    text = re.sub(r"\{% if oidc_enabled %\}.*?\{% endif %\}", "", text, flags=re.S)
+    text = text.replace("{{ oidc_error }}", "")
     # demo.js avant tout module : fetch et WebSocket sont remplacés avant le premier appel
     text = text.replace("</title>", "</title>\n" + demo_tag, 1)
     left = re.findall(r"\{\{.*?\}\}|\{%.*?%\}", text)

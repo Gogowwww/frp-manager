@@ -4,7 +4,7 @@
 
 import { t, getLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
-import { instanceIds, displayName } from '../store.js';
+import { can, instanceIds, displayName } from '../store.js';
 import {
   h, button, busy, toast, toastResult, toastError, openDialog, confirmDialog, field, input, select,
   secretInput, segmented, callout, emptyState, pageHeader, card, badge, switchControl,
@@ -41,12 +41,13 @@ const S = { hooks: [], events: [], history: [], els: {} };
 export default {
   id: 'notifications',
   title: () => t('nav.notifications'),
+  perm: 'webhooks.view',
 
   async mount(view) {
     const page = h('div', { class: 'page' },
       pageHeader({
         title: t('notifications.title'), description: t('notifications.description'),
-        actions: [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })],
+        actions: can('webhooks.manage') ? [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })] : [],
       }));
     S.els.list = h('div', { class: 'card' });
     S.els.history = h('div');
@@ -90,7 +91,7 @@ function render() {
   if (!S.hooks.length) {
     host.replaceChildren(emptyState({
       iconName: 'bell', title: t('notifications.emptyTitle'), text: t('notifications.emptyText'),
-      actions: [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })],
+      actions: can('webhooks.manage') ? [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })] : [],
     }));
   } else {
     host.replaceChildren(h('ul', { class: 'rows' }, S.hooks.map((hook) => {
@@ -102,7 +103,9 @@ function render() {
         },
       });
       sw.addEventListener('click', (e) => e.stopPropagation());
-      const open = () => edit(hook);
+      const manage = can('webhooks.manage');
+      sw.input.disabled = !manage;
+      const open = () => { if (manage) edit(hook); };
       const testBtn = button('', {
         variant: 'ghost', size: 'sm', iconName: 'send', title: t('notifications.test'),
         onClick: (e) => { e.stopPropagation(); busy(testBtn, () => sendTest(hook)); },
@@ -118,9 +121,9 @@ function render() {
           h('span', { title: hook.events.map(eventLabel).join('\n') },
             hook.events.includes('*') ? t('notifications.allEvents') : t('notifications.eventCount', { count: hook.events.length })))),
       h('div', { class: 'row-actions' },
-        sw, testBtn,
-        button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
-        button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: (e) => { e.stopPropagation(); remove(hook); } })));
+        sw, manage && testBtn,
+        manage && button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
+        manage && button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: (e) => { e.stopPropagation(); remove(hook); } })));
     })));
   }
   renderHistory();

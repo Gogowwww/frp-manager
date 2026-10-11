@@ -198,6 +198,7 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 }
 
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
+.sidebar-user { padding: 0 10px 8px; font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-credit { padding: 12px 10px 0; font-size: 11.5px; color: var(--text-3); }
 .sidebar-credit a { color: var(--text-3); }
 .sidebar-credit a:hover { color: var(--text); }
@@ -774,6 +775,29 @@ legend.fieldset-title + * { clear: both; }
 .auth-form { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
 .auth-error { color: var(--danger-text); font-size: 13px; }
 .auth-error:empty { display: none; }
+.auth-sso { margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }
+.auth-sep { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: 12px; }
+.auth-sep::before, .auth-sep::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.auth-sso .btn { justify-content: center; text-decoration: none; }
+
+/* ── Utilisateurs ───────────────────────────────────────────────────────── */
+.us-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.us-row.is-off .row-name, .us-row.is-off .fw-detail { opacity: .5; }
+.us-row .row-actions { align-items: center; gap: 6px; }
+.us-row .row-name { flex-wrap: wrap; row-gap: 4px; }
+@media (max-width: 760px) {
+  .us-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name actions" "detail detail"; }
+  .us-row .row-name { align-self: start; }
+}
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; }
+.perm-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
+.perm-item input { margin-top: 2px; }
+.perm-item code { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+.perm-item.is-implied { opacity: .6; }
+.perm-group-title { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); grid-column: 1 / -1; margin-top: 8px; }
+.inst-list { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.kv-rows { display: flex; flex-direction: column; gap: 8px; }
+.kv-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: 8px; align-items: center; }
 
 /* ── Notifications ──────────────────────────────────────────────────────── */
 .nt-row { grid-template-columns: minmax(0, 230px) minmax(0, 1fr) auto; }

@@ -1,5 +1,7 @@
 // ── Routeur par hash : #/ports?iid=frpc ───────────────────────────────────
-// Une page = { id, title(), mount(view, params), unmount?(), canLeave?() }.
+// Une page = { id, title(), mount(view, params), unmount?(), canLeave?(), perm? }.
+// perm : permission requise ; sans elle, la page n'est pas ouverte (première page
+// permise à la place).
 // canLeave() peut renvoyer une promesse (ex. confirmation « modifications
 // non enregistrées ») ; si elle vaut false, la navigation est annulée.
 
@@ -11,6 +13,7 @@ let currentHash = '';
 let view = null;
 let fallback = 'dashboard';
 let onChange = () => {};
+let allowed = () => true;
 
 export function registerPage(page) { routes.set(page.id, page); }
 
@@ -49,7 +52,11 @@ async function render() {
     const ok = await current.canLeave();
     if (!ok) { history.replaceState(null, '', currentHash); return; }
   }
-  const page = routes.get(name) || routes.get(fallback);
+  let page = routes.get(name) || routes.get(fallback);
+  if (!allowed(page)) {
+    page = [routes.get(fallback), ...routes.values()].find(allowed) || routes.get(fallback);
+    history.replaceState(null, '', hrefFor(page.id));
+  }
   if (current && current.unmount) current.unmount();
   current = page;
   currentHash = location.hash || hrefFor(page.id);
@@ -60,8 +67,9 @@ async function render() {
   view.querySelector('.page-title')?.focus({ preventScroll: true });
 }
 
-export function startRouter({ root, defaultRoute, onRouteChange }) {
+export function startRouter({ root, defaultRoute, onRouteChange, canOpen }) {
   view = root;
+  allowed = canOpen || allowed;
   fallback = defaultRoute;
   onChange = onRouteChange || onChange;
   window.addEventListener('hashchange', render);

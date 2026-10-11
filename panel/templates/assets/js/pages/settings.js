@@ -2,7 +2,7 @@
 
 import { t, LOCALES, PREVIEW_LOCALES, getLocale, setLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
-import { store } from '../store.js';
+import { store, can } from '../store.js';
 import {
   h, button, busy, toast, toastResult, toastError, field, setFieldError, input, select, secretInput,
   segmented, callout, pageHeader, card, switchRow,
@@ -18,16 +18,24 @@ export default {
       pageHeader({ title: t('settings.title'), description: t('settings.description') }));
     view.append(page);
 
+    // Réglages du panel : seulement avec la permission ; chacun garde son
+    // compte et ses préférences d'affichage
     let cfg = {};
-    try {
-      cfg = (await apiOk('/api/manager/config')).config || {};
-    } catch (e) {
-      page.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+    const manage = can('settings.manage');
+    if (manage) {
+      try {
+        cfg = (await apiOk('/api/manager/config')).config || {};
+      } catch (e) {
+        page.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+      }
     }
+    const account = store.me?.owner ? securityCard({ has_password: store.hasPassword, username: store.me.username, ...cfg })
+      : accountCard();
     // Sécurité et accès réseau côte à côte, les préférences d'affichage en dessous
-    page.append(
-      h('div', { class: 'grid-2 card-pair' }, securityCard(cfg), networkCard(cfg)),
-      preferencesCard());
+    page.append(manage
+      ? h('div', { class: 'grid-2 card-pair' }, account, networkCard(cfg))
+      : h('div', { class: 'grid-2 card-pair' }, account, preferencesCard()));
+    if (manage) page.append(preferencesCard());
   },
 };
 
@@ -74,6 +82,52 @@ function securityCard(cfg) {
       state,
       h('div', { class: 'form-grid' },
         field({ label: t('settings.security.username'), control: username }),
+        field({ label: t('settings.security.newPassword'), hint: t('settings.security.passwordHint'), control: pass }),
+        field({ label: t('settings.security.confirm'), control: confirm }))),
+    foot: [saveBtn],
+  });
+}
+
+/** Compte d'un utilisateur autre que le propriétaire : son mot de passe à lui. */
+function accountCard() {
+  const me = store.me || {};
+  const info = h('dl', { class: 'kv' },
+    h('dt', null, t('settings.account.username')), h('dd', null, me.username || '—'),
+    h('dt', null, t('settings.account.role')), h('dd', null, t(`users.roles.${me.role || 'viewer'}`)),
+    h('dt', null, t('settings.account.instances')),
+    h('dd', null, me.instances === '*' || !me.instances ? t('users.allInstances') : me.instances.join(', ')));
+  if (me.source === 'oidc') {
+    return card({
+      title: t('settings.account.title'), description: t('settings.account.oidcDesc'),
+      body: h('div', { class: 'form-stack' }, info, callout({ type: 'neutral', compact: true, iconName: 'shield', text: t('settings.account.oidcNote') })),
+    });
+  }
+  const current = secretInput({ autocomplete: 'current-password' });
+  const pass = secretInput({ autocomplete: 'new-password' });
+  const confirm = secretInput({ autocomplete: 'new-password' });
+  const saveBtn = button(t('settings.account.change'), { variant: 'primary', type: 'submit', form: 'account-form' });
+
+  async function submit(e) {
+    e.preventDefault();
+    const p1 = pass.input.value;
+    setFieldError(pass.input, p1.length < PASSWORD_MIN ? t('settings.security.tooShort') : '');
+    setFieldError(confirm.input, p1 !== confirm.input.value ? t('settings.security.mismatch') : '');
+    if (p1.length < PASSWORD_MIN || p1 !== confirm.input.value) return;
+    await busy(saveBtn, async () => {
+      try {
+        const d = await api('/api/me/password', { method: 'POST', body: { current_password: current.input.value, new_password: p1 } });
+        toastResult(d);
+        if (d.ok) [current, pass, confirm].forEach((x) => { x.input.value = ''; });
+      } catch (err) { toastError(err); }
+    });
+  }
+
+  return card({
+    title: t('settings.account.title'), description: t('settings.account.desc'),
+    body: h('form', { id: 'account-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+      info,
+      h('div', { class: 'form-grid' },
+        field({ label: t('settings.account.current'), control: current }),
         field({ label: t('settings.security.newPassword'), hint: t('settings.security.passwordHint'), control: pass }),
         field({ label: t('settings.security.confirm'), control: confirm }))),
     foot: [saveBtn],

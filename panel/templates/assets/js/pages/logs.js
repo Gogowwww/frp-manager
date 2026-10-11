@@ -25,6 +25,7 @@ function lineEl(text) {
 export default {
   id: 'logs',
   title: () => t('nav.logs'),
+  perm: 'logs.view',
 
   async mount(view, params) {
     const ids = instanceIds();

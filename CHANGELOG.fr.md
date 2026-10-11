@@ -12,6 +12,38 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.56] - 2026-10-11
+
+Pré-release.
+
+### Ajouté
+
+- **Utilisateurs et permissions (ACL)** : une page **Utilisateurs** crée d'autres
+  comptes que le propriétaire (le compte de la configuration initiale, toujours
+  administrateur). Chaque compte a un rôle — administrateur, opérateur, lecteur —
+  ou des permissions choisies parmi 17 (voir les instances, les piloter, les
+  supprimer, lire ou modifier les configurations, journaux, ports, pare-feu,
+  mises à jour, mise à jour du panel, notifications, réglages, comptes), et peut
+  être limité à certaines instances. Chaque route de l'API et chaque WebSocket
+  les vérifie ; modifier, désactiver ou supprimer un compte agit aussitôt,
+  sessions ouvertes comprises. Un compte qui gère les utilisateurs ne peut pas
+  accorder des permissions qu'il n'a pas. L'interface masque ce que le compte ne
+  peut pas faire ; configuration, ports et pare-feu passent en lecture seule
+  sans la permission de modifier.
+- **Connexion unique OpenID Connect** : un bouton « Se connecter avec … » sur la
+  page de connexion (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft
+  Entra…). Flux « authorization code » avec PKCE, `state` et `nonce`. Les comptes
+  sont préparés par e-mail (liés à la première connexion dont l'e-mail est
+  vérifié par le fournisseur) ou créés à la première connexion, éventuellement
+  limités à certains domaines ; les rôles peuvent suivre les groupes du
+  fournisseur. La connexion par mot de passe reste toujours possible.
+- **Mon compte** dans Réglages : chaque compte local change son propre mot de passe.
+
+### Modifié
+
+- Les réglages ne s'affichent qu'aux comptes autorisés à les changer ; seul le
+  propriétaire y change son identifiant et son mot de passe.
+
 ## [0.0.55] - 2026-09-30
 
 Pré-release puis release définitive le même jour.
@@ -178,7 +210,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...HEAD
+[0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54
 [0.0.53]: https://github.com/Gogowwww/frp-manager/compare/v0.0.52...v0.0.53

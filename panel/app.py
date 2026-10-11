@@ -3,13 +3,14 @@
 
 import os, re, sys, posixpath, json, subprocess, threading, shutil, tarfile, tempfile, platform, time, secrets, hashlib, hmac, base64, ipaddress, ssl, queue, gzip
 import socket as _socket, http.client as _http_client
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlencode, quote_plus
 from pathlib import Path, PurePosixPath
 from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for, g, has_request_context
 import requests as req
+from itsdangerous import URLSafeTimedSerializer, BadData
 
 try:
     # Hachage du mot de passe : argon2id si argon2-cffi est installé, sinon
@@ -102,6 +103,10 @@ def _default_manager_config():
         "download_mirrors": True,
         "nicknames":        {},
         "webhooks":         [],
+        # Comptes supplémentaires (le propriétaire reste username/password_hash)
+        # et connexion unique OpenID Connect : voir « Utilisateurs et permissions »
+        "users":            {},
+        "oidc":             {},
     }
 
 def load_manager_config():
@@ -509,17 +514,191 @@ def needs_setup():
     """Aucun mot de passe : seule la page de configuration initiale répond."""
     return not MGR_CFG.get("password_hash")
 
-def _password_fingerprint():
-    """Empreinte du hash courant, gardée dans la session : changer le mot de passe
-    déconnecte les autres sessions."""
-    return hmac.new(app.secret_key.encode(), (MGR_CFG.get("password_hash") or "").encode(),
-                    hashlib.sha256).hexdigest()[:16]
+# ── Utilisateurs et permissions (ACL) ────────────────────────────────────────
+# Le compte créé à la configuration initiale (username / password_hash) est le
+# « propriétaire » : toujours administrateur, jamais supprimé ni désactivé, seul à
+# changer ses propres identifiants dans Réglages. Les autres comptes sont dans
+# MGR_CFG["users"] (identifiant aléatoire → fiche) : locaux (mot de passe) ou
+# OpenID Connect (voir plus bas).
+#
+# Une fiche : username, source ("local" | "oidc"), enabled, role ("admin" |
+# "operator" | "viewer" | "custom"), permissions (liste, lue seulement pour le
+# rôle « custom »), instances ("*" ou liste d'identifiants d'instances). Les
+# droits sont relus dans la configuration à chaque requête : modifier ou
+# désactiver un compte agit aussitôt, sans attendre la fin de sa session.
+OWNER_ID  = "owner"
+USERS_MAX = 100
+
+# permission → (limitable à certaines instances, sensible). « Sensible » : revient
+# à donner la main sur la machine (config frp, pare-feu, mise à jour du panel…).
+PERMISSIONS = {
+    "instances.view":    (True,  False),   # voir les instances et leur état
+    "instances.control": (True,  False),   # démarrer, arrêter, redémarrer, surnom
+    "instances.delete":  (True,  True),
+    "config.read":       (True,  True),    # les configs contiennent les jetons frp
+    "config.write":      (True,  True),
+    "logs.view":         (True,  False),
+    "ports.view":        (False, False),
+    "ports.manage":      (False, True),
+    "firewall.view":     (False, False),
+    "firewall.manage":   (False, True),
+    "updates.view":      (False, False),
+    "updates.install":   (False, True),    # installer / envoyer une version de frp
+    "updates.panel":     (False, True),    # mettre à jour le panel lui-même
+    "webhooks.view":     (False, False),
+    "webhooks.manage":   (False, True),
+    "settings.manage":   (False, True),
+    "users.manage":      (False, True),
+}
+# Accorder la clé accorde aussi les valeurs (écrire une config suppose de la lire)
+_PERMISSION_IMPLIES = {
+    "instances.control": ("instances.view",),
+    "instances.delete":  ("instances.view",),
+    "config.read":       ("instances.view",),
+    "config.write":      ("config.read",),
+    "logs.view":         ("instances.view",),
+    "ports.view":        ("instances.view",),
+    "ports.manage":      ("ports.view",),
+    "firewall.view":     ("instances.view",),
+    "firewall.manage":   ("firewall.view",),
+    "updates.install":   ("updates.view",),
+    "updates.panel":     ("updates.view",),
+    "webhooks.manage":   ("webhooks.view",),
+}
+ROLES = {
+    "admin":    ("*",),
+    "operator": ("instances.control", "config.write", "logs.view", "ports.manage",
+                 "firewall.view", "updates.view", "webhooks.view"),
+    "viewer":   ("instances.view", "logs.view", "ports.view", "firewall.view", "updates.view"),
+}
+USER_ROLES = (*ROLES, "custom")
+
+def expand_permissions(perms):
+    """Permissions accordées + celles qu'elles impliquent ; "*" = toutes."""
+    out, todo = set(), list(perms or ())
+    while todo:
+        p = todo.pop()
+        if p == "*":
+            out.update(PERMISSIONS)
+        elif p in PERMISSIONS and p not in out:
+            out.add(p)
+            todo.extend(_PERMISSION_IMPLIES.get(p, ()))
+    return frozenset(out)
+
+def user_permissions(user):
+    """Permissions effectives d'une fiche. Limité à des instances, un compte ne
+    garde que les permissions qui portent sur des instances."""
+    role = user.get("role")
+    if role == "admin":
+        return expand_permissions(["*"])
+    granted = expand_permissions(ROLES[role] if role in ROLES else user.get("permissions"))
+    if user_instances(user) is not None:
+        granted = frozenset(p for p in granted if PERMISSIONS[p][0])
+    return granted
+
+def user_instances(user):
+    """None = toutes les instances ; sinon l'ensemble des identifiants permis."""
+    ins = user.get("instances", "*")
+    if user.get("role") == "admin" or ins == "*":
+        return None
+    return frozenset(str(i) for i in ins) if isinstance(ins, list) else frozenset()
+
+def user_can(user, perm):
+    return perm in user_permissions(user)
+
+def instance_allowed(user, iid):
+    allowed = user_instances(user)
+    return allowed is None or iid in allowed
+
+def filter_instances(instances, user):
+    allowed = user_instances(user)
+    return instances if allowed is None else {k: v for k, v in instances.items() if k in allowed}
+
+def is_full_admin(user):
+    """Administrateur : toutes les permissions sur toutes les instances. Réservé
+    aux réglages qui décident de qui peut se connecter (OpenID Connect)."""
+    return user_instances(user) is None and user_permissions(user) == frozenset(PERMISSIONS)
+
+def _owner_user():
+    return {"id": OWNER_ID, "username": MGR_CFG.get("username", "admin"), "source": "local",
+            "password_hash": MGR_CFG.get("password_hash") or "", "enabled": True,
+            "role": "admin", "instances": "*", "owner": True}
+
+def all_users():
+    """identifiant → fiche, propriétaire compris."""
+    users = {OWNER_ID: _owner_user()} if MGR_CFG.get("password_hash") else {}
+    for uid, u in (MGR_CFG.get("users") or {}).items():
+        if isinstance(u, dict) and uid != OWNER_ID:
+            users[uid] = {**u, "id": uid, "source": u.get("source", "local")}
+    return users
+
+def _same_name(a, b):
+    return a.casefold() == b.casefold()
+
+def find_local_user(username):
+    """Fiche locale de cet identifiant (casse exacte), ou None."""
+    found = None
+    for u in all_users().values():
+        if u["source"] == "local" and hmac.compare_digest(username.encode(), str(u["username"]).encode()):
+            found = u
+    return found
+
+_dummy_hash_value = None
+
+def _dummy_hash():
+    """Hash d'un mot de passe que personne ne connaît : vérifié quand l'identifiant
+    n'existe pas, pour que la réponse prenne le même temps."""
+    global _dummy_hash_value
+    if _dummy_hash_value is None:
+        _dummy_hash_value = hash_password(secrets.token_hex(16))
+    return _dummy_hash_value
+
+def _cfg_update(**patch):
+    global MGR_CFG
+    with _cfg_lock:
+        cfg = {**MGR_CFG, **patch}
+        save_manager_config(cfg)
+        MGR_CFG = cfg
+    return cfg
+
+def _users_update(mutate):
+    """Applique mutate(dict_des_comptes) sur une copie puis enregistre."""
+    with _cfg_lock:
+        users = {k: dict(v) for k, v in (MGR_CFG.get("users") or {}).items()}
+        result = mutate(users)
+        _cfg_update(users=users)
+    return result
+
+_cfg_lock = threading.RLock()
+
+def _session_fingerprint(user):
+    """Empreinte du secret du compte, gardée dans la session : changer le mot de
+    passe (ou lier le compte à une autre identité OIDC) déconnecte les sessions
+    ouvertes."""
+    if user["source"] == "oidc":
+        o = user.get("oidc") or {}
+        material = f"oidc\0{o.get('iss', '')}\0{o.get('sub', '')}"
+    else:
+        material = user.get("password_hash") or ""
+    return hmac.new(app.secret_key.encode(), material.encode(), hashlib.sha256).hexdigest()[:16]
+
+def current_user():
+    """Fiche du compte connecté (relue dans la configuration), ou None."""
+    if "_user" in g.__dict__:
+        return g._user
+    user = None
+    if session.get("authenticated"):
+        u = all_users().get(session.get("uid") or OWNER_ID)    # sans « uid » : session d'avant les comptes
+        if u and u.get("enabled", True) and hmac.compare_digest(
+                str(session.get("pwfp", "")).encode(), _session_fingerprint(u).encode()):
+            user = u
+    g._user = user
+    return user
 
 def _session_valid():
-    return bool(session.get("authenticated")) and hmac.compare_digest(
-        str(session.get("pwfp", "")).encode(), _password_fingerprint().encode())
+    return current_user() is not None
 
-def _start_session():
+def _start_session(uid=OWNER_ID):
     """Nouvelle session après authentification (pas de fixation de session). Le
     jeton CSRF est gardé : la page déjà ouverte (Réglages, après un changement
     de mot de passe) continue de fonctionner."""
@@ -527,18 +706,47 @@ def _start_session():
     session.clear()
     session.permanent = True
     session["authenticated"] = True
-    session["pwfp"] = _password_fingerprint()
+    session["uid"] = uid
+    session["pwfp"] = _session_fingerprint(all_users()[uid])
     session["csrf"] = tok or secrets.token_urlsafe(32)
+    g.__dict__.pop("_user", None)
+
+def _unauthenticated():
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "msg": M("Non authentifié", "Not authenticated")}), 401
+    return redirect(url_for("login_page"))
+
+def _forbidden(msg=None):
+    return jsonify({"ok": False, "msg": msg or M("Permission refusée", "Permission denied")}), 403
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not _session_valid():
-            if request.path.startswith("/api/"):
-                return jsonify({"ok": False, "msg": M("Non authentifié", "Not authenticated")}), 401
-            return redirect(url_for("login_page"))
+        if not current_user():
+            return _unauthenticated()
         return f(*args, **kwargs)
     return decorated
+
+def permission_required(*perms):
+    """Compte connecté qui possède toutes ces permissions et, si la route porte
+    sur une instance (<iid>), qui a le droit d'y toucher."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            user = current_user()
+            if not user:
+                return _unauthenticated()
+            have = user_permissions(user)
+            missing = [p for p in perms if p not in have]
+            if missing:
+                return _forbidden(M(f"Permission refusée : {', '.join(missing)}",
+                                    f"Permission denied: {', '.join(missing)}"))
+            iid = kwargs.get("iid")
+            if iid is not None and not instance_allowed(user, iid):
+                return _forbidden(M("Accès refusé à cette instance", "Access to this instance is denied"))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 # Seules routes servies tant qu'aucun mot de passe n'existe
 _SETUP_ENDPOINTS = {"setup_page", "api_setup", "versioned_asset", "static"}
@@ -602,11 +810,13 @@ def _too_many_attempts(wait):
 def login_page():
     if _session_valid():
         return redirect(url_for("index"))
-    return render_template("login.html")
+    oidc = oidc_config()
+    return render_template("login.html", oidc_enabled=oidc_enabled(),
+                           oidc_label=oidc["label"] or "SSO",
+                           oidc_error=request.args.get("error", "") if request.args.get("error", "") in OIDC_ERRORS else "")
 
 @app.route("/api/login", methods=["POST"])
 def api_login():
-    global MGR_CFG
     ip = request.remote_addr or "?"
     wait = _login_retry_after(ip)
     if wait:
@@ -614,10 +824,11 @@ def api_login():
     data = request.get_json(silent=True) or {}
     user = str(data.get("username", ""))[:256]
     pw   = str(data.get("password", ""))[:PASSWORD_MAX_LENGTH]
+    account = find_local_user(user)
+    account = account if account and account.get("enabled", True) else None
     # Mot de passe vérifié même si l'identifiant est faux : même durée de réponse
-    pw_ok, rehash = verify_password(pw, MGR_CFG.get("password_hash", ""))
-    user_ok = hmac.compare_digest(user.encode(), str(MGR_CFG.get("username", "admin")).encode())
-    if not (pw_ok and user_ok):
+    pw_ok, rehash = verify_password(pw, (account or {}).get("password_hash") or _dummy_hash())
+    if not (pw_ok and account):
         _login_failed(ip)
         wait = _login_retry_after(ip)
         fails = _login_failures.get(ip, {}).get("count", 0)
@@ -632,18 +843,40 @@ def api_login():
     _login_succeeded(ip)
     if rehash:
         # Ancien hash (SHA-256 sans sel, ou scrypt alors qu'argon2 est disponible)
-        cfg = {**MGR_CFG, "password_hash": hash_password(pw)}
         try:
-            save_manager_config(cfg)
-            MGR_CFG = cfg
+            _set_password_hash(account["id"], hash_password(pw))
             print("[INFO] Mot de passe rehaché avec " + ("argon2id" if _ARGON2 else "scrypt"))
         except OSError as e:
             print(f"[WARN] Rehachage du mot de passe non enregistré : {e}")
-    _start_session()
+        account = all_users()[account["id"]]
+    _start_session(account["id"])
+    _record_login(account["id"])
     webhook_emit("login.success", (f"Connexion de {user}", f"{user} signed in"),
                  (f"Connexion au panel depuis {ip}.", f"Panel sign-in from {ip}."),
                  subject=ip, data={"ip": ip, "user": user})
     return jsonify({"ok": True})
+
+def _set_password_hash(uid, new_hash):
+    """Enregistre un nouveau hash : celui du propriétaire (config) ou d'un compte."""
+    if uid == OWNER_ID:
+        _cfg_update(password_hash=new_hash)
+    else:
+        def mutate(users):
+            if uid in users:
+                users[uid]["password_hash"] = new_hash
+        _users_update(mutate)
+
+def _record_login(uid):
+    """Date de dernière connexion d'un compte (les comptes OIDC la notent à part)."""
+    if uid == OWNER_ID:
+        return
+    try:
+        def mutate(users):
+            if uid in users:
+                users[uid]["last_login"] = datetime.now().astimezone().isoformat(timespec="seconds")
+        _users_update(mutate)
+    except OSError as e:
+        print(f"[WARN] Dernière connexion non enregistrée : {e}")
 
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
@@ -710,6 +943,590 @@ def reset_password_cli():
     save_manager_config({**MGR_CFG, "username": user, "password_hash": hash_password(pw)})
     print(M("Identifiants enregistrés. Redémarrez frp-manager (systemctl restart frp-manager).",
             "Credentials saved. Restart frp-manager (systemctl restart frp-manager)."))
+
+# ── Gestion des comptes ──────────────────────────────────────────────────────
+_UID_RE   = re.compile(r"[0-9a-f]{12}")
+_EMAIL_RE = re.compile(r"[^@\s]{1,64}@[^@\s]{1,255}")
+
+def _now_iso():
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+def _user_view(u):
+    """Fiche d'un compte telle que l'interface la reçoit (jamais de hash)."""
+    role = u.get("role", "viewer")
+    ins = user_instances(u)
+    return {
+        "id": u["id"], "username": u["username"], "display_name": u.get("display_name", ""),
+        "email": u.get("email", ""), "source": u["source"], "enabled": u.get("enabled", True),
+        "owner": u["id"] == OWNER_ID, "role": role,
+        "permissions": sorted(u.get("permissions") or []) if role == "custom" else [],
+        "effective": sorted(user_permissions(u)),
+        "instances": "*" if ins is None else sorted(ins),
+        "last_login": u.get("last_login"), "created": u.get("created"),
+        "linked": bool((u.get("oidc") or {}).get("sub")),
+    }
+
+def _me_view(u):
+    v = _user_view(u)
+    return {**{k: v[k] for k in ("id", "username", "display_name", "source", "owner", "role", "instances")},
+            "permissions": v["effective"]}
+
+def _parse_account_fields(raw, base):
+    """Rôle, permissions et instances d'après la saisie `raw`, complétée par la
+    fiche `base`. → (champs, message d'erreur)."""
+    role = raw.get("role", base.get("role", "viewer"))
+    if role not in USER_ROLES:
+        return None, M("Rôle inconnu.", "Unknown role.")
+    perms = raw.get("permissions", base.get("permissions") or [])
+    if not isinstance(perms, list) or not all(isinstance(p, str) and p in PERMISSIONS for p in perms):
+        return None, M("Permission inconnue.", "Unknown permission.")
+    ins = raw.get("instances", base.get("instances", "*"))
+    if ins != "*":
+        if not (isinstance(ins, list) and len(ins) <= 200 and all(valid_instance_id(i) for i in ins)):
+            return None, M("Liste d'instances invalide.", "Invalid instance list.")
+        ins = sorted(set(ins))
+    if role == "admin":
+        ins = "*"
+    return {"role": role, "permissions": sorted(set(perms)) if role == "custom" else [], "instances": ins}, None
+
+def _grant_problem(actor, fields, target=None):
+    """Un compte qui gère les utilisateurs ne peut ni accorder des droits qu'il n'a
+    pas lui-même, ni modifier un compte plus puissant que lui (sinon
+    « gérer les utilisateurs » reviendrait à être administrateur)."""
+    if is_full_admin(actor):
+        return None
+    have = user_permissions(actor)
+    if not user_permissions(fields) <= have:
+        return M("Vous ne pouvez pas accorder des permissions que vous n'avez pas vous-même.",
+                 "You can't grant permissions you don't have yourself.")
+    if target is not None and not user_permissions(target) <= have:
+        return M("Ce compte a plus de droits que le vôtre.", "This account has more rights than yours.")
+    return None
+
+def _name_taken(username, except_uid=None):
+    return any(_same_name(username, u["username"]) for uid, u in all_users().items() if uid != except_uid)
+
+def _clean_username(raw):
+    name = str(raw or "").strip()
+    return name if _USERNAME_RE.fullmatch(name) else None
+
+def _clean_email(raw):
+    email = str(raw or "").strip().lower()
+    return email if len(email) <= 254 and _EMAIL_RE.fullmatch(email) else None
+
+@app.route("/api/me")
+@login_required
+def api_me():
+    return jsonify({"ok": True, "user": _me_view(current_user())})
+
+@app.route("/api/me/password", methods=["POST"])
+@login_required
+def api_me_password():
+    """Un compte local change son propre mot de passe (l'ancien est redemandé)."""
+    user = current_user()
+    if user["source"] != "local":
+        return jsonify({"ok": False, "msg": M("Ce compte se connecte par OpenID Connect : pas de mot de passe ici.",
+                                              "This account signs in with OpenID Connect: no password here.")}), 400
+    ip = request.remote_addr or "?"
+    wait = _login_retry_after(ip)
+    if wait:
+        return _too_many_attempts(wait)
+    data = request.get_json(silent=True) or {}
+    ok, _ = verify_password(str(data.get("current_password", ""))[:PASSWORD_MAX_LENGTH], user.get("password_hash"))
+    if not ok:
+        _login_failed(ip)
+        return jsonify({"ok": False, "msg": M("Mot de passe actuel incorrect.", "Wrong current password.")}), 403
+    new = str(data.get("new_password", ""))
+    problem = password_problem(new)
+    if problem:
+        return jsonify({"ok": False, "msg": problem}), 400
+    _login_succeeded(ip)
+    _set_password_hash(user["id"], hash_password(new))
+    _start_session(user["id"])       # cette session reste ouverte, les autres sont déconnectées
+    return jsonify({"ok": True, "msg": M("Mot de passe modifié.", "Password changed.")})
+
+@app.route("/api/users", methods=["GET"])
+@permission_required("users.manage")
+def api_users_list():
+    detect_frp(force=False)
+    users = sorted(all_users().values(), key=lambda u: (u["id"] != OWNER_ID, u["username"].casefold()))
+    return jsonify({
+        "ok": True, "me": current_user()["id"], "users": [_user_view(u) for u in users],
+        "permissions": [{"id": k, "scoped": v[0], "sensitive": v[1]} for k, v in PERMISSIONS.items()],
+        "implies": {k: list(v) for k, v in _PERMISSION_IMPLIES.items()},
+        "roles": {k: sorted(expand_permissions(v)) for k, v in ROLES.items()},
+        "instances": sorted(INSTANCES), "oidc": oidc_enabled(),
+        "can_configure_oidc": is_full_admin(current_user()),
+    })
+
+@app.route("/api/users", methods=["POST"])
+@permission_required("users.manage")
+def api_users_create():
+    actor = current_user()
+    raw = request.get_json(silent=True) or {}
+    source = raw.get("source", "local")
+    if source not in ("local", "oidc"):
+        return jsonify({"ok": False, "msg": M("Type de compte inconnu.", "Unknown account type.")}), 400
+    username = _clean_username(raw.get("username"))
+    if not username:
+        return jsonify({"ok": False, "msg": M("Identifiant invalide (1 à 64 caractères).",
+                                              "Invalid username (1 to 64 characters).")}), 400
+    fields, err = _parse_account_fields(raw, {})
+    if err:
+        return jsonify({"ok": False, "msg": err}), 400
+    problem = _grant_problem(actor, fields)
+    if problem:
+        return _forbidden(problem)
+    rec = {"username": username, "source": source, "enabled": bool(raw.get("enabled", True)),
+           "created": _now_iso(), **fields}
+    if source == "local":
+        pw = str(raw.get("password", ""))
+        problem = password_problem(pw)
+        if problem:
+            return jsonify({"ok": False, "msg": problem}), 400
+        rec["password_hash"] = hash_password(pw)
+    else:
+        email = _clean_email(raw.get("email"))
+        if not email:
+            return jsonify({"ok": False, "msg": M("Adresse e-mail requise : le compte est lié à la première connexion "
+                                                  "OpenID Connect dont l'e-mail vérifié est celui-ci.",
+                                                  "An email address is required: the account is linked on the first "
+                                                  "OpenID Connect sign-in whose verified email matches.")}), 400
+        rec["email"] = email
+    uid = secrets.token_hex(6)
+    with _cfg_lock:
+        if _name_taken(username):
+            return jsonify({"ok": False, "msg": M("Cet identifiant est déjà pris.", "This username is already taken.")}), 409
+        if source == "oidc" and any(u.get("email") == rec["email"] and u["source"] == "oidc" for u in all_users().values()):
+            return jsonify({"ok": False, "msg": M("Un compte OpenID Connect utilise déjà cet e-mail.",
+                                                  "An OpenID Connect account already uses this email.")}), 409
+        if len(MGR_CFG.get("users") or {}) >= USERS_MAX:
+            return jsonify({"ok": False, "msg": M(f"{USERS_MAX} comptes au plus.", f"{USERS_MAX} accounts at most.")}), 400
+        _users_update(lambda users: users.__setitem__(uid, rec))
+    return jsonify({"ok": True, "user": _user_view(all_users()[uid]),
+                    "msg": M("Compte créé.", "Account created.")})
+
+def _managed_target(uid):
+    """(fiche, None) du compte visé par une modification, ou (None, réponse d'erreur)."""
+    if uid == OWNER_ID:
+        return None, (jsonify({"ok": False, "msg": M("Le compte propriétaire se gère dans Réglages.",
+                                                      "The owner account is managed in Settings.")}), 400)
+    target = all_users().get(uid) if _UID_RE.fullmatch(uid) else None
+    if not target:
+        return None, (jsonify({"ok": False, "msg": M("Compte inconnu.", "Unknown account.")}), 404)
+    if uid == current_user()["id"]:
+        return None, (jsonify({"ok": False, "msg": M("Vous ne pouvez pas modifier votre propre compte ici : "
+                                                      "demandez à un autre administrateur.",
+                                                      "You can't change your own account here: ask another administrator.")}), 400)
+    return target, None
+
+@app.route("/api/users/<uid>", methods=["PUT"])
+@permission_required("users.manage")
+def api_users_update(uid):
+    actor = current_user()
+    target, err = _managed_target(uid)
+    if err:
+        return err
+    raw = request.get_json(silent=True) or {}
+    fields, msg = _parse_account_fields(raw, target)
+    if msg:
+        return jsonify({"ok": False, "msg": msg}), 400
+    problem = _grant_problem(actor, fields, target)
+    if problem:
+        return _forbidden(problem)
+    patch = dict(fields)
+    if "enabled" in raw:
+        patch["enabled"] = bool(raw["enabled"])
+    if "username" in raw:
+        username = _clean_username(raw["username"])
+        if not username:
+            return jsonify({"ok": False, "msg": M("Identifiant invalide (1 à 64 caractères).",
+                                                  "Invalid username (1 to 64 characters).")}), 400
+        patch["username"] = username
+    if "email" in raw and target["source"] == "oidc" and not (target.get("oidc") or {}).get("sub"):
+        email = _clean_email(raw["email"])
+        if not email:
+            return jsonify({"ok": False, "msg": M("Adresse e-mail invalide.", "Invalid email address.")}), 400
+        patch["email"] = email
+    if raw.get("password"):
+        if target["source"] != "local":
+            return jsonify({"ok": False, "msg": M("Pas de mot de passe sur un compte OpenID Connect.",
+                                                  "No password on an OpenID Connect account.")}), 400
+        problem = password_problem(str(raw["password"]))
+        if problem:
+            return jsonify({"ok": False, "msg": problem}), 400
+        patch["password_hash"] = hash_password(str(raw["password"]))
+    with _cfg_lock:
+        if "username" in patch and _name_taken(patch["username"], except_uid=uid):
+            return jsonify({"ok": False, "msg": M("Cet identifiant est déjà pris.", "This username is already taken.")}), 409
+        _users_update(lambda users: users[uid].update(patch))
+    return jsonify({"ok": True, "user": _user_view(all_users()[uid]), "msg": M("Compte modifié.", "Account updated.")})
+
+@app.route("/api/users/<uid>", methods=["DELETE"])
+@permission_required("users.manage")
+def api_users_delete(uid):
+    target, err = _managed_target(uid)
+    if err:
+        return err
+    problem = _grant_problem(current_user(), target, target)
+    if problem:
+        return _forbidden(problem)
+    _users_update(lambda users: users.pop(uid, None))
+    return jsonify({"ok": True, "msg": M("Compte supprimé.", "Account deleted.")})
+
+# ── OpenID Connect (connexion unique) ────────────────────────────────────────
+# Flux « authorization code » avec PKCE (S256), state et nonce. L'état du flux
+# tient dans un cookie signé SameSite=Lax, à part : le cookie de session est
+# Strict, donc absent du retour du fournisseur (navigation venue d'un autre site).
+# Le jeton d'identité est reçu directement du point d'accès /token en HTTPS : la
+# spécification (OIDC Core §3.1.3.7) permet alors de se fier à TLS plutôt qu'à la
+# signature du jeton. On en contrôle quand même émetteur, audience, expiration
+# et nonce.
+OIDC_FLOW_COOKIE  = "frpm_oidc"
+OIDC_FLOW_MAX_AGE = 600
+OIDC_ERRORS = ("disabled", "state", "denied", "provider", "token", "claims",
+               "no_account", "disabled_user", "domain")
+OIDC_DEFAULTS = {
+    "enabled": False, "issuer": "", "client_id": "", "client_secret": "",
+    "scopes": "openid profile email", "label": "", "redirect_uri": "",
+    "username_claim": "preferred_username",
+    "auto_create": False, "default_role": "viewer", "allowed_domains": [],
+    "groups_claim": "groups", "group_roles": {},
+}
+_OIDC_CLAIM_RE = re.compile(r"[A-Za-z0-9_.:\-/]{1,128}")
+_OIDC_SCOPES_RE = re.compile(r"[A-Za-z0-9_.:\-/]+(?: [A-Za-z0-9_.:\-/]+)*")
+_DOMAIN_RE = re.compile(r"(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}")
+_oidc_meta = {}                 # émetteur → (expire, document de découverte)
+
+class OidcError(Exception):
+    """code : une des OIDC_ERRORS (affichée sur la page de connexion) ; le détail
+    ne va que dans le journal."""
+    def __init__(self, code, detail=""):
+        super().__init__(detail or code)
+        self.code, self.detail = code, detail or code
+
+def oidc_config():
+    return {**OIDC_DEFAULTS, **(MGR_CFG.get("oidc") or {})}
+
+def oidc_enabled():
+    c = oidc_config()
+    return bool(c["enabled"] and c["issuer"] and c["client_id"])
+
+def _oidc_url_ok(url):
+    """HTTPS, ou HTTP vers la machine locale (essais avec un fournisseur sur le poste)."""
+    try:
+        u = urlsplit(str(url))
+        return bool(u.hostname) and (u.scheme == "https" or (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1")))
+    except ValueError:
+        return False
+
+def oidc_discover(issuer, fresh=False):
+    issuer = issuer.rstrip("/")
+    hit = _oidc_meta.get(issuer)
+    if hit and hit[0] > time.time() and not fresh:
+        return hit[1]
+    try:
+        r = req.get(issuer + "/.well-known/openid-configuration", timeout=8, headers={"Accept": "application/json"})
+        r.raise_for_status()
+        meta = r.json()
+    except (req.RequestException, ValueError) as e:
+        raise OidcError("provider", f"découverte impossible : {str(e)[:160]}")
+    if not isinstance(meta, dict) or str(meta.get("issuer", "")).rstrip("/") != issuer:
+        raise OidcError("provider", "l'émetteur annoncé ne correspond pas à l'adresse configurée")
+    for key in ("authorization_endpoint", "token_endpoint"):
+        if not _oidc_url_ok(meta.get(key)):
+            raise OidcError("provider", f"{key} absent ou non sécurisé")
+    if not _oidc_url_ok(meta.get("userinfo_endpoint")):
+        meta.pop("userinfo_endpoint", None)
+    _oidc_meta[issuer] = (time.time() + 3600, meta)
+    return meta
+
+def oidc_redirect_uri(cfg=None):
+    return (cfg or oidc_config()).get("redirect_uri") or url_for("oidc_callback", _external=True)
+
+def _oidc_flow_serializer():
+    return URLSafeTimedSerializer(app.secret_key, salt="frpm-oidc-flow")
+
+def _oidc_clear_cookie(resp):
+    resp.delete_cookie(OIDC_FLOW_COOKIE, path="/auth/oidc")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+def _oidc_fail(code):
+    return _oidc_clear_cookie(redirect(url_for("login_page", error=code)))
+
+def _b64url(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+@app.route("/auth/oidc/login")
+def oidc_login():
+    if not oidc_enabled():
+        return _oidc_fail("disabled")
+    cfg = oidc_config()
+    try:
+        meta = oidc_discover(cfg["issuer"])
+    except OidcError as e:
+        print(f"[WARN] Connexion OIDC : {e.detail}")
+        return _oidc_fail("provider")
+    flow = {"s": secrets.token_urlsafe(24), "n": secrets.token_urlsafe(24),
+            "cv": secrets.token_urlsafe(48), "ru": oidc_redirect_uri(cfg)}
+    scopes = cfg["scopes"] if _OIDC_SCOPES_RE.fullmatch(cfg["scopes"] or "") else OIDC_DEFAULTS["scopes"]
+    if "openid" not in scopes.split():
+        scopes = "openid " + scopes
+    params = {"response_type": "code", "client_id": cfg["client_id"], "redirect_uri": flow["ru"],
+              "scope": scopes, "state": flow["s"], "nonce": flow["n"],
+              "code_challenge": _b64url(hashlib.sha256(flow["cv"].encode()).digest()),
+              "code_challenge_method": "S256"}
+    base = meta["authorization_endpoint"]
+    resp = redirect(base + ("&" if "?" in base else "?") + urlencode(params))
+    resp.set_cookie(OIDC_FLOW_COOKIE, _oidc_flow_serializer().dumps(flow), max_age=OIDC_FLOW_MAX_AGE,
+                    httponly=True, samesite="Lax", secure=bool(app.config["SESSION_COOKIE_SECURE"]),
+                    path="/auth/oidc")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+def _jwt_claims(token):
+    """Contenu (sans vérification de signature : voir plus haut) d'un jeton JWT."""
+    try:
+        head, payload, _sig = token.split(".")
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except (ValueError, TypeError):
+        raise OidcError("claims", "jeton d'identité illisible")
+    if not isinstance(claims, dict):
+        raise OidcError("claims", "jeton d'identité illisible")
+    return claims
+
+def oidc_exchange(cfg, meta, code, flow):
+    """Échange le code contre les jetons et renvoie les revendications de l'utilisateur."""
+    data = {"grant_type": "authorization_code", "code": code, "redirect_uri": flow["ru"],
+            "code_verifier": flow["cv"], "client_id": cfg["client_id"]}
+    auth, secret = None, cfg["client_secret"]
+    if secret:
+        methods = meta.get("token_endpoint_auth_methods_supported") or ["client_secret_basic"]
+        if "client_secret_basic" in methods or "client_secret_post" not in methods:
+            auth = (quote_plus(cfg["client_id"]), quote_plus(secret))    # RFC 6749 §2.3.1
+        else:
+            data["client_secret"] = secret
+    try:
+        r = req.post(meta["token_endpoint"], data=data, auth=auth, timeout=10, headers={"Accept": "application/json"})
+        tok = r.json()
+    except (req.RequestException, ValueError) as e:
+        raise OidcError("token", f"échange du code impossible : {str(e)[:160]}")
+    if r.status_code != 200 or not isinstance(tok, dict) or not isinstance(tok.get("id_token"), str):
+        raise OidcError("token", f"HTTP {r.status_code} {str(tok.get('error') if isinstance(tok, dict) else '')[:80]}")
+    claims = _jwt_claims(tok["id_token"])
+    if str(claims.get("iss", "")).rstrip("/") != cfg["issuer"].rstrip("/"):
+        raise OidcError("claims", "émetteur du jeton inattendu")
+    aud = claims.get("aud")
+    auds = aud if isinstance(aud, list) else [aud]
+    if cfg["client_id"] not in auds or (len(auds) > 1 and claims.get("azp") != cfg["client_id"]):
+        raise OidcError("claims", "audience du jeton inattendue")
+    exp = claims.get("exp")
+    if not isinstance(exp, (int, float)) or exp < time.time() - 60:
+        raise OidcError("claims", "jeton expiré")
+    if not hmac.compare_digest(str(claims.get("nonce", "")).encode(), flow["n"].encode()):
+        raise OidcError("claims", "nonce différent")
+    sub = claims.get("sub")
+    if not isinstance(sub, str) or not 0 < len(sub) <= 255:
+        raise OidcError("claims", "sujet absent")
+    # E-mail, groupes… : parfois seulement dans userinfo
+    if meta.get("userinfo_endpoint") and isinstance(tok.get("access_token"), str):
+        try:
+            ui = req.get(meta["userinfo_endpoint"], timeout=8,
+                         headers={"Authorization": "Bearer " + tok["access_token"], "Accept": "application/json"})
+            info = ui.json() if ui.status_code == 200 else None
+        except (req.RequestException, ValueError):
+            info = None
+        if isinstance(info, dict) and info.get("sub") == sub:
+            claims = {**info, **claims}
+    return claims
+
+def _oidc_groups(cfg, claims):
+    raw = claims.get(cfg["groups_claim"])
+    raw = [raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return [g_ for g_ in raw if isinstance(g_, str)]
+
+def oidc_resolve_user(cfg, claims):
+    """Compte local correspondant à l'identité : déjà lié, préparé à l'avance (e-mail
+    vérifié identique), ou créé si auto_create. → fiche ; OidcError sinon."""
+    iss, sub = cfg["issuer"].rstrip("/"), claims["sub"]
+    email = str(claims.get("email") or "").strip().lower()
+    email = email if _clean_email(email) and claims.get("email_verified") in (True, "true") else ""
+    mapping = cfg["group_roles"] if isinstance(cfg["group_roles"], dict) else {}
+    role_by_group = None
+    if mapping:
+        hits = {mapping[g_] for g_ in _oidc_groups(cfg, claims) if g_ in mapping}
+        role_by_group = next((r for r in ("admin", "operator", "viewer") if r in hits), cfg["default_role"])
+    with _cfg_lock:
+        users = {k: dict(v) for k, v in (MGR_CFG.get("users") or {}).items()}
+        uid = next((k for k, u in users.items() if u.get("source") == "oidc"
+                    and (u.get("oidc") or {}).get("sub") == sub and (u.get("oidc") or {}).get("iss") == iss), None)
+        if uid is None and email:
+            pending = [k for k, u in users.items() if u.get("source") == "oidc" and not (u.get("oidc") or {}).get("sub")
+                       and u.get("email") == email]
+            uid = pending[0] if len(pending) == 1 else None
+        if uid is None:
+            if not cfg["auto_create"]:
+                raise OidcError("no_account", f"aucun compte pour {sub} ({email or 'e-mail non vérifié'})")
+            domains = [d.lower() for d in cfg["allowed_domains"]]
+            if domains and email.rpartition("@")[2] not in domains:
+                raise OidcError("domain", f"domaine refusé ({email or 'e-mail non vérifié'})")
+            if len(users) >= USERS_MAX:
+                raise OidcError("no_account", "trop de comptes")
+            base = re.sub(r"[\x00-\x1f\x7f]", "", str(claims.get(cfg["username_claim"]) or email or sub)).strip()[:60] or "user"
+            name, n = base, 2
+            while _name_taken(name):
+                name, n = f"{base}-{n}", n + 1
+            uid = secrets.token_hex(6)
+            users[uid] = {"username": name, "source": "oidc", "enabled": True, "created": _now_iso(),
+                          "role": role_by_group or cfg["default_role"], "permissions": [], "instances": "*"}
+        u = users[uid]
+        if not u.get("enabled", True):
+            raise OidcError("disabled_user", f"compte {u.get('username')} désactivé")
+        u["oidc"] = {"iss": iss, "sub": sub}
+        if email:
+            u["email"] = email
+        if isinstance(claims.get("name"), str):
+            u["display_name"] = claims["name"][:128]
+        if role_by_group and u.get("role") != role_by_group:
+            u.update(role=role_by_group, permissions=[], instances="*" if role_by_group == "admin" else u.get("instances", "*"))
+        u["last_login"] = _now_iso()
+        _cfg_update(users=users)
+    return all_users()[uid]
+
+@app.route("/auth/oidc/callback")
+def oidc_callback():
+    try:
+        flow = _oidc_flow_serializer().loads(request.cookies.get(OIDC_FLOW_COOKIE, ""), max_age=OIDC_FLOW_MAX_AGE)
+        if not isinstance(flow, dict) or not all(isinstance(flow.get(k), str) for k in ("s", "n", "cv", "ru")):
+            raise BadData("flux invalide")
+    except BadData:
+        return _oidc_fail("state")
+    if not oidc_enabled():
+        return _oidc_fail("disabled")
+    if request.args.get("error"):
+        print(f"[WARN] Connexion OIDC refusée par le fournisseur : {request.args['error'][:80]}")
+        return _oidc_fail("denied")
+    if not hmac.compare_digest(request.args.get("state", "").encode(), flow["s"].encode()):
+        return _oidc_fail("state")
+    code = request.args.get("code", "")
+    if not code or len(code) > 4096:
+        return _oidc_fail("denied")
+    cfg = oidc_config()
+    try:
+        claims = oidc_exchange(cfg, oidc_discover(cfg["issuer"]), code, flow)
+        user = oidc_resolve_user(cfg, claims)
+    except OidcError as e:
+        print(f"[WARN] Connexion OIDC refusée : {e.detail}")
+        return _oidc_fail(e.code)
+    _start_session(user["id"])
+    ip = request.remote_addr or "?"
+    webhook_emit("login.success", (f"Connexion de {user['username']}", f"{user['username']} signed in"),
+                 (f"Connexion au panel (OpenID Connect) depuis {ip}.", f"Panel sign-in (OpenID Connect) from {ip}."),
+                 subject=ip, data={"ip": ip, "user": user["username"], "method": "oidc"})
+    # Page intermédiaire plutôt qu'une redirection : le cookie de session est
+    # SameSite=Strict, et le navigateur ne l'enverrait pas à une redirection
+    # qui prolonge une navigation venue du fournisseur.
+    resp = Response('<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/">'
+                    '<title>FRP Manager</title><a href="/">FRP Manager</a>', mimetype="text/html")
+    return _oidc_clear_cookie(resp)
+
+def _oidc_public(cfg):
+    """Réglages renvoyés à l'interface : jamais le secret client."""
+    return {**{k: v for k, v in cfg.items() if k != "client_secret"},
+            "has_secret": bool(cfg["client_secret"])}
+
+def _oidc_clean(raw, old):
+    """→ (réglages, message d'erreur)."""
+    def err(fr, en):
+        return None, M(fr, en)
+    cfg = dict(old)
+    cfg["enabled"] = bool(raw.get("enabled", old["enabled"]))
+    if "issuer" in raw:
+        cfg["issuer"] = str(raw["issuer"]).strip().rstrip("/")
+        if cfg["issuer"] and (not _oidc_url_ok(cfg["issuer"]) or len(cfg["issuer"]) > 512):
+            return err("Adresse de l'émetteur invalide (https:// attendu).", "Invalid issuer address (https:// expected).")
+    if "client_id" in raw:
+        cfg["client_id"] = str(raw["client_id"]).strip()[:256]
+    if raw.get("client_secret"):
+        cfg["client_secret"] = str(raw["client_secret"]).strip()[:1024]
+    elif raw.get("clear_secret"):
+        cfg["client_secret"] = ""
+    if "scopes" in raw:
+        cfg["scopes"] = " ".join(str(raw["scopes"]).split()) or OIDC_DEFAULTS["scopes"]
+        if not _OIDC_SCOPES_RE.fullmatch(cfg["scopes"]):
+            return err("Portées invalides.", "Invalid scopes.")
+    if "label" in raw:
+        cfg["label"] = re.sub(r"[\x00-\x1f\x7f]", "", str(raw["label"])).strip()[:40]
+    if "redirect_uri" in raw:
+        cfg["redirect_uri"] = str(raw["redirect_uri"]).strip()
+        if cfg["redirect_uri"] and not _oidc_url_ok(cfg["redirect_uri"]):
+            return err("Adresse de retour invalide (https:// attendu).", "Invalid redirect address (https:// expected).")
+    for key in ("username_claim", "groups_claim"):
+        if key in raw:
+            cfg[key] = str(raw[key]).strip()
+            if not _OIDC_CLAIM_RE.fullmatch(cfg[key]):
+                return err("Nom de revendication invalide.", "Invalid claim name.")
+    if "auto_create" in raw:
+        cfg["auto_create"] = bool(raw["auto_create"])
+    if "default_role" in raw:
+        # Jamais admin par défaut : tout compte du fournisseur le deviendrait
+        if raw["default_role"] not in ("operator", "viewer"):
+            return err("Rôle par défaut : opérateur ou lecteur.", "Default role: operator or viewer.")
+        cfg["default_role"] = raw["default_role"]
+    if "allowed_domains" in raw:
+        doms = raw["allowed_domains"]
+        doms = [d.strip().lower() for d in doms.replace(",", " ").split()] if isinstance(doms, str) else doms
+        if not (isinstance(doms, list) and len(doms) <= 20 and all(isinstance(d, str) and _DOMAIN_RE.fullmatch(d) for d in doms)):
+            return err("Domaines autorisés invalides.", "Invalid allowed domains.")
+        cfg["allowed_domains"] = sorted(set(doms))
+    if "group_roles" in raw:
+        gr = raw["group_roles"]
+        if not (isinstance(gr, dict) and len(gr) <= 50 and all(
+                isinstance(k, str) and 0 < len(k) <= 256 and v in ROLES for k, v in gr.items())):
+            return err("Correspondance groupes → rôles invalide.", "Invalid group → role mapping.")
+        cfg["group_roles"] = gr
+    if cfg["enabled"] and not (cfg["issuer"] and cfg["client_id"]):
+        return err("L'émetteur et l'identifiant client sont requis pour activer la connexion.",
+                   "The issuer and client ID are required to enable sign-in.")
+    return cfg, None
+
+@app.route("/api/oidc", methods=["GET"])
+@permission_required("users.manage")
+def api_oidc_get():
+    if not is_full_admin(current_user()):
+        return _forbidden()
+    return jsonify({"ok": True, "oidc": _oidc_public(oidc_config()),
+                    "redirect_uri": url_for("oidc_callback", _external=True)})
+
+@app.route("/api/oidc", methods=["POST"])
+@permission_required("users.manage")
+def api_oidc_save():
+    if not is_full_admin(current_user()):
+        return _forbidden()
+    cfg, err = _oidc_clean(request.get_json(silent=True) or {}, oidc_config())
+    if err:
+        return jsonify({"ok": False, "msg": err}), 400
+    _cfg_update(oidc=cfg)
+    _oidc_meta.clear()
+    return jsonify({"ok": True, "oidc": _oidc_public(cfg), "msg": M("Connexion unique enregistrée.", "Single sign-on saved.")})
+
+@app.route("/api/oidc/test", methods=["POST"])
+@permission_required("users.manage")
+def api_oidc_test():
+    """Interroge le document de découverte de l'émetteur saisi (sans rien enregistrer)."""
+    if not is_full_admin(current_user()):
+        return _forbidden()
+    issuer = str((request.get_json(silent=True) or {}).get("issuer") or oidc_config()["issuer"]).strip()
+    if not _oidc_url_ok(issuer):
+        return jsonify({"ok": False, "msg": M("Adresse de l'émetteur invalide (https:// attendu).",
+                                              "Invalid issuer address (https:// expected).")}), 400
+    try:
+        meta = oidc_discover(issuer, fresh=True)
+    except OidcError as e:
+        return jsonify({"ok": False, "msg": M(f"Échec : {e.detail}", f"Failed: {e.detail}")})
+    return jsonify({"ok": True, "msg": M("Fournisseur joignable.", "Provider reachable."),
+                    "endpoints": {k: meta.get(k) for k in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint")}})
 
 # ── State ─────────────────────────────────────────────────────────────────────
 def load_state():
@@ -1659,15 +2476,19 @@ def install_from_archive(tmp_path, version, log_fn):
 def index():
     # État initial fourni avec la page : l'interface s'affiche sans attendre
     # d'aller-retour vers l'API (détection en cache, pas une découverte forcée).
-    boot = {"instances": detect_frp(force=False), "in_docker": IN_DOCKER,
-            "nicknames": MGR_CFG.get("nicknames", {}),
-            "has_password": bool(MGR_CFG.get("password_hash"))}
+    user = current_user()
+    can_view = user_can(user, "instances.view")
+    boot = {"instances": filter_instances(detect_frp(force=False), user) if can_view else {},
+            "in_docker": IN_DOCKER,
+            "nicknames": filter_instances(MGR_CFG.get("nicknames", {}), user) if can_view else {},
+            "has_password": bool(MGR_CFG.get("password_hash")),
+            "me": _me_view(user)}
     return render_template("index.html", panel_version=PANEL_VERSION, boot=boot)
 
 @app.route("/api/detect")
-@login_required
+@permission_required("instances.view")
 def api_detect():
-    return jsonify({"ok": True, "instances": detect_frp(force=True), "in_docker": IN_DOCKER})
+    return jsonify({"ok": True, "instances": filter_instances(detect_frp(force=True), current_user()), "in_docker": IN_DOCKER})
 
 def _get_frp_installed_version():
     """
@@ -1696,9 +2517,9 @@ def _get_frp_installed_version():
     return None
 
 @app.route("/api/status")
-@login_required
+@permission_required("instances.view")
 def api_status():
-    instances = detect_frp(force=False)
+    instances = filter_instances(detect_frp(force=False), current_user())
     state     = load_state()
     return jsonify({
         "ok": True, "instances": instances,
@@ -1707,7 +2528,7 @@ def api_status():
     })
 
 @app.route("/api/service/<iid>/<action>", methods=["POST"])
-@login_required
+@permission_required("instances.control")
 def api_service_action(iid, action):
     detect_frp(force=False)
     if iid not in INSTANCES:
@@ -1801,7 +2622,7 @@ def _config_users(path, except_iid):
     return users
 
 @app.route("/api/instance/<iid>/delete-info")
-@login_required
+@permission_required("instances.delete")
 def api_instance_delete_info(iid):
     """Ce que la suppression d'un container emporterait (affiché dans la confirmation)."""
     detect_frp(force=False)
@@ -1860,7 +2681,7 @@ def _delete_container(iid, inst, delete_image, delete_config):
     return True, msg, 200
 
 @app.route("/api/instance/<iid>", methods=["DELETE"])
-@login_required
+@permission_required("instances.delete")
 def api_instance_delete(iid):
     detect_frp(force=True)
     if iid not in INSTANCES:
@@ -1922,7 +2743,7 @@ def api_instance_delete(iid):
     return jsonify({"ok": True, "msg": M(f"Supprimé : {', '.join(done)}", f"Deleted: {', '.join(done)}")})
 
 @app.route("/api/config/<iid>", methods=["GET"])
-@login_required
+@permission_required("config.read")
 def api_config_get(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
@@ -1945,7 +2766,7 @@ def api_config_get(iid):
     return jsonify({"ok": True, "content": cfg.read_text(), "exists": True})
 
 @app.route("/api/config/<iid>", methods=["POST"])
-@login_required
+@permission_required("config.write")
 def api_config_save(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
@@ -2052,7 +2873,7 @@ def write_instance_config(inst, content_str):
     return _write_config_file(inst["config"], content_str)
 
 @app.route("/api/logs/<iid>")
-@login_required
+@permission_required("logs.view")
 def api_logs(iid):
     detect_frp(force=False)
     if iid not in INSTANCES:
@@ -2110,7 +2931,7 @@ def _pump(live):
     return q
 
 @app.route("/api/logs/stream/<iid>")
-@login_required
+@permission_required("logs.view")
 def api_logs_stream(iid):
     """Journal en direct en SSE — repli quand le WebSocket n'est pas disponible."""
     detect_frp(force=False)
@@ -2144,11 +2965,24 @@ def _same_origin():
     netloc = origin.split("://", 1)[-1].rstrip("/")
     return netloc in {request.host, request.headers.get("X-Forwarded-Host", "")}
 
-def _ws_authenticated(ws):
-    if not _session_valid() or not _same_origin():
+def _ws_authenticated(ws, perm, iid=None):
+    """→ fonction qui renvoie la fiche à jour du compte (None s'il a perdu le
+    droit entre-temps), ou None si la connexion est refusée d'emblée."""
+    user = current_user()
+    if not user or not _same_origin() or not user_can(user, perm) or (iid is not None and not instance_allowed(user, iid)):
         ws.close(reason=1008, message=M("Non authentifié", "Not authenticated"))
-        return False
-    return True
+        return None
+    uid, fp = user["id"], session.get("pwfp", "")
+    checked = {"at": time.time(), "user": user}
+
+    def still_allowed():
+        if time.time() - checked["at"] >= 5:
+            u = all_users().get(uid)
+            ok = (u and u.get("enabled", True) and hmac.compare_digest(fp.encode(), _session_fingerprint(u).encode())
+                  and user_can(u, perm) and (iid is None or instance_allowed(u, iid)))
+            checked.update(at=time.time(), user=u if ok else None)
+        return checked["user"]
+    return still_allowed
 
 if sock:
     @sock.route("/ws/status")
@@ -2156,13 +2990,18 @@ if sock:
         """État des instances poussé au navigateur : vérifié toutes les 2 s côté
         serveur (et aussitôt après une action), envoyé seulement s'il a changé.
         Remplace l'appel périodique de /api/status par l'interface."""
-        if not _ws_authenticated(ws):
+        allowed = _ws_authenticated(ws, "instances.view")
+        if not allowed:
             return
         last, last_sent = None, time.time()
         try:
             while ws.connected:
+                user = allowed()
+                if not user:
+                    ws.close(reason=1008, message=M("Accès retiré", "Access revoked"))
+                    break
                 try:
-                    payload = json.dumps({"instances": detect_frp(force=False), "in_docker": IN_DOCKER},
+                    payload = json.dumps({"instances": filter_instances(detect_frp(force=False), user), "in_docker": IN_DOCKER},
                                          sort_keys=True, default=str)
                 except Exception:
                     payload = None
@@ -2180,7 +3019,8 @@ if sock:
     @sock.route("/ws/logs/<iid>")
     def ws_logs(ws, iid):
         """Journal en direct par WebSocket : une ligne par message texte."""
-        if not _ws_authenticated(ws):
+        allowed = _ws_authenticated(ws, "logs.view", iid)
+        if not allowed:
             return
         detect_frp(force=False)
         inst = INSTANCES.get(iid)
@@ -2194,6 +3034,9 @@ if sock:
             # Attente avec délai : on s'aperçoit de la fermeture de l'onglet
             # même quand le journal reste silencieux.
             while ws.connected:
+                if not allowed():
+                    ws.close(reason=1008, message=M("Accès retiré", "Access revoked"))
+                    break
                 try:
                     line = lines.get(timeout=1)
                 except queue.Empty:
@@ -2211,23 +3054,29 @@ if sock:
             live.close()
 
 @app.route("/api/manager/config", methods=["GET"])
-@login_required
+@permission_required("settings.manage")
 def api_manager_config_get():
-    safe = {k: v for k, v in MGR_CFG.items() if k not in ("password_hash","secret_key","webhooks")}
+    safe = {k: v for k, v in MGR_CFG.items() if k not in ("password_hash", "secret_key", "webhooks", "users", "oidc", "firewall")}
+    safe["is_owner"] = current_user()["id"] == OWNER_ID
     safe["has_password"] = bool(MGR_CFG.get("password_hash"))
     return jsonify({"ok": True, "config": safe})
 
 @app.route("/api/manager/config", methods=["POST"])
-@login_required
+@permission_required("settings.manage")
 def api_manager_config_set():
     global MGR_CFG
     data = request.get_json(silent=True) or {}
     cfg  = dict(MGR_CFG)
+    if ("username" in data or data.get("new_password")) and current_user()["id"] != OWNER_ID:
+        return _forbidden(M("Seul le propriétaire change ses identifiants ici.",
+                            "Only the owner changes their credentials here."))
     if "username" in data:
         user = str(data["username"]).strip()
         if not _USERNAME_RE.fullmatch(user):
             return jsonify({"ok": False, "msg": M("Identifiant invalide (1 à 64 caractères).",
                                               "Invalid username (1 to 64 characters).")}), 400
+        if _name_taken(user, except_uid=OWNER_ID):
+            return jsonify({"ok": False, "msg": M("Cet identifiant est déjà pris.", "This username is already taken.")}), 409
         cfg["username"] = user
     if "bind_host" in data:
         host = str(data["bind_host"]).strip()
@@ -2265,12 +3114,12 @@ def api_manager_config_set():
                                          "Saved. Restart frp-manager to apply bind_host/port.")})
 
 @app.route("/api/nicknames", methods=["GET"])
-@login_required
+@permission_required("instances.view")
 def api_nicknames_get():
-    return jsonify({"ok": True, "nicknames": MGR_CFG.get("nicknames", {})})
+    return jsonify({"ok": True, "nicknames": filter_instances(MGR_CFG.get("nicknames", {}), current_user())})
 
 @app.route("/api/nickname/<iid>", methods=["POST"])
-@login_required
+@permission_required("instances.control")
 def api_nickname_set(iid):
     global MGR_CFG
     if not valid_instance_id(iid):
@@ -2351,7 +3200,7 @@ def panel_is_prerelease(fresh=False):
     return is_prerelease_version(PANEL_VERSION) or github_release_is_prerelease(PANEL_VERSION, fresh) is True
 
 @app.route("/api/panel/version")
-@login_required
+@permission_required("updates.view")
 def api_panel_version():
     """Retourne la version actuelle du panel et vérifie si une mise à jour est dispo.
     Canal stable : releases uniquement. Pré-release en installation classique :
@@ -2386,7 +3235,7 @@ def _panel_log(msg):
     panel_update_log.append(f"[{ts}] {msg}")
 
 @app.route("/api/panel/update", methods=["POST"])
-@login_required
+@permission_required("updates.panel")
 def api_panel_update():
     """Télécharge la dernière release du panel et relance frp-manager."""
     if "VOTRE_USER" in PANEL_GITHUB_REPO:
@@ -2557,12 +3406,12 @@ def api_panel_update():
     return jsonify({"ok": True})
 
 @app.route("/api/panel/update/log")
-@login_required
+@permission_required("updates.view")
 def api_panel_update_log():
     return jsonify({"ok": True, "lines": panel_update_log})
 
 @app.route("/api/connectivity")
-@login_required
+@permission_required("updates.view")
 def api_connectivity():
     results = {}
     sources = build_version_sources()
@@ -2577,7 +3426,7 @@ def api_connectivity():
     return jsonify({"ok": True, "sources": results})
 
 @app.route("/api/update/check")
-@login_required
+@permission_required("updates.view")
 def api_update_check():
     version, tag, source = _github_cached("frp", fetch_latest_version, fresh=request.args.get("fresh") == "1")
     if not version:
@@ -2590,7 +3439,7 @@ def api_update_check():
                     "source": source, "update_available": installed != version if installed else True})
 
 @app.route("/api/update/install", methods=["POST"])
-@login_required
+@permission_required("updates.install")
 def api_update_install():
     if not update_lock.acquire(blocking=False):
         return jsonify({"ok": False, "msg": M("Mise à jour déjà en cours", "An update is already running")})
@@ -2620,7 +3469,7 @@ def api_update_install():
     return jsonify({"ok": True})
 
 @app.route("/api/update/upload", methods=["POST"])
-@login_required
+@permission_required("updates.install")
 def api_update_upload():
     if not update_lock.acquire(blocking=False):
         return jsonify({"ok": False, "msg": M("Mise à jour déjà en cours", "An update is already running")})
@@ -2647,7 +3496,7 @@ def api_update_upload():
     return jsonify({"ok": True})
 
 @app.route("/api/update/log")
-@login_required
+@permission_required("updates.view")
 def api_update_log():
     return jsonify({"ok": True, "lines": update_log_buf})
 
@@ -2823,7 +3672,7 @@ def _get_docker_frpc_config(container_name):
     return None
 
 @app.route("/api/ports")
-@login_required
+@permission_required("ports.view")
 def api_ports():
     instances = detect_frp(force=False)
     ports = []
@@ -2855,7 +3704,7 @@ def api_ports():
     return jsonify({"ok": True, "ports": with_port_labels(ports), "ufw_available": ufw_ok})
 
 @app.route("/api/ports/open", methods=["POST"])
-@login_required
+@permission_required("ports.manage")
 def api_ports_open():
     data = request.get_json() or {}
     try:
@@ -3807,7 +4656,7 @@ def _client_ip():
     return None if ip.is_loopback else str(ip)
 
 @app.route("/api/firewall", methods=["GET"])
-@login_required
+@permission_required("firewall.view")
 def api_firewall_get():
     detect_frp(force=False)
     has_frps = bool(_frps_instances())
@@ -3840,7 +4689,7 @@ _NFT_INSTALLERS = [
 ]
 
 @app.route("/api/firewall/install", methods=["POST"])
-@login_required
+@permission_required("firewall.manage")
 def api_firewall_install():
     """Installe nftables sur la machine (l'hôte en Docker) avec son gestionnaire de paquets."""
     if run_host(["nft", "--version"])[0]:
@@ -3867,7 +4716,7 @@ def api_firewall_install():
                                           "install nftables by hand.")}), 400
 
 @app.route("/api/firewall", methods=["POST"])
-@login_required
+@permission_required("firewall.manage")
 def api_firewall_save():
     global MGR_CFG
     detect_frp(force=False)
@@ -3906,7 +4755,7 @@ def api_firewall_save():
                            else M("Pare-feu désactivé : plus aucun filtrage", "Firewall disabled: no more filtering")})
 
 @app.route("/api/firewall/test", methods=["POST"])
-@login_required
+@permission_required("firewall.view")
 def api_firewall_test():
     """Ce que les règles (brouillon compris) feraient d'une adresse."""
     detect_frp(force=False)
@@ -3929,7 +4778,7 @@ def api_firewall_test():
     return jsonify({"ok": True, "verdicts": with_port_labels(verdicts)})
 
 @app.route("/api/firewall/lists")
-@login_required
+@permission_required("firewall.view")
 def api_firewall_lists():
     """Catalogue des listes communautaires (retéléchargé s'il a plus de 10 min)."""
     cache, err = _lists_get(0 if request.args.get("fresh") == "1" else 600)
@@ -3938,7 +4787,7 @@ def api_firewall_lists():
                     "browse_url": f"https://github.com/{PANEL_GITHUB_REPO}/tree/{FW_LISTS_BRANCH}"})
 
 @app.route("/api/firewall/lists/publish", methods=["POST"])
-@login_required
+@permission_required("firewall.manage")
 def api_firewall_lists_publish():
     """Prépare la proposition d'une liste au catalogue : l'entrée telle que les
     panels l'accepteront, et le lien d'une issue GitHub pré-remplie. Rien n'est
@@ -4002,7 +4851,7 @@ def _fw_blocked_payload():
             "available": _fw_seen_ok}
 
 @app.route("/api/firewall/blocked")
-@login_required
+@permission_required("firewall.view")
 def api_firewall_blocked():
     """Repli de /ws/firewall quand le WebSocket ne passe pas."""
     return jsonify({**_fw_blocked_payload(), "now": int(time.time())})
@@ -4370,7 +5219,7 @@ def _webhook_normalize(raw, old=None):
             "events": events, "instances": instances, "lang": lang, "cooldown": cooldown, "template": template}
 
 @app.route("/api/webhooks", methods=["GET"])
-@login_required
+@permission_required("webhooks.view")
 def api_webhooks_get():
     with _webhook_lock:
         history = list(reversed(_webhook_history))
@@ -4380,7 +5229,7 @@ def api_webhooks_get():
                     "formats": list(WEBHOOK_FORMATS)})
 
 @app.route("/api/webhooks", methods=["POST"])
-@login_required
+@permission_required("webhooks.manage")
 def api_webhooks_save():
     global MGR_CFG
     raws = (request.get_json(silent=True) or {}).get("webhooks")
@@ -4397,7 +5246,7 @@ def api_webhooks_save():
                     "msg": M("Webhooks enregistrés", "Webhooks saved")})
 
 @app.route("/api/webhooks/test", methods=["POST"])
-@login_required
+@permission_required("webhooks.manage")
 def api_webhooks_test():
     """Envoie une notification d'essai au webhook décrit (enregistré ou en cours de saisie)."""
     raw = (request.get_json(silent=True) or {}).get("webhook")
