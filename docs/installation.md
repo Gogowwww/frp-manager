@@ -73,7 +73,8 @@ sudo apt install frp-manager
 
 Updates then come with `sudo apt update && sudo apt upgrade` (the panel's
 **Update** button reminds you). To follow pre-releases, replace `stable` with
-`testing` in `/etc/apt/sources.list.d/frp-manager.list`.
+`testing` in `/etc/apt/sources.list.d/frp-manager.list` (`dev`: one package per
+development commit, for testing only).
 
 The package installs `/usr/bin/frp-manager` and the `frp-manager` service, then
 does what `install.sh` does: `frps` and `frpc` services (created, not started),

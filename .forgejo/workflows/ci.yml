@@ -1,16 +1,28 @@
 # Forgejo Actions : intégration continue du panel Go, à chaque push (toutes
-# branches) et sur les pull requests. Mêmes étapes que release.yml, sans rien
-# publier : tests Go (go vet, go test, gofmt), programme des trois
-# architectures, archive frp-manager.zip et paquets .deb.
+# branches) et sur les pull requests. Mêmes étapes que release.yml : tests Go
+# (go vet, go test, gofmt), programme des trois architectures, archive
+# frp-manager.zip et paquets .deb.
+#
+# Sur main seulement : les paquets partent dans le canal « dev » du dépôt APT
+# (comme l'image Docker dev-<sha>), puis s'installent par apt dans des
+# conteneurs Debian 12 et Ubuntu 24.04 neufs : dépôt, paquet et démarrage du
+# panel vérifiés de bout en bout. Les canaux « testing » et « stable » restent
+# ceux des releases (release.yml, promote.yml).
+#
+# Les résultats sont aussi publiés en statuts du commit (contextes ci-*).
 #
 # Prérequis : runner Forgejo avec le label « docker » et
-# container.valid_volumes: [/var/run/docker.sock] (comme release.yml).
+# container.valid_volumes: [/var/run/docker.sock] (comme release.yml) ;
+# secret FORGEJO_PACKAGES_TOKEN (jeton Forgejo, portée write:package).
 
 name: CI
 
 on:
   push:
   pull_request:
+
+env:
+  APT_REPO: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/debian
 
 jobs:
   go:
@@ -30,6 +42,15 @@ jobs:
             clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
           git -C src checkout --quiet "${{ github.sha }}"
           git -C src log -1 --format='Commit %h : %s'
+          # Versions de cet instantané : dev-<sha> pour le panel (comme l'image
+          # Docker), <dernière release>+dev.<n>.g<sha> pour le paquet (plus récent
+          # que la dernière release, plus ancien que la suivante)
+          SHORT=$(git -C src rev-parse --short=7 HEAD)
+          BASE=$(git -C src describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
+          {
+            echo "PANEL_VERSION=dev-$SHORT"
+            echo "DEB_VERSION=${BASE:-0.0.0}+dev.${{ github.run_number }}.g$SHORT"
+          } >> "$GITHUB_ENV"
           # Builder buildx propre au job ; network=host : réseau de l'hôte, nécessaire sur ce homelab
           BUILDER="frpm-ci-$(date +%s)-$$"
           docker buildx create --name "$BUILDER" --driver docker-container \
@@ -45,59 +66,94 @@ jobs:
       - name: Programme (trois architectures)
         run: |
           set -eu
+          trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true' EXIT
           docker buildx build --builder "$BUILDER" --network=host --allow network.host \
-            --target binaries --build-arg PANEL_VERSION=0.0.0-ci --output type=local,dest=ci/bin src
+            --target binaries --build-arg PANEL_VERSION="$PANEL_VERSION" --output type=local,dest=ci/bin src
           ls -l ci/bin
 
       - name: Archive et paquets .deb
         run: |
           set -eu
-          trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true' EXIT
-          bash_ok=$(command -v bash || true)
           sh -n src/packaging/deb/postinst && sh -n src/packaging/deb/prerm && sh -n src/packaging/deb/postrm
-          [ -z "$bash_ok" ] || bash -n src/panel/install.sh
           mkdir -p ci/frp-manager/bin
           cp ci/bin/frp-manager-linux-* ci/frp-manager/bin/
           cp src/panel/install.sh ci/frp-manager/
-          sed "s/__VERSION__/0.0.0-ci/" src/packaging/python-bridge/app.py > ci/frp-manager/app.py
+          sed "s/__VERSION__/$PANEL_VERSION/" src/packaging/python-bridge/app.py > ci/frp-manager/app.py
           (cd ci && zip -qr frp-manager.zip frp-manager && ls -l frp-manager.zip)
-          sh src/packaging/deb/build-deb.sh 0.0.0-ci ci/bin ci/deb
+          sh src/packaging/deb/build-deb.sh "$DEB_VERSION" ci/bin ci/deb
           for f in ci/deb/*.deb; do
             dpkg-deb --field "$f" Package Version Architecture | tr '\n' ' '; echo
-            dpkg-deb --contents "$f" | awk '{print "   " $6}' | grep -v '/$'
           done
 
-      # Le jeton automatique du workflow peut-il publier dans le dépôt APT ? (sinon
-      # release.yml a besoin du secret FORGEJO_PACKAGES_TOKEN). Essai sur une
-      # distribution « ci » à part, nettoyée aussitôt ; résultat en statut du commit.
-      - name: Dépôt APT, droit de publication
-        if: github.ref == 'refs/heads/main'
+      - name: Dépôt APT, canal dev
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          APT_OWNER: ${{ github.repository_owner }}
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+        run: sh src/packaging/deb/publish-apt.sh dev ci/deb/*.deb
+
+      - name: Statut
+        if: always()
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PKG_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
         run: |
-          set -u
-          API="${{ github.server_url }}/api/packages/${{ github.repository_owner }}/debian"
-          try() {
-            [ -n "$1" ] || { echo "absent"; return; }
-            code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: token $1" \
-              --upload-file ci/deb/frp-manager_0.0.0-ci_amd64.deb "$API/pool/ci/main/upload")
-            curl -s -o /dev/null -X DELETE -H "Authorization: token $1" "$API/pool/ci/main/frp-manager/0.0.0-ci/amd64"
-            echo "$code"
-          }
-          AUTO=$(try "$TOKEN")
-          PERSO=$(try "${PKG_TOKEN:-}")
-          echo "jeton automatique : HTTP $AUTO ; FORGEJO_PACKAGES_TOKEN : $PERSO"
-          case "$AUTO$PERSO" in *201*|*409*) STATE=success ;; *) STATE=failure ;; esac
+          STATE=success; DESC="tests, programme, paquets $DEB_VERSION"
+          [ "${{ job.status }}" = success ] || { STATE=failure; DESC="échec : voir le journal du job go"; }
           curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-            -d "{\"state\": \"$STATE\", \"context\": \"apt-publish\", \"description\": \"automatique: $AUTO, FORGEJO_PACKAGES_TOKEN: $PERSO\"}" \
+            -d "{\"state\": \"$STATE\", \"context\": \"ci-go\", \"description\": \"$DESC\"}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
 
-      - name: Statut en cas d'échec
-        if: failure()
+  # Installation par apt, comme sur une vraie machine : clé, source, paquet,
+  # panel qui répond, puis désinstallation complète.
+  apt:
+    needs: go
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: docker
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "ubuntu:24.04"]
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: apt install frp-manager (canal dev)
+        run: |
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq curl ca-certificates iproute2 procps >/dev/null
+          install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL "$APT_REPO/repository.key" -o /etc/apt/keyrings/frp-manager.asc
+          echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $APT_REPO dev main" > /etc/apt/sources.list.d/frp-manager.list
+          apt-get update -qq
+          apt-cache policy frp-manager
+          apt-get install -y frp-manager
+          frp-manager --version
+          test -f /etc/frp/frps.toml && grep bindPort /etc/frp/frps.toml
+          test -f /etc/systemd/system/frps.service
+          # Pas de systemd dans le conteneur : le panel est lancé à la main
+          frp-manager > /tmp/panel.log 2>&1 &
+          code=000
+          for i in $(seq 1 30); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8765/setup || true)
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          cat /tmp/panel.log
+          [ "$code" = 200 ] || { echo "le panel ne répond pas (HTTP $code)"; exit 1; }
+          echo "panel : https://127.0.0.1:8765/setup → HTTP 200"
+          pkill frp-manager || true
+          apt-get purge -y frp-manager
+          [ ! -e /usr/bin/frp-manager ] && [ ! -e /etc/frp-manager ] && echo "désinstallation complète"
+
+      - name: Statut
+        if: always()
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          STATE=success; DESC="apt install, panel démarré, apt purge"
+          [ "${{ job.status }}" = success ] || { STATE=failure; DESC="échec : voir le journal du job apt"; }
           curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-            -d '{"state": "failure", "context": "ci-detail", "description": "échec : voir le journal du job CI"}' \
+            -d "{\"state\": \"$STATE\", \"context\": \"ci-apt ${{ matrix.image }}\", \"description\": \"$DESC\"}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
