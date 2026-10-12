@@ -2,6 +2,7 @@
 *
 !go.mod
 !go.sum
+!internal/
 !panel/*.go
 !panel/templates/
 !panel/testdata/

@@ -1,6 +1,6 @@
 # Seul script Python du dépôt : la passerelle qui fait passer les installations
 # Python au programme Go (packaging/python-bridge). Le panel et le site sont en
-# Go (go test ./panel ./website).
+# Go (go test ./...).
 
 # Linter des scripts (lancé par la CI) : erreurs réelles d'abord, pas le style.
 [tool.ruff]

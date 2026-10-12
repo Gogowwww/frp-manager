@@ -20,11 +20,11 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go vet
-        run: go vet ./panel ./website
+        run: go vet ./...
       - name: Tests
-        run: go test -count=1 ./panel ./website
+        run: go test -count=1 ./...
       - name: gofmt
-        run: test -z "$(gofmt -l panel website)" || { gofmt -l panel website; exit 1; }
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: Compilation (amd64, arm64, armv7)
         run: |
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./panel
@@ -39,7 +39,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./panel
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   scripts:
     runs-on: ubuntu-latest

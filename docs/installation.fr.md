@@ -261,10 +261,11 @@ Le format générique accepte un modèle JSON avec les variables `{{event}}`, `{
 `{"content": "{{title}} : {{message}}"}`. Avec un secret de signature, chaque requête porte
 `X-FRPManager-Signature: sha256=<HMAC-SHA256 du corps>` :
 
-```python
-import hashlib, hmac
-expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-ok = hmac.compare_digest(expected, request.headers["X-FRPManager-Signature"])
+```go
+mac := hmac.New(sha256.New, []byte(secret)) // crypto/hmac, crypto/sha256
+mac.Write(body)
+expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+ok := hmac.Equal([]byte(expected), []byte(r.Header.Get("X-FRPManager-Signature")))
 ```
 
 Les envois passent par une file et sont retentés trois fois en cas d'erreur réseau, de 5xx ou de 429 ; les
@@ -297,7 +298,9 @@ Dépôt
         js/                Application (modules ES, sans étape de build)
         locales/fr.js, en.js  Textes de l'interface
   docs/                    Documentation, politique de sécurité, guide de contribution
-  website/                 Site du projet et démo en ligne (website/demo/)
+  website/                 Site du projet et démo en ligne (website/demo/) : go run ./website
+  internal/                Code partagé (règle des adresses publiques)
+  tools/blocklists/        Robot des listes communautaires du pare-feu
   packaging/               Paquet .deb, passage depuis une version Python
   Dockerfile, docker-compose.yml, go.mod
 

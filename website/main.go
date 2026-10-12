@@ -7,22 +7,22 @@
 //	go run ./website serve [dossier]              (défaut : site/ à côté du programme, ou $DEMO_SITE)
 //	go run ./website shots [--url http://127.0.0.1:18231] [--browser chemin]
 //
-// --bundle et --zip produisent l'application à héberger : site/, le serveur
-// (programme Go, amd64 et arm64) et app.py qui le lance, pour un hébergement qui
-// démarre « python3 app.py » (cloudpod Webstrator, egg Python Pterodactyl).
-// C'est ce que publie .forgejo/workflows/demo.yml dans le dépôt frp-manager-demo.
+// --bundle et --zip produisent l'application à héberger : site/ et un module Go
+// autonome qui le sert, lancé par « go run . » (cloudpod Webstrator, egg Go
+// Pterodactyl) ou compilé par « go build ». C'est ce que publie
+// .forgejo/workflows/demo.yml dans le dépôt frp-manager-demo.
 
 package main
 
 import (
 	"archive/zip"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -89,7 +89,7 @@ func runBuild(cmd string, args []string) error {
 	out := fs.String("out", "", "dossier produit")
 	version := fs.String("version", "", "version affichée (défaut : dernier tag)")
 	siteURL := fs.String("site-url", "https://frp-manager.gogow.fr", "adresse publique")
-	bundle := fs.String("bundle", "", "application à héberger : site/ + serveur + app.py (contenu remplacé)")
+	bundle := fs.String("bundle", "", "application à héberger : site/ + module Go qui le sert (contenu remplacé)")
 	zipOut := fs.String("zip", "", "même application, en archive")
 	fs.Parse(args)
 	root, err := findRoot()
@@ -114,10 +114,10 @@ func runBuild(cmd string, args []string) error {
 		return err
 	}
 	if *bundle != "" {
-		if err := makeBundle(root, *out, *bundle); err != nil {
+		if err := makeBundle(*out, *bundle); err != nil {
 			return err
 		}
-		fmt.Printf("[%s] application -> %s (lancer : python3 app.py, ou ./frp-manager-site-linux-amd64 serve site)\n", cmd, *bundle)
+		fmt.Printf("[%s] application -> %s (lancer : go run .)\n", cmd, *bundle)
 	}
 	if *zipOut != "" {
 		tmp, err := os.MkdirTemp("", "frpm-site-")
@@ -125,7 +125,7 @@ func runBuild(cmd string, args []string) error {
 			return err
 		}
 		defer os.RemoveAll(tmp)
-		if err := makeBundle(root, *out, tmp); err != nil {
+		if err := makeBundle(*out, tmp); err != nil {
 			return err
 		}
 		if err := zipDir(tmp, *zipOut); err != nil {
@@ -160,25 +160,61 @@ func runSEO(args []string) error {
 	return nil
 }
 
-// app.py de l'application hébergée : l'hébergement lance « python3 app.py »,
-// qui passe la main au serveur Go de la bonne architecture.
-const bundleAppPy = `#!/usr/bin/env python3
-"""Démarre le serveur du site FRP Manager : le programme Go placé à côté de ce
-fichier sert site/ (port $PORT ou $SERVER_PORT, 8080 par défaut). L'hébergement
-lance « python3 app.py » : ce fichier ne fait que passer la main."""
+// Application hébergée : un module Go autonome (bibliothèque standard
+// uniquement) qui sert site/. L'hébergement le lance avec « go run . » ou le
+// compile avec « go build » ; serve.go est le même fichier que celui de ce
+// programme.
 
-import os
-import platform
+//go:embed serve.go
+var serveSource []byte
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ARCH = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower(), "amd64")
-EXE = os.path.join(HERE, "frp-manager-site-linux-" + ARCH)
-os.chmod(EXE, 0o755)
-os.execv(EXE, [EXE, "serve", os.path.join(HERE, "site")])
+const bundleGoMod = "module frp-manager-site\n\ngo 1.22\n"
+
+const bundleMain = `// Site de FRP Manager (page d'accueil, documentation, démo en ligne), servi
+// depuis le dossier site/ : port $PORT, ou $SERVER_PORT, 8080 par défaut.
+//
+//	go run .
+//	go build -o frp-manager-site . && ./frp-manager-site [dossier]
+//
+// Construit automatiquement depuis le dépôt frp-manager (go run ./website build --bundle).
+
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+func main() {
+	dir := os.Getenv("DEMO_SITE")
+	if len(os.Args) > 1 {
+		dir = os.Args[1]
+	}
+	if dir == "" {
+		dir = findSite()
+	}
+	if err := serveSite(dir); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// findSite : site/ à côté du programme, sinon dans le dossier courant (« go run »
+// compile le programme dans un dossier temporaire).
+func findSite() string {
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "site")
+		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
+			return dir
+		}
+	}
+	return "site"
+}
 `
 
-// makeBundle : site/ (copie de out), app.py et le serveur compilé pour Linux.
-func makeBundle(root, out, bundle string) error {
+// makeBundle : site/ (copie de out) et le module Go qui le sert.
+func makeBundle(out, bundle string) error {
 	if err := emptyDir(bundle, ".git"); err != nil {
 		return err
 	}
@@ -192,17 +228,9 @@ func makeBundle(root, out, bundle string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(bundle, "app.py"), []byte(bundleAppPy), 0o755); err != nil {
-		return err
-	}
-	for _, arch := range []string{"amd64", "arm64"} {
-		build := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w",
-			"-o", filepath.Join(bundle, "frp-manager-site-linux-"+arch), "./website")
-		build.Dir = root
-		build.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+arch, "CGO_ENABLED=0")
-		build.Stdout, build.Stderr = os.Stdout, os.Stderr
-		if err := build.Run(); err != nil {
-			return fmt.Errorf("compilation du serveur (%s) : %w", arch, err)
+	for name, body := range map[string][]byte{"go.mod": []byte(bundleGoMod), "main.go": []byte(bundleMain), "serve.go": serveSource} {
+		if err := os.WriteFile(filepath.Join(bundle, name), body, 0o644); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -221,11 +249,7 @@ func zipDir(dir, target string) error {
 		}
 		rel, _ := filepath.Rel(dir, p)
 		h := &zip.FileHeader{Name: filepath.ToSlash(rel), Method: zip.Deflate}
-		mode := os.FileMode(0o644)
-		if strings.HasPrefix(filepath.Base(p), "frp-manager-site-") || filepath.Base(p) == "app.py" {
-			mode = 0o755
-		}
-		h.SetMode(mode)
+		h.SetMode(0o644)
 		w, err := zw.CreateHeader(h)
 		if err != nil {
 			return err

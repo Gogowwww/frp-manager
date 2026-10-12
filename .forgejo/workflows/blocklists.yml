@@ -4,7 +4,7 @@
 # « Mise à jour de la liste … » (préparées par le panel), les vérifie, ajoute
 # les listes acceptées au catalogue (branche « blocklists » du dépôt GitHub
 # public) et ferme chaque issue avec un commentaire. Le travail est fait par
-# sync_issues.py, sur cette branche.
+# le programme Go tools/blocklists de ce dépôt (mêmes règles que le panel).
 #
 # Prérequis : secret de dépôt GHCR_TOKEN (token GitHub classic, scope « repo »),
 # partagé avec release.yml.
@@ -23,7 +23,7 @@ jobs:
   sync:
     runs-on: docker
     container:
-      image: python:3.12-alpine
+      image: golang:1.26-alpine
     steps:
       - name: Ajouter les listes publiées
         env:
@@ -32,6 +32,10 @@ jobs:
           set -eu
           [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
           apk add --no-cache --quiet git
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet --depth 1 --branch "${{ github.ref_name }}" \
+            "${{ github.server_url }}/${{ github.repository }}.git" src
           export GIT_AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           rm -rf catalog
           git -c "http.https://github.com/.extraheader=$GIT_AUTH" clone --quiet --depth 1 \
@@ -39,4 +43,5 @@ jobs:
           cd catalog
           git config user.name "FRP Manager (listes)"
           git config user.email "Gogowwww@users.noreply.github.com"
-          python sync_issues.py
+          cd ../src
+          go run ./tools/blocklists -dir ../catalog sync

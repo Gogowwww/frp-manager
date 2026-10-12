@@ -50,7 +50,7 @@ titles, links and structured data. After a visible change to the interface,
 ## Before opening a pull request
 
 ```bash
-go vet ./... && go test ./... && gofmt -l panel website
+go vet ./... && go test ./... && gofmt -l .
 ruff check .        # Python bridge (packaging/python-bridge)
 ```
 

@@ -3,10 +3,10 @@
 #
 # À chaque push sur main qui touche l'interface, la démo, le site ou la
 # documentation, le générateur Go du site (go run ./website build) construit
-# l'application : site/ (la démo est dans site/demo/), le serveur Go pour Linux
-# amd64 et arm64, et app.py qui le lance. Il la publie sur la branche main du
-# dépôt administrator/frp-manager-demo. Le cloudpod Webstrator clone ce dépôt et
-# lance « python3 app.py » (ou directement ./frp-manager-site-linux-amd64 serve site).
+# l'application : site/ (la démo est dans site/demo/) et un module Go autonome
+# qui le sert (bibliothèque standard uniquement). Il la publie sur la branche
+# main du dépôt administrator/frp-manager-demo. Le cloudpod Go de Webstrator
+# clone ce dépôt et le lance (« go run . », ou « go build » puis le programme).
 #
 # Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
 # d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
@@ -75,9 +75,9 @@ jobs:
           Construit automatiquement depuis frp-manager (commit $SHA) par
           .forgejo/workflows/demo.yml : ne pas modifier ce dépôt à la main.
 
-          Lancer : \`python3 app.py\`, ou \`./frp-manager-site-linux-amd64 serve site\`
-          (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut). Le serveur est un
-          programme Go sans dépendance ; app.py ne fait que le lancer.
+          Lancer : \`go run .\`, ou \`go build -o frp-manager-site . && ./frp-manager-site\`
+          (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut). Module Go sans
+          dépendance (bibliothèque standard), Go 1.22 ou plus récent.
           EOF
 
           cd out

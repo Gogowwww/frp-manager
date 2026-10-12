@@ -51,7 +51,7 @@ la démo (Chrome, Edge ou Chromium requis).
 ## Avant d'ouvrir une pull request
 
 ```bash
-go vet ./... && go test ./... && gofmt -l panel website
+go vet ./... && go test ./... && gofmt -l .
 ruff check .        # passerelle Python (packaging/python-bridge)
 ```
 

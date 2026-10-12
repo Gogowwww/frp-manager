@@ -256,10 +256,11 @@ The generic format supports a JSON template with the variables `{{event}}`, `{{t
 `{"content": "{{title}}: {{message}}"}`. With a signing secret, each request carries
 `X-FRPManager-Signature: sha256=<HMAC-SHA256 of the body>`:
 
-```python
-import hashlib, hmac
-expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-ok = hmac.compare_digest(expected, request.headers["X-FRPManager-Signature"])
+```go
+mac := hmac.New(sha256.New, []byte(secret)) // crypto/hmac, crypto/sha256
+mac.Write(body)
+expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+ok := hmac.Equal([]byte(expected), []byte(r.Header.Get("X-FRPManager-Signature")))
 ```
 
 Sends are queued and retried three times on a network error, a 5xx or a 429; the last ones are listed on the
@@ -292,7 +293,9 @@ Repository
         js/                Application (ES modules, no build step)
         locales/fr.js, en.js  Interface texts
   docs/                    Documentation, security policy, contributing guide
-  website/                 Project website and live demo (website/demo/)
+  website/                 Project website and live demo (website/demo/): go run ./website
+  internal/                Shared code (public address rule)
+  tools/blocklists/        Robot for the firewall community lists
   packaging/               .deb package, move from a Python version
   Dockerfile, docker-compose.yml, go.mod
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,5 +92,30 @@ func TestBuildSiteAndSEO(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(f))); err != nil {
 			t.Errorf("%s absent", f)
 		}
+	}
+}
+
+// Application hébergée : un module Go autonome qui compile et sert site/.
+func TestBundle(t *testing.T) {
+	out, bundle := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(out, "index.html"), []byte("<h1>ok</h1>"), 0o644)
+	os.MkdirAll(filepath.Join(bundle, ".git"), 0o755)
+	os.WriteFile(filepath.Join(bundle, "app.py"), []byte("ancien"), 0o644)
+	if err := makeBundle(out, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Join(bundle, "app.py")) || !fileExists(filepath.Join(bundle, ".git")) {
+		t.Fatal("ancien contenu gardé ou .git supprimé")
+	}
+	for _, f := range []string{"go.mod", "main.go", "serve.go", "site/index.html"} {
+		if !fileExists(filepath.Join(bundle, filepath.FromSlash(f))) {
+			t.Fatalf("%s absent", f)
+		}
+	}
+	vet := exec.Command("go", "vet", ".")
+	vet.Dir = bundle
+	vet.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
+	if b, err := vet.CombinedOutput(); err != nil {
+		t.Fatalf("le module ne compile pas : %v\n%s", err, b)
 	}
 }

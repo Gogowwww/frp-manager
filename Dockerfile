@@ -11,6 +11,7 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS source
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+COPY internal/ internal/
 COPY panel/ panel/
 ARG PANEL_VERSION=unknown
 ENV CGO_ENABLED=0 LDFLAGS="-s -w -X main.buildVersion=${PANEL_VERSION}"
