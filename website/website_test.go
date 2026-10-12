@@ -107,12 +107,15 @@ func TestBundle(t *testing.T) {
 	if fileExists(filepath.Join(bundle, "app.py")) || !fileExists(filepath.Join(bundle, ".git")) {
 		t.Fatal("ancien contenu gardé ou .git supprimé")
 	}
-	for _, f := range []string{"go.mod", "main.go", "serve.go", "site/index.html"} {
+	if fileExists(filepath.Join(bundle, "serve.go")) {
+		t.Fatal("serve.go à part : « go run main.go » ne le compilerait pas")
+	}
+	for _, f := range []string{"go.mod", "main.go", "site/index.html"} {
 		if !fileExists(filepath.Join(bundle, filepath.FromSlash(f))) {
 			t.Fatalf("%s absent", f)
 		}
 	}
-	vet := exec.Command("go", "vet", ".")
+	vet := exec.Command("go", "vet", "main.go") // comme l'hébergement : go run main.go
 	vet.Dir = bundle
 	vet.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
 	if b, err := vet.CombinedOutput(); err != nil {

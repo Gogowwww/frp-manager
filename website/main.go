@@ -117,7 +117,7 @@ func runBuild(cmd string, args []string) error {
 		if err := makeBundle(*out, *bundle); err != nil {
 			return err
 		}
-		fmt.Printf("[%s] application -> %s (lancer : go run .)\n", cmd, *bundle)
+		fmt.Printf("[%s] application -> %s (lancer : go run main.go)\n", cmd, *bundle)
 	}
 	if *zipOut != "" {
 		tmp, err := os.MkdirTemp("", "frpm-site-")
@@ -161,31 +161,26 @@ func runSEO(args []string) error {
 }
 
 // Application hébergée : un module Go autonome (bibliothèque standard
-// uniquement) qui sert site/. L'hébergement le lance avec « go run . » ou le
-// compile avec « go build » ; serve.go est le même fichier que celui de ce
-// programme.
+// uniquement) qui sert site/, en un seul fichier main.go : l'hébergement peut
+// lancer « go run main.go » comme « go run . » ou « go build ». Le serveur est
+// serve.go, le même fichier que celui de ce programme.
 
 //go:embed serve.go
-var serveSource []byte
+var serveSource string
 
 const bundleGoMod = "module frp-manager-site\n\ngo 1.22\n"
 
-const bundleMain = `// Site de FRP Manager (page d'accueil, documentation, démo en ligne), servi
+const bundleHead = `// Site de FRP Manager (page d'accueil, documentation, démo en ligne), servi
 // depuis le dossier site/ : port $PORT, ou $SERVER_PORT, 8080 par défaut.
 //
-//	go run .
+//	go run main.go      (ou go run .)
 //	go build -o frp-manager-site . && ./frp-manager-site [dossier]
 //
 // Construit automatiquement depuis le dépôt frp-manager (go run ./website build --bundle).
 
-package main
+`
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-)
-
+const bundleMainFunc = `
 func main() {
 	dir := os.Getenv("DEMO_SITE")
 	if len(os.Args) > 1 {
@@ -213,6 +208,12 @@ func findSite() string {
 }
 `
 
+// bundleMain : main.go de l'application, serve.go compris (sans son commentaire d'en-tête).
+func bundleMain() string {
+	src := strings.ReplaceAll(serveSource, "\r\n", "\n")
+	return bundleHead + src[strings.Index(src, "package main"):] + bundleMainFunc
+}
+
 // makeBundle : site/ (copie de out) et le module Go qui le sert.
 func makeBundle(out, bundle string) error {
 	if err := emptyDir(bundle, ".git"); err != nil {
@@ -228,8 +229,8 @@ func makeBundle(out, bundle string) error {
 	if err != nil {
 		return err
 	}
-	for name, body := range map[string][]byte{"go.mod": []byte(bundleGoMod), "main.go": []byte(bundleMain), "serve.go": serveSource} {
-		if err := os.WriteFile(filepath.Join(bundle, name), body, 0o644); err != nil {
+	for name, body := range map[string]string{"go.mod": bundleGoMod, "main.go": bundleMain()} {
+		if err := os.WriteFile(filepath.Join(bundle, name), []byte(body), 0o644); err != nil {
 			return err
 		}
 	}

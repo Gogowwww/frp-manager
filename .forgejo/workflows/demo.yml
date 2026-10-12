@@ -6,7 +6,7 @@
 # l'application : site/ (la démo est dans site/demo/) et un module Go autonome
 # qui le sert (bibliothèque standard uniquement). Il la publie sur la branche
 # main du dépôt administrator/frp-manager-demo. Le cloudpod Go de Webstrator
-# clone ce dépôt et le lance (« go run . », ou « go build » puis le programme).
+# clone ce dépôt et le lance (« go run main.go » : tout le serveur tient dans main.go).
 #
 # Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
 # d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
