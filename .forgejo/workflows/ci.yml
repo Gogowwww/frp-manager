@@ -107,6 +107,45 @@ jobs:
             -d "{\"state\": \"$STATE\", \"context\": \"ci-go\", \"description\": \"$DESC\"}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
 
+  # Le reste du dépôt (le panel est testé par le job go, dans l'image) : site,
+  # robot des listes, code partagé, vulnérabilités connues des dépendances,
+  # syntaxe des scripts shell et de la passerelle Python.
+  outils:
+    runs-on: docker
+    container:
+      image: golang:1.26-alpine
+    steps:
+      - name: Vérifications
+        run: |
+          set -eu
+          apk add --no-cache --quiet git bash python3 curl
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
+          git -C src checkout --quiet "${{ github.sha }}"
+          cd src
+          git config --global user.name ci && git config --global user.email ci@frp-manager.invalid
+          test -z "$(gofmt -l .)" || { echo "gofmt :"; gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./internal/... ./tools/... ./website
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          bash -n panel/install.sh
+          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh; do
+            sh -n "$f"
+          done
+          python3 -m py_compile packaging/python-bridge/app.py
+
+      - name: Statut
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATE=success; DESC="gofmt, vet, tests (site, outils), govulncheck, scripts"
+          [ "${{ job.status }}" = success ] || { STATE=failure; DESC="échec : voir le journal du job outils"; }
+          curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"state\": \"$STATE\", \"context\": \"ci-outils\", \"description\": \"$DESC\"}" \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
+
   # Installation par apt, comme sur une vraie machine : clé, source, paquet,
   # panel qui répond, puis désinstallation complète.
   apt:

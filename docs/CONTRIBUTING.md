@@ -60,14 +60,36 @@ ruff check .        # Python bridge (packaging/python-bridge)
   accents, explicit names, no new dependency without a reason.
 - Add a test when you touch authentication, input validation or system
   commands.
-- System commands are always argument lists (never `shell=True` nor `sh -c`
+- System commands are always argument lists (`exec.Command`, never `sh -c`
   with interpolated data); every service or container name goes through
-  `valid_service_name` / `valid_container_name`.
+  `validServiceName` / `validContainerName`.
 - The interface only builds the DOM with `h()` (`panel/templates/assets/js/ui.js`),
   never with `innerHTML` on data. No emoji in the interface: icons are the
   embedded SVGs of `panel/templates/partials/icons.html`.
 - Update the "Unreleased" section of the changelog, in both languages:
   [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.fr.md](../CHANGELOG.fr.md).
+
+## Versions and releases
+
+Development happens on the project's Forgejo, where all continuous
+integration runs; GitHub is only used to publish (no GitHub Actions
+workflow).
+
+- **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
+  `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a
+  new feature (`0.2.0`), the last one for fixes only (`0.1.1`), the first one
+  for a change that breaks the configuration, the API or the installation
+  (`1.0.0`).
+- **Pre-release**: an annotated `vX.Y.Z` tag on the Forgejo main (after the
+  dated section of both CHANGELOGs) runs `release.yml`: program, `:X.Y.Z`
+  image, packages in the `testing` apt distribution, GitHub pre-release.
+- **Final release**: `promote.yml` (Actions → "Promouvoir une release", tag
+  `vX.Y.Z`) makes the same pre-release final, without rebuilding it: what was
+  tried is exactly what gets published (`:latest` image, `stable` apt
+  distribution, public main moved forward).
+- **Between releases**: `github.yml` (Actions → "Publier sur GitHub")
+  publishes the Forgejo main to the public main (documentation, translations,
+  CHANGELOG…), fast-forward only and only once the commit's CI has passed.
 
 ## Translating the panel
 

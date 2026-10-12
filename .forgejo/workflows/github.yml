@@ -1,0 +1,68 @@
+# Forgejo Actions : publication manuelle du main sur GitHub (dépôt public).
+#
+# Le main public n'avance d'ordinaire qu'à la promotion d'une release
+# (promote.yml). Ce workflow le publie entre deux releases, à la demande :
+# documentation, traductions, CHANGELOG… Toute la CI tourne sur Forgejo ;
+# GitHub ne sert qu'à publier (aucun workflow GitHub Actions).
+#
+# Lancement : Actions → « Publier sur GitHub » → Run workflow, ou via l'API
+# Forgejo (POST …/actions/workflows/github.yml/dispatches, ref main).
+#
+# Garde-fous : le commit doit avoir passé la CI (statuts ci-go et ci-outils) et le
+# main public doit être un ancêtre du main Forgejo : avance rapide seulement,
+# jamais de force-push. Les tags et releases restent l'affaire de release.yml.
+#
+# Prérequis : secret GHCR_TOKEN (token GitHub classic, scope « repo »),
+# partagé avec release.yml et promote.yml.
+
+name: Publier sur GitHub
+
+on:
+  workflow_dispatch:
+
+env:
+  GH_REPO: Gogowwww/frp-manager
+
+jobs:
+  publish:
+    runs-on: docker
+    container:
+      image: alpine:3.20
+    steps:
+      - name: Avancer le main public
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          [ -n "$GH_TOKEN" ] || { echo "Secret GHCR_TOKEN manquant"; exit 1; }
+          apk add --no-cache --quiet git curl jq
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token $TOKEN" \
+            clone --quiet --branch main "${{ github.server_url }}/${{ github.repository }}.git" src
+          SHA=$(git -C src rev-parse HEAD)
+          git -C src log -1 --format='Commit %h : %s'
+
+          # CI du commit, publiée en statuts : jobs go et outils (le statut le plus récent compte)
+          STATUSES=$(curl -sf -H "Authorization: token $TOKEN" \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/commits/$SHA/statuses?limit=50")
+          for CTX in ci-go ci-outils; do
+            STATE=$(echo "$STATUSES" | jq -r --arg c "$CTX" \
+              '[.[] | select(.context == $c)] | sort_by(.id) | last | (.status // .state // "absent")')
+            [ "$STATE" = success ] || { echo "CI de $SHA, $CTX : $STATE (attendre qu'elle passe, ou corriger)"; exit 1; }
+          done
+
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git -C src remote add public "https://github.com/$GH_REPO.git"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" fetch --quiet public main
+          if git -C src merge-base --is-ancestor "$SHA" public/main; then
+            echo "Déjà publié : le main public contient $SHA"
+            exit 0
+          fi
+          git -C src merge-base --is-ancestor public/main "$SHA" || {
+            echo "Le main public a des commits absents du main Forgejo : publication refusée (pas de force-push)"
+            exit 1
+          }
+          echo "Publié sur GitHub :"
+          git -C src log --oneline public/main.."$SHA"
+          git -C src -c "http.https://github.com/.extraheader=$AUTH" push --quiet public "$SHA:refs/heads/main"

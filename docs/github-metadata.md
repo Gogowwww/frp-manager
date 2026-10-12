@@ -28,8 +28,8 @@ frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker golang s
   sinon le lien de signalement de SECURITY.md ne fonctionne pas.
 - **Settings → General → Social preview** : téléverser une image 1280×640
   (par exemple `website/demo/og.png`, déjà utilisée par la démo).
-- **Settings → Actions** : le workflow `.github/workflows/ci.yml` (tests, ruff,
-  pip-audit) ne tourne que si GitHub Actions est disponible sur le compte.
+- **Settings → Actions** : désactivé. Toute la CI tourne sur Forgejo ; GitHub
+  ne reçoit que les publications (`release.yml`, `promote.yml`, `github.yml`).
 
 ## Texte de la release v0.0.51
 

@@ -61,14 +61,36 @@ ruff check .        # passerelle Python (packaging/python-bridge)
   accents, noms explicites, pas de dépendance nouvelle sans raison.
 - Ajoutez un test quand vous touchez à l'authentification, à la validation
   des entrées ou aux commandes système.
-- Toute commande système se passe en liste d'arguments (jamais `shell=True`
-  ni `sh -c` avec des données interpolées) ; tout nom de service ou de
-  conteneur passe par `valid_service_name` / `valid_container_name`.
+- Toute commande système se passe en liste d'arguments (`exec.Command`,
+  jamais `sh -c` avec des données interpolées) ; tout nom de service ou de
+  conteneur passe par `validServiceName` / `validContainerName`.
 - L'interface ne construit le DOM qu'avec `h()` (`panel/templates/assets/js/ui.js`),
   jamais avec `innerHTML` sur des données. Pas d'émoji dans l'interface : les
   icônes sont les SVG embarqués de `panel/templates/partials/icons.html`.
 - Mettez à jour la section « Non publié » du journal des modifications, dans
   les deux langues : [CHANGELOG.fr.md](../CHANGELOG.fr.md) et [CHANGELOG.md](../CHANGELOG.md).
+
+## Versions et releases
+
+Le développement se fait sur le Forgejo du projet, où tourne toute
+l'intégration continue ; GitHub ne sert qu'à publier (aucun workflow GitHub
+Actions).
+
+- **Numéros** : jusqu'à la 0.0.60, les versions se suivent (`0.0.59`,
+  `0.0.60`). Ensuite, versionnage sémantique à partir de `0.1.0` : le chiffre
+  du milieu pour une nouvelle fonctionnalité (`0.2.0`), le dernier pour des
+  correctifs seuls (`0.1.1`), le premier pour un changement qui casse la
+  configuration, l'API ou l'installation (`1.0.0`).
+- **Pré-release** : un tag `vX.Y.Z` annoté sur le main Forgejo (après la
+  section datée des deux CHANGELOG) lance `release.yml` : programme, image
+  `:X.Y.Z`, paquets dans la distribution apt `testing`, pré-release GitHub.
+- **Release définitive** : `promote.yml` (Actions → « Promouvoir une
+  release », tag `vX.Y.Z`) rend définitive la même pré-release, sans la
+  reconstruire : ce qui a été essayé est exactement ce qui est publié (image
+  `:latest`, distribution apt `stable`, main public avancé).
+- **Entre deux releases** : `github.yml` (Actions → « Publier sur GitHub »)
+  publie le main Forgejo sur le main public (documentation, traductions,
+  CHANGELOG…), en avance rapide et seulement si la CI du commit est passée.
 
 ## Traduire le panel
 
