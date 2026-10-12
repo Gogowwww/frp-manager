@@ -70,5 +70,9 @@ réservées, réseaux plus larges qu'un `/8` (`/16` en IPv6), plus de 50 AS ou d
 ## Fichiers
 
 - `blocklists.json` — le catalogue
-- `check.py` — vérifie le catalogue (`python check.py`) ou ajoute une entrée à la main (`python check.py add entree.json`)
-- `sync_issues.py` — le robot, lancé par le workflow Forgejo `blocklists.yml` du dépôt principal
+
+Les outils sont dans le dépôt principal (programme Go `tools/blocklists`, mêmes règles que le panel) :
+
+- `go run ./tools/blocklists -dir <clone de cette branche> check` — vérifie le catalogue
+- `go run ./tools/blocklists -dir <clone> add entree.json` — ajoute ou remplace une liste à la main
+- `go run ./tools/blocklists -dir <clone> sync` — le robot, lancé par le workflow Forgejo `blocklists.yml`
