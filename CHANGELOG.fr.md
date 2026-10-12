@@ -12,6 +12,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.58] - 2026-10-12
+
+Pré-release : première version du panel en Go.
+
 ### Modifié
 
 - **Le panel est réécrit en Go** : un seul programme statique, sans Python ni
@@ -276,7 +280,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...HEAD
+[0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
 [0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55

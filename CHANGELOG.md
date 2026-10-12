@@ -12,6 +12,10 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.58] - 2026-10-12
+
+Pre-release: first version of the panel in Go.
+
 ### Changed
 
 - **The panel is rewritten in Go**: a single static program, with no Python and
@@ -261,7 +265,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...HEAD
+[0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
 [0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
