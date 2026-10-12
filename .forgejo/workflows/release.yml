@@ -38,7 +38,31 @@ env:
   GH_USER: Gogowwww
 
 jobs:
+  # Notes de la release (titre, résumé, sections, en français puis en anglais),
+  # tirées des deux CHANGELOG par tools/releasenotes : une section absente
+  # bloque la release avant toute construction.
+  notes:
+    runs-on: docker
+    container:
+      image: golang:1.26-alpine
+    outputs:
+      json: ${{ steps.notes.outputs.json }}
+    steps:
+      - name: Notes depuis les CHANGELOG
+        id: notes
+        run: |
+          set -eu
+          apk add --no-cache --quiet git
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
+          cd src
+          git checkout --quiet "${{ github.ref_name }}"
+          go run ./tools/releasenotes "${{ github.ref_name }}"
+          echo "json=$(go run ./tools/releasenotes -json "${{ github.ref_name }}")" >> "$GITHUB_OUTPUT"
+
   release:
+    needs: notes
     runs-on: docker
     container:
       image: docker:27-cli
@@ -154,11 +178,12 @@ jobs:
       - name: Créer la pré-release GitHub
         env:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          NOTES: ${{ needs.notes.outputs.json }}
         run: |
           set -eu
           API="https://api.github.com/repos/$GH_REPO"
-          BODY=$(jq -n --arg tag "$TAG" \
-            '{tag_name: $tag, name: $tag, prerelease: true, make_latest: "false", generate_release_notes: true}')
+          BODY=$(printf '%s' "$NOTES" | jq --arg tag "$TAG" \
+            '{tag_name: $tag, name: .name, body: .body, prerelease: true, make_latest: "false"}')
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)

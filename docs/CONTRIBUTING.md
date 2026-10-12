@@ -82,7 +82,11 @@ workflow).
   (`1.0.0`).
 - **Pre-release**: an annotated `vX.Y.Z` tag on the Forgejo main (after the
   dated section of both CHANGELOGs) runs `release.yml`: program, `:X.Y.Z`
-  image, packages in the `testing` apt distribution, GitHub pre-release.
+  image, packages in the `testing` apt distribution, GitHub pre-release. Its
+  notes (French then English) come from both CHANGELOGs through
+  `tools/releasenotes`: the dated section starts with a one-sentence summary,
+  which becomes the title and introduction (`go run ./tools/releasenotes vX.Y.Z`
+  to proofread them before tagging).
 - **Final release**: `promote.yml` (Actions → "Promouvoir une release", tag
   `vX.Y.Z`) makes the same pre-release final, without rebuilding it: what was
   tried is exactly what gets published (`:latest` image, `stable` apt

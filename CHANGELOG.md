@@ -14,7 +14,9 @@ number. Versions older than 0.0.51 are described in the
 
 ## [0.0.58] - 2026-10-12
 
-First version of the panel in Go. Pre-release, then final release, on the same day.
+The panel moves to Go: a single, lighter program that can also be installed with apt.
+
+Pre-release, then final release, on the same day.
 
 ### Changed
 
@@ -67,6 +69,8 @@ First version of the panel in Go. Pre-release, then final release, on the same d
 
 ## [0.0.57] - 2026-10-12
 
+All settings in one place.
+
 Pre-release.
 
 ### Changed
@@ -82,6 +86,8 @@ Pre-release.
   password.
 
 ## [0.0.56] - 2026-10-11
+
+Several accounts with their own permissions, and OpenID Connect single sign-on.
 
 Pre-release.
 

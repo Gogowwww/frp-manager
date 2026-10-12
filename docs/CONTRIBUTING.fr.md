@@ -84,6 +84,10 @@ Actions).
 - **Pré-release** : un tag `vX.Y.Z` annoté sur le main Forgejo (après la
   section datée des deux CHANGELOG) lance `release.yml` : programme, image
   `:X.Y.Z`, paquets dans la distribution apt `testing`, pré-release GitHub.
+  Ses notes (français puis anglais) sont tirées des deux CHANGELOG par
+  `tools/releasenotes` : la section datée commence par une phrase de résumé,
+  qui devient le titre et l'introduction (`go run ./tools/releasenotes vX.Y.Z`
+  pour les relire avant de taguer).
 - **Release définitive** : `promote.yml` (Actions → « Promouvoir une
   release », tag `vX.Y.Z`) rend définitive la même pré-release, sans la
   reconstruire : ce qui a été essayé est exactement ce qui est publié (image

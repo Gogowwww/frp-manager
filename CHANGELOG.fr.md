@@ -14,7 +14,9 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [0.0.58] - 2026-10-12
 
-Première version du panel en Go. Pré-release, puis release définitive le même jour.
+Le panel passe en Go : un seul programme, plus léger, qui s'installe aussi par apt.
+
+Pré-release, puis release définitive le même jour.
 
 ### Modifié
 
@@ -67,6 +69,8 @@ Première version du panel en Go. Pré-release, puis release définitive le mêm
 
 ## [0.0.57] - 2026-10-12
 
+Tous les réglages au même endroit.
+
 Pré-release.
 
 ### Modifié
@@ -83,6 +87,8 @@ Pré-release.
   mot de passe.
 
 ## [0.0.56] - 2026-10-11
+
+Plusieurs comptes avec leurs propres droits, et connexion unique OpenID Connect.
 
 Pré-release.
 
