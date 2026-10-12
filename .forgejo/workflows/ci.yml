@@ -140,7 +140,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          STATE=success; DESC="gofmt, vet, tests (site, outils), govulncheck, scripts"
+          STATE=success; DESC="gofmt, vet, tests (outils), govulncheck, scripts"
           [ "${{ job.status }}" = success ] || { STATE=failure; DESC="échec : voir le journal du job outils"; }
           curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
             -d "{\"state\": \"$STATE\", \"context\": \"ci-outils\", \"description\": \"$DESC\"}" \
