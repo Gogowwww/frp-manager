@@ -20,11 +20,11 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go vet
-        run: go vet ./panel
+        run: go vet ./panel ./website
       - name: Tests
-        run: go test -count=1 ./panel
+        run: go test -count=1 ./panel ./website
       - name: gofmt
-        run: test -z "$(gofmt -l panel)" || { gofmt -l panel; exit 1; }
+        run: test -z "$(gofmt -l panel website)" || { gofmt -l panel website; exit 1; }
       - name: Compilation (amd64, arm64, armv7)
         run: |
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./panel
@@ -49,7 +49,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
-      - name: ruff (site web, démo, passage depuis Python)
+      - name: ruff (passage depuis Python)
         run: ruff check --output-format=github .
       - name: install.sh et scripts du paquet .deb
         run: |

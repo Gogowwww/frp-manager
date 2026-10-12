@@ -33,6 +33,10 @@ number. Versions older than 0.0.51 are described in the
   picker sits in the section header, and leaving the section with unsaved
   changes still asks for confirmation. The old address (`#/config?iid=…`) leads
   to the section.
+- The project website (home page, documentation, online demo) is also built
+  and served by a Go program (`go run ./website build|serve`), with the same
+  pages; its screenshots are lossless WebP. The home page gets an **apt** tab
+  next to Docker and the install script.
 
 ### Added
 

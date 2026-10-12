@@ -2,10 +2,11 @@
 # page d'accueil, documentation et démo en ligne (interface réelle, données fictives).
 #
 # À chaque push sur main qui touche l'interface, la démo, le site ou la
-# documentation, website/build.py construit l'application (app.py + site/,
-# bibliothèque standard Python uniquement ; la démo est dans site/demo/) et la
-# publie sur la branche main du dépôt administrator/frp-manager-demo. Le
-# cloudpod Webstrator clone ce dépôt et lance « python3 app.py ».
+# documentation, le générateur Go du site (go run ./website build) construit
+# l'application : site/ (la démo est dans site/demo/), le serveur Go pour Linux
+# amd64 et arm64, et app.py qui le lance. Il la publie sur la branche main du
+# dépôt administrator/frp-manager-demo. Le cloudpod Webstrator clone ce dépôt et
+# lance « python3 app.py » (ou directement ./frp-manager-site-linux-amd64 serve site).
 #
 # Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
 # d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
@@ -15,7 +16,7 @@ name: Site et démo
 on:
   push:
     branches: [main]
-    paths: ['panel/templates/**', 'website/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
+    paths: ['panel/templates/**', 'website/**', 'docs/**', '*.md', 'go.mod', 'go.sum', '.forgejo/workflows/demo.yml']
   workflow_dispatch:
 
 env:
@@ -25,7 +26,7 @@ jobs:
   publish:
     runs-on: docker
     container:
-      image: python:3.12-alpine
+      image: golang:1.26-alpine
     steps:
       - name: Récupérer le code
         # Historique complet : les dates « lastmod » du sitemap viennent de git log
@@ -62,17 +63,21 @@ jobs:
           # Numéro affiché : dernière version publiée
           VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           SHA=$(git -C src rev-parse --short HEAD)
-          python3 src/website/build.py --out dist-site --version "${VERSION:-dev}" --bundle out
+          cd src
+          go test -count=1 ./website
+          go run ./website build --out ../dist-site --version "${VERSION:-dev}" --bundle ../out
           # Audit SEO : un titre en double, un lien cassé ou un JSON-LD invalide bloque la publication
-          python3 src/website/seo_check.py dist-site
+          go run ./website seo ../dist-site
+          cd ..
           cat > out/README.md <<EOF
           # FRP Manager — site et démo
 
           Construit automatiquement depuis frp-manager (commit $SHA) par
           .forgejo/workflows/demo.yml : ne pas modifier ce dépôt à la main.
 
-          Lancer : \`python3 app.py\` (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut).
-          Aucune dépendance : bibliothèque standard Python uniquement.
+          Lancer : \`python3 app.py\`, ou \`./frp-manager-site-linux-amd64 serve site\`
+          (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut). Le serveur est un
+          programme Go sans dépendance ; app.py ne fait que le lancer.
           EOF
 
           cd out

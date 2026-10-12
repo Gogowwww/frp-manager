@@ -33,6 +33,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   l'instance passe dans l'en-tête de la section, et quitter la section avec des
   modifications non enregistrées demande toujours confirmation. L'ancienne
   adresse (`#/config?iid=…`) mène à la section.
+- Le site du projet (accueil, documentation, démo en ligne) est lui aussi
+  construit et servi par un programme Go (`go run ./website build|serve`), avec
+  les mêmes pages ; ses captures d'écran passent en WebP sans perte. La page
+  d'accueil gagne un onglet **apt** à côté de Docker et du script d'installation.
 
 ### Ajouté
 

@@ -38,9 +38,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Démo construite (website/demo/build.py)
+# Démo construite (go run ./website demo)
 dist-demo/
 frp-manager-demo.zip
 
-# Site construit (website/build.py)
+# Site construit (go run ./website build)
 dist-site/

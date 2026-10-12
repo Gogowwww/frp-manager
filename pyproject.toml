@@ -1,5 +1,6 @@
-# Outils de développement des scripts Python du dépôt (site web, démo) : le
-# panel lui-même est un programme Go (panel/, go test ./panel).
+# Seul script Python du dépôt : la passerelle qui fait passer les installations
+# Python au programme Go (packaging/python-bridge). Le panel et le site sont en
+# Go (go test ./panel ./website).
 
 # Linter des scripts (lancé par la CI) : erreurs réelles d'abord, pas le style.
 [tool.ruff]

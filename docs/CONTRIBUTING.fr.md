@@ -36,22 +36,23 @@ echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
 FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 ```
 
-La [démo](../website/demo/build.py) (`python3 website/demo/build.py`) produit une version
+La [démo](../website/demo.go) (`go run ./website demo`) produit une version
 statique de l'interface avec des données fictives, pratique pour travailler
 sur le front sans frp installé.
 
 Le site du projet ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) se
-construit avec `python3 website/build.py` : page d'accueil, documentation
+construit avec `go run ./website build` : page d'accueil, documentation
 rendue depuis `docs/`, `CHANGELOG.md`… et démo sous `/demo/`.
-Servez le résultat avec `DEMO_SITE=dist-site python3 website/demo/serve.py`. Après un
-changement visible de l'interface, `python3 website/shots.py` refait les
-captures du site à partir de la démo (Pillow et Chrome ou Edge requis).
+Servez le résultat avec `go run ./website serve dist-site` ; `go run ./website seo dist-site`
+vérifie titres, liens et données structurées. Après un changement visible de
+l'interface, `go run ./website shots` refait les captures du site à partir de
+la démo (Chrome, Edge ou Chromium requis).
 
 ## Avant d'ouvrir une pull request
 
 ```bash
-go vet ./panel && go test ./panel && gofmt -l panel
-ruff check .        # scripts Python du site et de la démo
+go vet ./... && go test ./... && gofmt -l panel website
+ruff check .        # passerelle Python (packaging/python-bridge)
 ```
 
 - Une pull request = un sujet. Décrivez le problème résolu et comment vous

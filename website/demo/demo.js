@@ -4,7 +4,7 @@
 // L'état (instances, configs, règles du pare-feu…) est gardé dans l'onglet
 // (sessionStorage) : il survit à un rechargement ou au changement de langue,
 // et repart de zéro avec « Réinitialiser » ou dans un nouvel onglet.
-// Construit par website/demo/build.py ; __PANEL_VERSION__ y est remplacé.
+// Construit par website/demo.go ; __PANEL_VERSION__ y est remplacé.
 
 (function () {
   'use strict';
@@ -1166,7 +1166,7 @@ transport.useCompression = true
       '<strong>Demo</strong>: sample data, nothing is actually changed.');
     const sep = () => Object.assign(document.createElement('span'), { className: 'sep', textContent: '·' });
     bar.append(text, sep(), reset, sep(), gh);
-    // ?shot : pas de bandeau, pour les captures d'écran du site (website/shots.py)
+    // ?shot : pas de bandeau, pour les captures d'écran du site (website/shots.go)
     if (new URLSearchParams(location.search).has('shot')) return;
     const main = document.querySelector('.main');
     if (main) main.prepend(bar);

@@ -1,0 +1,704 @@
+{
+ "docs": [
+  [
+   "installation",
+   {
+    "en": "docs/installation.md",
+    "fr": "docs/installation.fr.md"
+   }
+  ],
+  [
+   "docker",
+   {
+    "en": "docs/docker.md",
+    "fr": "docs/docker.fr.md"
+   }
+  ],
+  [
+   "security",
+   {
+    "en": "docs/SECURITY.md",
+    "fr": "docs/SECURITY.fr.md"
+   }
+  ],
+  [
+   "contributing",
+   {
+    "en": "docs/CONTRIBUTING.md",
+    "fr": "docs/CONTRIBUTING.fr.md"
+   }
+  ],
+  [
+   "code-of-conduct",
+   {
+    "en": "docs/CODE_OF_CONDUCT.md",
+    "fr": "docs/CODE_OF_CONDUCT.fr.md"
+   }
+  ],
+  [
+   "changelog",
+   {
+    "en": "CHANGELOG.md",
+    "fr": "CHANGELOG.fr.md"
+   }
+  ]
+ ],
+ "doc_files": {
+  "installation.md": [
+   "en",
+   "installation"
+  ],
+  "installation.fr.md": [
+   "fr",
+   "installation"
+  ],
+  "docker.md": [
+   "en",
+   "docker"
+  ],
+  "docker.fr.md": [
+   "fr",
+   "docker"
+  ],
+  "SECURITY.md": [
+   "en",
+   "security"
+  ],
+  "SECURITY.fr.md": [
+   "fr",
+   "security"
+  ],
+  "CONTRIBUTING.md": [
+   "en",
+   "contributing"
+  ],
+  "CONTRIBUTING.fr.md": [
+   "fr",
+   "contributing"
+  ],
+  "CODE_OF_CONDUCT.md": [
+   "en",
+   "code-of-conduct"
+  ],
+  "CODE_OF_CONDUCT.fr.md": [
+   "fr",
+   "code-of-conduct"
+  ],
+  "CHANGELOG.md": [
+   "en",
+   "changelog"
+  ],
+  "CHANGELOG.fr.md": [
+   "fr",
+   "changelog"
+  ],
+  "README.md": [
+   "en",
+   ""
+  ],
+  "README.fr.md": [
+   "fr",
+   ""
+  ]
+ },
+ "t": {
+  "en": {
+   "html_lang": "en",
+   "locale": "en_US",
+   "nav_features": "Features",
+   "nav_docs": "Documentation",
+   "nav_demo": "Live demo",
+   "nav_source": "Source code",
+   "menu": "Menu",
+   "theme": "Switch theme",
+   "other_lang": "Français",
+   "other_lang_code": "fr",
+   "og_alt": "FRP Manager, the self-hosted web panel for frp: the firewall page of the live demo",
+   "skip": "Skip to content",
+   "footer_about": "Self-hosted web panel for frp, released under the Apache 2.0 license.",
+   "footer_ai": "Developed with the help of an AI coding assistant (Claude). Every version ships as a pre-release first, to be tested before it is promoted.",
+   "footer_project": "Project",
+   "footer_docs": "Documentation",
+   "releases": "Releases",
+   "issues": "Issues",
+   "license": "License",
+   "docs_title": "Documentation",
+   "on_this_page": "On this page",
+   "edit": "Edit this page on GitHub",
+   "only_fr": "This page is only available in French for now.",
+   "docs_intro": "Install, configure and run FRP Manager. These pages are generated from the Markdown files of the repository, so they always match the latest version.",
+   "docs_page_title": "FRP Manager documentation: install, configure, secure",
+   "docs_meta": "Install, configure and secure FRP Manager: requirements, Docker images, network access, configuration keys and security policy.",
+   "copy": "Copy",
+   "copied": "Copied",
+   "notfound_title": "Page not found",
+   "notfound_text": "This address does not match any page of the site. It may have moved when the documentation was reorganized.",
+   "notfound_home": "Back to the home page",
+   "notfound_docs": "Browse the documentation",
+   "doc_names": {
+    "installation": "Installation and configuration",
+    "docker": "Docker: privileges and risks",
+    "security": "Security policy",
+    "contributing": "Contributing",
+    "code-of-conduct": "Code of conduct",
+    "changelog": "Changelog"
+   },
+   "doc_desc": {
+    "installation": "Requirements, install script, Docker images, first launch, network access, configuration keys, lost password, uninstall.",
+    "docker": "What pid: host and nsenter imply, opening the panel to the network, reducing privileges.",
+    "security": "Security policy: how to report a vulnerability in FRP Manager, supported versions and the threat model of a panel that controls exposed ports.",
+    "contributing": "Contribute to FRP Manager: development setup, running the tests, code conventions and how to add or fix a translation.",
+    "code-of-conduct": "The FRP Manager code of conduct: expected behaviour, unacceptable behaviour and how to report a problem.",
+    "changelog": "Release notes for every FRP Manager version: what was added, changed, fixed and secured, from the latest pre-release back to the first releases."
+   }
+  },
+  "fr": {
+   "html_lang": "fr",
+   "locale": "fr_FR",
+   "nav_features": "Fonctionnalités",
+   "nav_docs": "Documentation",
+   "nav_demo": "Démo en ligne",
+   "nav_source": "Code source",
+   "menu": "Menu",
+   "theme": "Changer de thème",
+   "other_lang": "English",
+   "other_lang_code": "en",
+   "og_alt": "FRP Manager, le panel web auto-hébergé pour frp : la page pare-feu de la démo",
+   "skip": "Aller au contenu",
+   "footer_about": "Panel web auto-hébergé pour frp, publié sous licence Apache 2.0.",
+   "footer_ai": "Développé avec l'aide d'un assistant de programmation IA (Claude). Chaque version sort d'abord en pré-release, pour être testée avant de devenir une release.",
+   "footer_project": "Projet",
+   "footer_docs": "Documentation",
+   "releases": "Versions",
+   "issues": "Issues",
+   "license": "Licence",
+   "docs_title": "Documentation",
+   "on_this_page": "Sur cette page",
+   "edit": "Modifier cette page sur GitHub",
+   "only_fr": "",
+   "docs_intro": "Installer, configurer et faire tourner FRP Manager. Ces pages sont générées à partir des fichiers Markdown du dépôt : elles correspondent toujours à la dernière version.",
+   "docs_page_title": "Documentation FRP Manager : installer, configurer, sécuriser",
+   "docs_meta": "Installer, configurer et sécuriser FRP Manager : prérequis, images Docker, accès réseau, clés de configuration et politique de sécurité.",
+   "copy": "Copier",
+   "copied": "Copié",
+   "notfound_title": "Page introuvable",
+   "notfound_text": "Cette adresse ne correspond à aucune page du site. Elle a peut-être changé lors de la réorganisation de la documentation.",
+   "notfound_home": "Retour à l'accueil",
+   "notfound_docs": "Parcourir la documentation",
+   "doc_names": {
+    "installation": "Installation et configuration",
+    "docker": "Docker : privilèges et risques",
+    "security": "Politique de sécurité",
+    "contributing": "Contribuer",
+    "code-of-conduct": "Code de conduite",
+    "changelog": "Journal des modifications"
+   },
+   "doc_desc": {
+    "installation": "Prérequis, script d'installation, images Docker, première ouverture, accès réseau, clés de configuration, mot de passe perdu, désinstallation.",
+    "docker": "Ce qu'impliquent pid: host et nsenter, ouvrir le panel au réseau, réduire les privilèges.",
+    "security": "Politique de sécurité : signaler une vulnérabilité de FRP Manager, versions prises en charge et modèle de menace d'un panel qui contrôle des ports exposés.",
+    "contributing": "Contribuer à FRP Manager : environnement de développement, tests, conventions de code, ajout ou correction d'une traduction.",
+    "code-of-conduct": "Le code de conduite de FRP Manager : comportements attendus et inacceptables, et comment signaler un problème.",
+    "changelog": "Notes de chaque version de FRP Manager : ce qui a été ajouté, modifié, corrigé et sécurisé, de la dernière pré-release aux premières versions."
+   }
+  }
+ },
+ "home": {
+  "en": {
+   "title": "FRP Manager: a self-hosted web panel for frp (frps and frpc)",
+   "desc": "Free, open-source web panel for frp. Manage frps and frpc, open ports and tunnels, filter access with nftables, follow live logs and get webhook alerts.",
+   "h1": "Run frp from your browser",
+   "lead": "FRP Manager is a self-hosted web panel for <strong>frps</strong> and <strong>frpc</strong>. Open ports, filter who reaches them, read the logs and update frp, without editing TOML files over SSH.",
+   "cta_demo": "Try the live demo",
+   "cta_install": "Install",
+   "meta": "Free and open source, Apache 2.0. A single program for Linux (amd64, arm64, armv7): install script, apt or Docker.",
+   "route_caption": "Each port is shown as the path it opens.",
+   "route": [
+    [
+     "globe",
+     "Visitor",
+     "anywhere on the Internet"
+    ],
+    [
+     "server",
+     "vps.example.net:25565",
+     "frps, on your public server"
+    ],
+    [
+     "laptop",
+     "127.0.0.1:25565",
+     "frpc, next to your Minecraft server"
+    ]
+   ],
+   "route_links": [
+    "connects to",
+    "frp tunnel"
+   ],
+   "shot_alt": "FRP Manager dashboard: an frps server, an frpc client and an frpc Docker container, all running",
+   "features_title": "Everything frp needs, in one place",
+   "features_lead": "The panel finds your frp services on its own, systemd units and Docker containers alike, and keeps your configuration files as plain TOML.",
+   "rows": [
+    {
+     "img": "ports",
+     "alt": "List of ports opened by frpc, each with its public and local address",
+     "title": "Ports you can read",
+     "text": "Every tunnel is listed as the path it opens, <code>vps.example.net:25565 → 127.0.0.1:25565</code>. The guided editor covers <code>tcp</code>, <code>udp</code>, <code>http</code>, <code>https</code>, <code>stcp</code>, <code>xtcp</code> and visitors, with PROXY protocol, encryption and compression. Settings it does not handle are kept as they are.",
+     "points": [
+      "Changes pile up as a draft: save, or save and restart frpc",
+      "Each field shows its TOML key",
+      "A warning before stopping the frpc you are connected through"
+     ]
+    },
+    {
+     "img": "firewall",
+     "alt": "Firewall page with block and allow-only rules and the ports opened by frps",
+     "title": "A firewall for frps ports",
+     "text": "Decide who can connect to the ports frps opens: allow only, or block, by address, network or whole provider (AS number, prefixes fetched from RIPEstat). Rules are applied in the kernel with nftables, before Docker's NAT, and keep working if the panel stops.",
+     "points": [
+      "Test an address before applying, with a warning if you would lock yourself out",
+      "Blocked connections in real time, with their provider",
+      "Community lists you can subscribe to, or publish"
+     ]
+    },
+    {
+     "img": "logs",
+     "alt": "Live frpc logs with errors and warnings highlighted",
+     "title": "Live logs",
+     "text": "Follow the systemd journal, a log file or a Docker container as it is written, over WebSocket with an automatic fallback. Errors and warnings stand out, and a filter narrows the lines down.",
+     "points": [
+      "Works through a reverse proxy",
+      "Containers with or without a TTY"
+     ]
+    }
+   ],
+   "more": [
+    [
+     "dashboard",
+     "Automatic detection",
+     "frps and frpc services, binaries, configs and Docker containers, one card each."
+    ],
+    [
+     "config",
+     "Configuration forms",
+     "frps and frpc settings in sections; TOML is checked before it is written."
+    ],
+    [
+     "download",
+     "One-click updates",
+     "frp downloaded and checked against its published SHA-256; the panel updates itself."
+    ],
+    [
+     "box",
+     "Docker ready",
+     "Run the panel in a container and drive frp on the host, or manage frp containers."
+    ],
+    [
+     "bell",
+     "Webhook notifications",
+     "Discord, Slack, Telegram, ntfy, Gotify or any URL: instance down, locked-out address, update available."
+    ],
+    [
+     "shield",
+     "Locked by default",
+     "Mandatory setup, argon2id passwords, CSRF protection, localhost only."
+    ]
+   ],
+   "demo_title": "Try it before installing",
+   "demo_lead": "The live demo runs the real interface with sample data. Everything can be clicked; nothing is actually changed, and it resets when you close the tab.",
+   "demo_launch": "Launch the demo here",
+   "demo_full": "Open the demo in full screen",
+   "start_title": "Get started",
+   "start_lead": "On the machine that runs frps or frpc. The panel installs frp for you if it is missing.",
+   "steps_common": [
+    [
+     "Reach the panel through an SSH tunnel: it only listens on 127.0.0.1",
+     "ssh -L 8765:127.0.0.1:8765 user@server"
+    ],
+    [
+     "Open https://127.0.0.1:8765 and create the administrator account",
+     null
+    ]
+   ],
+   "start_more": "Opening the panel to your network, reverse proxy, configuration keys: <a href=\"/docs/installation/\">installation guide</a>.",
+   "why_title": "Why a panel for frp",
+   "why_lead": "frp is a single binary configured by TOML files. Running it by hand works well; managing it day to day is where the time goes. FRP Manager keeps the same files and adds a layer on top.",
+   "why_head": [
+    "Task",
+    "frp by hand",
+    "With FRP Manager"
+   ],
+   "why_rows": [
+    [
+     "Add or change a tunnel",
+     "Edit <code>frpc.toml</code>, restart frpc",
+     "Guided form, TOML checked, save and restart in one click"
+    ],
+    [
+     "See what is exposed",
+     "Read the configs",
+     "List of ports with their path, per client"
+    ],
+    [
+     "Several frps or frpc",
+     "One unit and one file per instance to track",
+     "Detected automatically, one card each"
+    ],
+    [
+     "Filter who reaches frps",
+     "Write nftables or iptables rules",
+     "Rules by IP, network or AS, tested before applying"
+    ],
+    [
+     "Follow the logs",
+     "<code>journalctl -fu frpc</code> over SSH",
+     "Live logs in the browser"
+    ],
+    [
+     "Update frp",
+     "Download, check, replace the binaries, restart",
+     "One click, SHA-256 checked, services restarted"
+    ]
+   ],
+   "why_note": "Removing the panel leaves frp running as before: your configuration stays plain TOML.",
+   "sec_title": "Built for a machine that faces the Internet",
+   "sec_lead": "The panel controls exposed ports and runs as root, so it starts locked down.",
+   "sec_points": [
+    [
+     "No open panel",
+     "Until an administrator account exists, the initial setup page is the only thing it serves."
+    ],
+    [
+     "Strong passwords",
+     "Hashed with argon2id, 12 characters minimum, attempts limited per IP."
+    ],
+    [
+     "Localhost first",
+     "A new install listens on 127.0.0.1; opening it to the network is your call."
+    ],
+    [
+     "Hardened web layer",
+     "CSRF tokens, strict cookies, Content-Security-Policy, no clickjacking."
+    ],
+    [
+     "Checked downloads",
+     "frp archives and panel updates are verified against their published SHA-256."
+    ],
+    [
+     "No shell injection",
+     "Commands are argument lists, names are allow-listed, archives extracted safely."
+    ]
+   ],
+   "sec_docker": "<strong>Using Docker?</strong> The container uses <code>pid: host</code> and <code>nsenter</code> to drive systemd on the host: that is root-equivalent access to the host. <a href=\"/docs/docker/\">What it implies</a>.",
+   "sec_more": "Threat model and vulnerability reporting: <a href=\"/docs/security/\">security policy</a>.",
+   "faq_title": "Questions",
+   "faq": [
+    [
+     "Does it replace frp?",
+     "No. FRP Manager drives the official frps and frpc binaries and reads and writes their usual TOML files. You can keep editing them by hand, and frp keeps running if you remove the panel."
+    ],
+    [
+     "Do I need to install frp first?",
+     "No. The install script and the apt package download frps and frpc, create their systemd services and leave them stopped until you configure them. frp is then updated from Settings, Updates."
+    ],
+    [
+     "Does it work with frp running in Docker?",
+     "Yes. The panel detects frps and frpc containers through the Docker socket and can start, stop and restart them, read their logs and list their ports."
+    ],
+    [
+     "How do I reach the panel from another computer?",
+     "A new install only listens on 127.0.0.1. Use an SSH tunnel, a local reverse proxy (nginx, Caddy), or set the listening address to 0.0.0.0 in Settings and filter access by IP."
+    ],
+    [
+     "I lost my password.",
+     "Run <code>sudo frp-manager --reset-password</code> (<code>/opt/frp-manager/frp-manager</code> for an install script setup, <code>docker exec -it frp-manager frp-manager --reset-password</code> with Docker), then restart the panel."
+    ],
+    [
+     "Which languages are available?",
+     "English and French, messages from the server included. The panel follows your browser's language; you can change it in Settings, Appearance."
+    ]
+   ],
+   "final_title": "Take back your ports",
+   "final_text": "Open the demo, or install it on the machine that runs frp.",
+   "tabs": [
+    {
+     "id": "docker",
+     "label": "Docker Compose",
+     "steps": [
+      [
+       "Download the compose file and start the container",
+       "curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml\ndocker compose up -d"
+      ]
+     ]
+    },
+    {
+     "id": "apt",
+     "label": "apt (Debian, Ubuntu)",
+     "steps": [
+      [
+       "Add the FRP Manager repository once, then install the package (updates come with apt upgrade)",
+       "sudo install -d -m 0755 /etc/apt/keyrings\nsudo curl -fsSL https://forgejo.gogow.fr/api/packages/administrator/debian/repository.key -o /etc/apt/keyrings/frp-manager.asc\necho \"deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://forgejo.gogow.fr/api/packages/administrator/debian stable main\" \\\n  | sudo tee /etc/apt/sources.list.d/frp-manager.list\nsudo apt update && sudo apt install frp-manager"
+      ]
+     ]
+    },
+    {
+     "id": "script",
+     "label": "Install script",
+     "steps": [
+      [
+       "Download the latest release and run the installer as root",
+       "curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip\nunzip frp-manager.zip && cd frp-manager && sudo bash install.sh"
+      ]
+     ]
+    }
+   ]
+  },
+  "fr": {
+   "title": "FRP Manager : panel web auto-hébergé pour frp (frps et frpc)",
+   "desc": "Panel web libre et gratuit pour frp. Pilotez frps et frpc, ouvrez des ports, filtrez l'accès avec nftables, suivez les journaux et recevez des alertes par webhook.",
+   "h1": "Pilotez frp depuis votre navigateur",
+   "lead": "FRP Manager est un panel web auto-hébergé pour <strong>frps</strong> et <strong>frpc</strong>. Ouvrez des ports, filtrez qui les atteint, lisez les journaux et mettez frp à jour, sans éditer de fichiers TOML en SSH.",
+   "cta_demo": "Essayer la démo",
+   "cta_install": "Installer",
+   "meta": "Libre et gratuit, Apache 2.0. Un seul programme pour Linux (amd64, arm64, armv7) : script, apt ou Docker.",
+   "route_caption": "Chaque port est affiché comme le chemin qu'il ouvre.",
+   "route": [
+    [
+     "globe",
+     "Visiteur",
+     "n'importe où sur Internet"
+    ],
+    [
+     "server",
+     "vps.example.net:25565",
+     "frps, sur votre serveur public"
+    ],
+    [
+     "laptop",
+     "127.0.0.1:25565",
+     "frpc, à côté de votre serveur Minecraft"
+    ]
+   ],
+   "route_links": [
+    "se connecte à",
+    "tunnel frp"
+   ],
+   "shot_alt": "Tableau de bord de FRP Manager : un serveur frps, un client frpc et un conteneur frpc, tous en marche",
+   "features_title": "Tout ce dont frp a besoin, au même endroit",
+   "features_lead": "Le panel trouve seul vos services frp, unités systemd comme conteneurs Docker, et garde vos fichiers de configuration en TOML.",
+   "rows": [
+    {
+     "img": "ports",
+     "alt": "Liste des ports ouverts par frpc, chacun avec son adresse publique et locale",
+     "title": "Des ports lisibles",
+     "text": "Chaque tunnel est affiché comme le chemin qu'il ouvre, <code>vps.example.net:25565 → 127.0.0.1:25565</code>. L'éditeur guidé couvre <code>tcp</code>, <code>udp</code>, <code>http</code>, <code>https</code>, <code>stcp</code>, <code>xtcp</code> et les visiteurs, avec PROXY protocol, chiffrement et compression. Les réglages qu'il ne gère pas sont conservés tels quels.",
+     "points": [
+      "Les modifications s'accumulent en brouillon : enregistrer, ou enregistrer et redémarrer frpc",
+      "Chaque champ affiche sa clé TOML",
+      "Un avertissement avant d'arrêter le frpc par lequel vous êtes connecté"
+     ]
+    },
+    {
+     "img": "firewall",
+     "alt": "Page pare-feu avec des règles de blocage et d'autorisation et les ports ouverts par frps",
+     "title": "Un pare-feu pour les ports de frps",
+     "text": "Décidez qui peut se connecter aux ports qu'ouvre frps : autoriser seulement, ou bloquer, par adresse, réseau ou fournisseur entier (numéro d'AS, préfixes récupérés auprès de RIPEstat). Les règles sont appliquées dans le noyau avec nftables, avant le NAT de Docker, et continuent de filtrer si le panel s'arrête.",
+     "points": [
+      "Tester une adresse avant d'appliquer, avec une alerte si vous alliez vous bloquer",
+      "Connexions bloquées en temps réel, avec leur fournisseur",
+      "Listes communautaires auxquelles s'abonner, ou à publier"
+     ]
+    },
+    {
+     "img": "logs",
+     "alt": "Journaux frpc en direct avec erreurs et avertissements mis en évidence",
+     "title": "Journaux en direct",
+     "text": "Suivez le journal systemd, un fichier de log ou un conteneur Docker au fil de l'eau, par WebSocket avec repli automatique. Erreurs et avertissements ressortent, un filtre réduit les lignes affichées.",
+     "points": [
+      "Fonctionne derrière un reverse proxy",
+      "Conteneurs avec ou sans TTY"
+     ]
+    }
+   ],
+   "more": [
+    [
+     "dashboard",
+     "Détection automatique",
+     "Services frps et frpc, binaires, configurations et conteneurs Docker, une carte chacun."
+    ],
+    [
+     "config",
+     "Formulaires de configuration",
+     "Réglages de frps et frpc par sections ; le TOML est vérifié avant d'être écrit."
+    ],
+    [
+     "download",
+     "Mises à jour en un clic",
+     "frp téléchargé et vérifié par sa somme SHA-256 publiée ; le panel se met à jour seul."
+    ],
+    [
+     "box",
+     "Prêt pour Docker",
+     "Faites tourner le panel en conteneur pour piloter frp sur l'hôte, ou gérez des conteneurs frp."
+    ],
+    [
+     "bell",
+     "Notifications webhook",
+     "Discord, Slack, Telegram, ntfy, Gotify ou toute adresse : instance arrêtée, adresse verrouillée, mise à jour disponible."
+    ],
+    [
+     "shield",
+     "Verrouillé par défaut",
+     "Configuration initiale imposée, mots de passe argon2id, CSRF, écoute locale."
+    ]
+   ],
+   "demo_title": "Essayez avant d'installer",
+   "demo_lead": "La démo en ligne fait tourner la vraie interface avec des données fictives. Tout est cliquable, rien n'est réellement modifié, et tout revient à zéro à la fermeture de l'onglet.",
+   "demo_launch": "Lancer la démo ici",
+   "demo_full": "Ouvrir la démo en plein écran",
+   "start_title": "Démarrer",
+   "start_lead": "Sur la machine qui fait tourner frps ou frpc. Le panel installe frp s'il manque.",
+   "steps_common": [
+    [
+     "Atteindre le panel par un tunnel SSH : il n'écoute que sur 127.0.0.1",
+     "ssh -L 8765:127.0.0.1:8765 utilisateur@serveur"
+    ],
+    [
+     "Ouvrir https://127.0.0.1:8765 et créer le compte administrateur",
+     null
+    ]
+   ],
+   "start_more": "Ouvrir le panel à votre réseau, reverse proxy, clés de configuration : <a href=\"/fr/docs/installation/\">guide d'installation</a>.",
+   "why_title": "Pourquoi un panel pour frp",
+   "why_lead": "frp est un binaire unique configuré par des fichiers TOML. Le faire tourner à la main fonctionne bien ; c'est la gestion au quotidien qui prend du temps. FRP Manager garde les mêmes fichiers et ajoute une couche par-dessus.",
+   "why_head": [
+    "Tâche",
+    "frp à la main",
+    "Avec FRP Manager"
+   ],
+   "why_rows": [
+    [
+     "Ajouter ou modifier un tunnel",
+     "Éditer <code>frpc.toml</code>, redémarrer frpc",
+     "Formulaire guidé, TOML vérifié, enregistrer et redémarrer en un clic"
+    ],
+    [
+     "Voir ce qui est exposé",
+     "Lire les configurations",
+     "Liste des ports avec leur chemin, par client"
+    ],
+    [
+     "Plusieurs frps ou frpc",
+     "Un service et un fichier par instance à suivre",
+     "Détectés automatiquement, une carte chacun"
+    ],
+    [
+     "Filtrer qui atteint frps",
+     "Écrire des règles nftables ou iptables",
+     "Règles par IP, réseau ou AS, testées avant application"
+    ],
+    [
+     "Suivre les journaux",
+     "<code>journalctl -fu frpc</code> en SSH",
+     "Journaux en direct dans le navigateur"
+    ],
+    [
+     "Mettre à jour frp",
+     "Télécharger, vérifier, remplacer les binaires, redémarrer",
+     "Un clic, SHA-256 vérifiée, services redémarrés"
+    ]
+   ],
+   "why_note": "Retirer le panel laisse frp tourner comme avant : votre configuration reste du TOML.",
+   "sec_title": "Conçu pour une machine exposée à Internet",
+   "sec_lead": "Le panel contrôle des ports exposés et tourne en root : il démarre verrouillé.",
+   "sec_points": [
+    [
+     "Pas de panel ouvert",
+     "Tant qu'aucun compte administrateur n'existe, il ne sert que la page de configuration initiale."
+    ],
+    [
+     "Mots de passe solides",
+     "Hachés en argon2id, 12 caractères minimum, tentatives limitées par IP."
+    ],
+    [
+     "Local d'abord",
+     "Une nouvelle installation écoute sur 127.0.0.1 ; l'ouvrir au réseau est votre choix."
+    ],
+    [
+     "Couche web durcie",
+     "Jetons CSRF, cookies stricts, Content-Security-Policy, pas de clickjacking."
+    ],
+    [
+     "Téléchargements vérifiés",
+     "Archives frp et mises à jour du panel contrôlées par leur somme SHA-256 publiée."
+    ],
+    [
+     "Pas d'injection shell",
+     "Commandes en listes d'arguments, noms sur liste blanche, archives extraites sans risque."
+    ]
+   ],
+   "sec_docker": "<strong>Sous Docker ?</strong> Le conteneur utilise <code>pid: host</code> et <code>nsenter</code> pour piloter le systemd de l'hôte : c'est un accès équivalent à root sur l'hôte. <a href=\"/fr/docs/docker/\">Ce que cela implique</a>.",
+   "sec_more": "Modèle de menace et signalement des vulnérabilités : <a href=\"/fr/docs/security/\">politique de sécurité</a>.",
+   "faq_title": "Questions",
+   "faq": [
+    [
+     "Est-ce que ça remplace frp ?",
+     "Non. FRP Manager pilote les binaires officiels frps et frpc, et lit et écrit leurs fichiers TOML habituels. Vous pouvez continuer à les éditer à la main, et frp continue de tourner si vous retirez le panel."
+    ],
+    [
+     "Faut-il installer frp avant ?",
+     "Non. Le script d'installation et le paquet apt téléchargent frps et frpc, créent leurs services systemd et les laissent arrêtés jusqu'à ce que vous les configuriez. frp se met ensuite à jour depuis Réglages, Mises à jour."
+    ],
+    [
+     "Est-ce que ça marche avec frp sous Docker ?",
+     "Oui. Le panel détecte les conteneurs frps et frpc par le socket Docker : il peut les démarrer, les arrêter, les redémarrer, lire leurs journaux et lister leurs ports."
+    ],
+    [
+     "Comment accéder au panel depuis un autre ordinateur ?",
+     "Une nouvelle installation n'écoute que sur 127.0.0.1. Utilisez un tunnel SSH, un reverse proxy local (nginx, Caddy), ou passez l'adresse d'écoute à 0.0.0.0 dans Réglages et filtrez l'accès par IP."
+    ],
+    [
+     "J'ai perdu mon mot de passe.",
+     "Lancez <code>sudo frp-manager --reset-password</code> (<code>/opt/frp-manager/frp-manager</code> après le script d'installation, <code>docker exec -it frp-manager frp-manager --reset-password</code> sous Docker), puis redémarrez le panel."
+    ],
+    [
+     "Quelles langues sont disponibles ?",
+     "Français et anglais, messages du serveur compris. Le panel suit la langue du navigateur ; vous pouvez la changer dans Réglages, Apparence."
+    ]
+   ],
+   "final_title": "Reprenez la main sur vos ports",
+   "final_text": "Ouvrez la démo, ou installez le panel sur la machine qui fait tourner frp.",
+   "tabs": [
+    {
+     "id": "docker",
+     "label": "Docker Compose",
+     "steps": [
+      [
+       "Télécharger le fichier compose et lancer le conteneur",
+       "curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml\ndocker compose up -d"
+      ]
+     ]
+    },
+    {
+     "id": "apt",
+     "label": "apt (Debian, Ubuntu)",
+     "steps": [
+      [
+       "Ajouter une fois le dépôt de FRP Manager, puis installer le paquet (mises à jour par apt upgrade)",
+       "sudo install -d -m 0755 /etc/apt/keyrings\nsudo curl -fsSL https://forgejo.gogow.fr/api/packages/administrator/debian/repository.key -o /etc/apt/keyrings/frp-manager.asc\necho \"deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://forgejo.gogow.fr/api/packages/administrator/debian stable main\" \\\n  | sudo tee /etc/apt/sources.list.d/frp-manager.list\nsudo apt update && sudo apt install frp-manager"
+      ]
+     ]
+    },
+    {
+     "id": "script",
+     "label": "Script d'installation",
+     "steps": [
+      [
+       "Télécharger la dernière version et lancer l'installation en root",
+       "curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip\nunzip frp-manager.zip && cd frp-manager && sudo bash install.sh"
+      ]
+     ]
+    }
+   ]
+  }
+ }
+}
