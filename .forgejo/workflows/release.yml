@@ -36,6 +36,9 @@ env:
   IMAGE: ghcr.io/gogowwww/frp-manager
   PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
   GH_USER: Gogowwww
+  # Dépôt et description du package ghcr.io (annotations de l'index multi-architecture)
+  OCI_SOURCE: https://github.com/Gogowwww/frp-manager
+  OCI_DESCRIPTION: "Web panel to manage frp (frps and frpc): ports, firewall, logs, updates"
 
 jobs:
   # Notes de la release (titre, résumé, sections, en français puis en anglais),
@@ -173,6 +176,9 @@ jobs:
           docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
             --network=host --allow network.host \
             --build-arg PANEL_VERSION="$VERSION" \
+            --annotation "index:org.opencontainers.image.source=$OCI_SOURCE" \
+            --annotation "index:org.opencontainers.image.description=$OCI_DESCRIPTION" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
             -t "$IMAGE:$VERSION" -t "$IMAGE:dev" --push src
 
       - name: Créer la pré-release GitHub

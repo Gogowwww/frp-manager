@@ -43,5 +43,14 @@ RUN apk add --no-cache ca-certificates util-linux-misc tzdata
 COPY --from=build /out/frp-manager /usr/local/bin/frp-manager
 ARG PANEL_VERSION=unknown
 ENV PANEL_DOCKER_VERSION=${PANEL_VERSION} DOCKER_MODE=true
+# source : GitHub relie le package ghcr.io au dépôt (onglet Packages du dépôt) ;
+# les workflows posent les mêmes annotations sur l'index multi-architecture.
+LABEL org.opencontainers.image.source="https://github.com/Gogowwww/frp-manager" \
+      org.opencontainers.image.url="https://frp-manager.gogow.fr" \
+      org.opencontainers.image.documentation="https://github.com/Gogowwww/frp-manager/wiki" \
+      org.opencontainers.image.title="FRP Manager" \
+      org.opencontainers.image.description="Web panel to manage frp (frps and frpc): ports, firewall, logs, updates" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${PANEL_VERSION}"
 EXPOSE 8765
 ENTRYPOINT ["/usr/local/bin/frp-manager"]

@@ -33,6 +33,9 @@ env:
   GH_REPO: Gogowwww/frp-manager
   IMAGE: ghcr.io/gogowwww/frp-manager
   GH_USER: Gogowwww
+  # Dépôt et description du package ghcr.io (annotations de l'index multi-architecture)
+  OCI_SOURCE: https://github.com/Gogowwww/frp-manager
+  OCI_DESCRIPTION: "Web panel to manage frp (frps and frpc): ports, firewall, logs, updates"
 
 jobs:
   promote:
@@ -118,7 +121,11 @@ jobs:
           trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
           # Copie de la liste multi-architecture (amd64, arm64, armv7) côté registre ;
           # un docker pull + tag ne recopierait que l'architecture du runner.
-          docker buildx imagetools create -t "$IMAGE:latest" "$IMAGE:$VERSION"
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=$OCI_SOURCE" \
+            --annotation "index:org.opencontainers.image.description=$OCI_DESCRIPTION" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            -t "$IMAGE:latest" "$IMAGE:$VERSION"
 
       - name: Release définitive
         env:
