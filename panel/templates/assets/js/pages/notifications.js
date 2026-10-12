@@ -1,4 +1,4 @@
-// ── Notifications : webhooks vers Discord, Slack, Telegram, ntfy… ─────────
+// ── Réglages › Notifications : webhooks vers Discord, Slack, Telegram, ntfy…
 // L'adresse, le secret et les en-têtes ne reviennent jamais du serveur :
 // laissés vides dans le formulaire, ils gardent leur valeur enregistrée.
 
@@ -7,7 +7,7 @@ import { api, apiOk } from '../api.js';
 import { can, instanceIds, displayName } from '../store.js';
 import {
   h, button, busy, toast, toastResult, toastError, openDialog, confirmDialog, field, input, select,
-  secretInput, segmented, callout, emptyState, pageHeader, card, badge, switchControl,
+  secretInput, segmented, callout, emptyState, card, badge, switchControl,
 } from '../ui.js';
 
 const FORMATS = ['discord', 'slack', 'telegram', 'ntfy', 'gotify', 'generic', 'text'];
@@ -40,19 +40,16 @@ const S = { hooks: [], events: [], history: [], els: {} };
 
 export default {
   id: 'notifications',
-  title: () => t('nav.notifications'),
-  perm: 'webhooks.view',
+  icon: 'bell',
+  title: () => t('notifications.title'),
+  description: () => t('notifications.description'),
+  visible: () => can('webhooks.view'),
+  actions: () => (can('webhooks.manage') ? [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })] : []),
 
-  async mount(view) {
-    const page = h('div', { class: 'page' },
-      pageHeader({
-        title: t('notifications.title'), description: t('notifications.description'),
-        actions: can('webhooks.manage') ? [button(t('notifications.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) })] : [],
-      }));
+  async mount(host) {
     S.els.list = h('div', { class: 'card' });
     S.els.history = h('div');
-    page.append(S.els.list, S.els.history);
-    view.append(page);
+    host.append(S.els.list, S.els.history);
     try {
       apply(await apiOk('/api/webhooks'));
     } catch (e) {

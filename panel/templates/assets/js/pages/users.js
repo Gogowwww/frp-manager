@@ -1,32 +1,47 @@
-// ── Utilisateurs : comptes, permissions (ACL) et connexion unique OIDC ────
+// ── Réglages › Utilisateurs (comptes, permissions) et Connexion unique (OIDC)
 // Le serveur vérifie tout (y compris qu'on n'accorde pas plus que ses propres
 // droits) ; cette page ne fait que présenter les choix.
 
 import { t, getLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
-import { store, displayName } from '../store.js';
+import { store, can, displayName } from '../store.js';
 import {
   h, button, busy, toast, toastResult, toastError, openDialog, confirmDialog, field, setFieldError, input, select,
-  secretInput, segmented, switchControl, switchRow, callout, emptyState, pageHeader, card, badge, copyButton,
+  secretInput, segmented, switchControl, switchRow, callout, emptyState, card, badge, copyButton,
 } from '../ui.js';
 
 const ROLE_BADGE = { admin: 'danger', operator: 'warn', viewer: '', custom: 'info' };
 const S = { data: null, els: {} };
 
-export default {
+export const users = {
   id: 'users',
-  title: () => t('nav.users'),
-  perm: 'users.manage',
+  icon: 'users',
+  title: () => t('users.title'),
+  description: () => t('users.description'),
+  visible: () => can('users.manage'),
+  actions: () => [button(t('users.add'), { variant: 'primary', iconName: 'plus', onClick: () => { if (S.data) edit(null); } })],
 
-  async mount(view) {
-    const addBtn = button(t('users.add'), { variant: 'primary', iconName: 'plus', onClick: () => edit(null) });
+  async mount(host) {
     S.els.list = h('div', { class: 'card' }, h('div', { class: 'skeleton', style: { height: '120px' } }));
-    S.els.oidc = h('div');
-    view.append(h('div', { class: 'page' },
-      pageHeader({ title: t('users.title'), description: t('users.description'), actions: [addBtn] }),
-      S.els.list, S.els.oidc));
+    host.append(S.els.list);
     await reload();
-    if (S.data?.can_configure_oidc) loadOidc();
+  },
+
+  unmount() { S.els = {}; },
+};
+
+/** Connexion unique : réservée à l'administrateur complet (le serveur le vérifie). */
+export const sso = {
+  id: 'sso',
+  icon: 'key',
+  title: () => t('users.oidc.title'),
+  description: () => t('users.oidc.desc'),
+  visible: () => !!store.me?.full_admin,
+
+  async mount(host) {
+    S.els.oidc = h('div', null, h('div', { class: 'card skeleton', style: { height: '320px' } }));
+    host.append(S.els.oidc);
+    await loadOidc();
   },
 
   unmount() { S.els = {}; },
@@ -49,12 +64,12 @@ const instName = (iid) => (store.instances[iid] ? displayName(iid) : iid);
 function renderList() {
   const host = S.els.list;
   if (!host) return;
-  const users = S.data.users;
-  if (!users.length) {
+  const list = S.data.users;
+  if (!list.length) {
     host.replaceChildren(emptyState({ iconName: 'shield', title: t('users.emptyTitle') }));
     return;
   }
-  host.replaceChildren(h('ul', { class: 'rows' }, users.map((u) => {
+  host.replaceChildren(h('ul', { class: 'rows' }, list.map((u) => {
     const editable = !u.owner && u.id !== S.data.me;
     const sw = switchControl({
       checked: u.enabled, disabled: !editable, label: t('users.enabled'),
@@ -340,14 +355,13 @@ function oidcCard(cfg, defaultRedirect) {
         if (d.ok) {
           secret.input.value = '';
           secret.input.placeholder = d.oidc.has_secret ? t('users.oidc.keepSecret') : t('users.oidc.noSecret');
-          S.data.oidc = d.oidc.enabled;
+          if (S.data) S.data.oidc = d.oidc.enabled;
         }
       } catch (err) { toastError(err); }
     });
   }
 
   return card({
-    title: t('users.oidc.title'), description: t('users.oidc.desc'),
     body: h('form', { id: 'oidc-form', class: 'form-stack', onSubmit: submit, novalidate: true },
       enabled,
       h('div', { class: 'form-grid' },

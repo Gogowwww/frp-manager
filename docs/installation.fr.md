@@ -21,8 +21,8 @@
 - Architectures : `amd64`, `arm64`, `arm`
 
 Inutile d'installer frp avant : le script télécharge `frps`/`frpc` et crée
-leurs services systemd. frp se met ensuite à jour depuis la page
-**Mises à jour**, quand vous le décidez : rien n'est mis à jour automatiquement.
+leurs services systemd. frp se met ensuite à jour depuis **Réglages → Mises à
+jour**, quand vous le décidez : rien n'est mis à jour automatiquement.
 
 ## Installation par script
 
@@ -178,7 +178,7 @@ désactivez les miroirs (**Réglages → Accès réseau**).
 
 ## Notifications par webhook
 
-La page **Notifications** envoie un message à l'adresse de votre choix quand quelque chose se passe sur la
+**Réglages → Notifications** envoie un message à l'adresse de votre choix quand quelque chose se passe sur la
 machine. Chaque webhook a sa destination, son format, ses événements et sa langue : les pannes vers Discord,
 les mises à jour vers ntfy, les événements de sécurité vers votre propre service.
 

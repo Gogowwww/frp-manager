@@ -64,7 +64,7 @@ function renderAlerts(host) {
     const what = store.updates.frp && store.updates.panel ? 'both' : store.updates.frp ? 'frp' : 'panel';
     items.push(callout({
       type: 'info', iconName: 'download', title: t(`dashboard.update.${what}`),
-      actions: [button(t('dashboard.seeUpdates'), { size: 'sm', onClick: () => navigate('updates') })],
+      actions: [button(t('dashboard.seeUpdates'), { size: 'sm', onClick: () => navigate('settings', { s: 'updates' }) })],
     }));
   }
   if (store.inDocker) {
@@ -85,7 +85,7 @@ function renderGrid(grid) {
       iconName: 'server',
       title: t('dashboard.emptyTitle'),
       text: store.inDocker ? t('dashboard.emptyTextDocker') : t('dashboard.emptyText'),
-      actions: store.inDocker || !can('updates.install') ? [] : [button(t('dashboard.installFrp'), { variant: 'primary', iconName: 'download', onClick: () => navigate('updates') })],
+      actions: store.inDocker || !can('updates.install') ? [] : [button(t('dashboard.installFrp'), { variant: 'primary', iconName: 'download', onClick: () => navigate('settings', { s: 'updates' }) })],
     })));
     return;
   }

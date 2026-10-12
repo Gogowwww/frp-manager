@@ -969,7 +969,7 @@ def _user_view(u):
 def _me_view(u):
     v = _user_view(u)
     return {**{k: v[k] for k in ("id", "username", "display_name", "source", "owner", "role", "instances")},
-            "permissions": v["effective"]}
+            "permissions": v["effective"], "full_admin": is_full_admin(u)}
 
 def _parse_account_fields(raw, base):
     """Rôle, permissions et instances d'après la saisie `raw`, complétée par la
@@ -3789,7 +3789,7 @@ def _read_instance_config(inst):
         return None
 
 # ── Retrait de frp-autoupdate.py (0.0.53) ────────────────────────────────────
-# frp ne se met plus à jour tout seul : uniquement depuis la page Mises à jour.
+# frp ne se met plus à jour tout seul : uniquement depuis Réglages → Mises à jour.
 # Une installation antérieure garde sa tâche cron, le script et la ligne
 # ExecStartPost du service (la mise à jour du panel ne touche qu'aux fichiers) :
 # on les retire au démarrage.

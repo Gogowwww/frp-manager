@@ -44,7 +44,7 @@ Version consacrée à la sécurité du panel. La mise à jour est transparente :
 - **Mot de passe haché en argon2id** (scrypt en repli). L'ancien format est rehaché automatiquement à votre prochaine connexion.
 - **Protection contre la force brute** : 5 essais par adresse IP, puis verrouillage progressif.
 - **Protection CSRF**, cookies HttpOnly / SameSite=Strict / Secure, en-têtes Content-Security-Policy, X-Frame-Options et Referrer-Policy.
-- **Téléchargements vérifiés** : archives frp contrôlées par leur somme SHA-256 publiée, mise à jour du panel vérifiée par la somme jointe à la release. Les miroirs tiers (ghproxy, ghfast, gh-proxy) peuvent être désactivés dans Réglages → Accès réseau et ne sont jamais utilisés sans somme de contrôle.
+- **Téléchargements vérifiés** : archives frp contrôlées par leur somme SHA-256 publiée, mise à jour du panel vérifiée par la somme jointe à la release. Les miroirs tiers (ghproxy, ghfast, gh-proxy) peuvent être désactivés dans Réglages → Accès au panel et ne sont jamais utilisés sans somme de contrôle.
 - **Configurations vérifiées** : un TOML invalide n'est plus jamais écrit sur le disque.
 - `python3 app.py --reset-password` pour redéfinir les identifiants depuis la console.
 - SECURITY.md, guide de contribution, tests automatisés, README réorganisé.

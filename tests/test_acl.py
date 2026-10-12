@@ -68,6 +68,15 @@ def test_scoped_account_keeps_only_instance_permissions(appmod):
 def test_owner_is_admin(appmod, owner):
     me = owner.get("/api/me").get_json()["user"]
     assert me["owner"] and me["role"] == "admin" and "users.manage" in me["permissions"]
+    assert me["full_admin"] is True
+
+
+def test_full_admin_flag(appmod, owner, instances):
+    """full_admin (section Connexion unique) : administrateur sur toutes les instances seulement."""
+    create_user(owner, username="adm", role="admin")
+    create_user(owner, username="partiel", role="custom", permissions=["users.manage", "config.write"], instances=["frpc"])
+    assert login_as(appmod, "adm").get("/api/me").get_json()["user"]["full_admin"] is True
+    assert login_as(appmod, "partiel").get("/api/me").get_json()["user"]["full_admin"] is False
 
 
 # ── Création et connexion ────────────────────────────────────────────────────

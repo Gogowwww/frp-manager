@@ -6,8 +6,13 @@
 // non enregistrées ») ; si elle vaut false, la navigation est annulée.
 
 const routes = new Map();
-// Anciennes adresses encore valides (favoris) → page actuelle
-const ALIASES = { tunnels: 'ports' };
+// Anciennes adresses encore valides (favoris) → [page actuelle, paramètres]
+const ALIASES = {
+  tunnels: ['ports'],
+  notifications: ['settings', { s: 'notifications' }],
+  updates: ['settings', { s: 'updates' }],
+  users: ['settings', { s: 'users' }],
+};
 let current = null;
 let currentHash = '';
 let view = null;
@@ -45,7 +50,9 @@ export function currentPage() { return current; }
 async function render() {
   let { name, params } = parseHash();
   if (ALIASES[name]) {
-    name = ALIASES[name];
+    const [to, extra] = ALIASES[name];
+    name = to;
+    params = { ...params, ...extra };
     history.replaceState(null, '', hrefFor(name, params));
   }
   if (current && current.canLeave && location.hash !== currentHash) {

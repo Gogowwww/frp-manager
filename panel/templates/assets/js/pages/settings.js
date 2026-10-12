@@ -1,53 +1,60 @@
-// ── Réglages du panel : sécurité, accès réseau, préférences ───────────────
+// ── Réglages : tous les réglages du panel, regroupés par section ──────────
+// Menu des sections à gauche (rangée défilante sur mobile), section ouverte à
+// droite : #/settings?s=users. Chaque section ne s'affiche qu'aux comptes qui
+// ont la permission correspondante (le serveur vérifie de toute façon).
+// Une section = { id, icon, title(), description(), visible?(), actions?(),
+// badge?(), mount(host), unmount?() }.
 
 import { t, LOCALES, PREVIEW_LOCALES, getLocale, setLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
 import { store, can } from '../store.js';
+import { hrefFor, replaceParams } from '../router.js';
 import {
-  h, button, busy, toast, toastResult, toastError, field, setFieldError, input, select, secretInput,
+  h, icon, button, busy, toast, toastResult, toastError, field, setFieldError, input, select, secretInput,
   segmented, callout, pageHeader, card, switchRow,
 } from '../ui.js';
 import { getThemePref, setThemePref } from '../theme.js';
-
-export default {
-  id: 'settings',
-  title: () => t('nav.settings'),
-
-  async mount(view) {
-    const page = h('div', { class: 'page' },
-      pageHeader({ title: t('settings.title'), description: t('settings.description') }));
-    view.append(page);
-
-    // Réglages du panel : seulement avec la permission ; chacun garde son
-    // compte et ses préférences d'affichage
-    let cfg = {};
-    const manage = can('settings.manage');
-    if (manage) {
-      try {
-        cfg = (await apiOk('/api/manager/config')).config || {};
-      } catch (e) {
-        page.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
-      }
-    }
-    const account = store.me?.owner ? securityCard({ has_password: store.hasPassword, username: store.me.username, ...cfg })
-      : accountCard();
-    // Sécurité et accès réseau côte à côte, les préférences d'affichage en dessous
-    page.append(manage
-      ? h('div', { class: 'grid-2 card-pair' }, account, networkCard(cfg))
-      : h('div', { class: 'grid-2 card-pair' }, account, preferencesCard()));
-    if (manage) page.append(preferencesCard());
-  },
-};
+import notifications from './notifications.js';
+import updates from './updates.js';
+import { users, sso } from './users.js';
 
 const PASSWORD_MIN = 12;
 
-function securityCard(cfg) {
-  const state = cfg.has_password
-    ? callout({ type: 'success', iconName: 'shield', text: t('settings.security.protected') })
-    : callout({ type: 'danger', title: t('settings.security.unprotectedTitle'), text: t('settings.security.unprotectedText') });
+// ── Mon compte ─────────────────────────────────────────────────────────────
 
-  const username = input({ value: cfg.username || 'admin', autocomplete: 'username' });
-  const pass = secretInput({ autocomplete: 'new-password', placeholder: cfg.has_password ? t('settings.security.keepPassword') : '' });
+const account = {
+  id: 'account',
+  icon: 'user',
+  title: () => t('settings.account.title'),
+  description: () => t(store.me?.source === 'oidc' ? 'settings.account.oidcDesc' : 'settings.account.desc'),
+  mount(host) {
+    host.append(profileCard(), store.me?.owner ? ownerCard() : passwordCard());
+  },
+};
+
+/** Identifiant, rôle et instances du compte connecté. */
+function profileCard() {
+  const me = store.me || {};
+  const role = t(`users.roles.${me.role || 'viewer'}`);
+  const cell = (label, value) => h('div', { class: 'version-cell' }, h('dt', null, label), h('dd', { title: value }, value));
+  return card({
+    title: t('settings.account.profile'),
+    body: h('dl', { class: 'versions profile-cells' },
+      cell(t('settings.account.username'), me.display_name ? `${me.username} · ${me.display_name}` : me.username || '—'),
+      cell(t('settings.account.role'), me.owner ? `${role} · ${t('users.owner')}` : role),
+      cell(t('settings.account.instances'), me.instances === '*' || !me.instances ? t('users.allInstances') : me.instances.join(', '))),
+  });
+}
+
+/** Propriétaire : identifiant et mot de passe du panel (pas d'ancien mot de passe
+ * demandé : c'est le compte de la configuration initiale). */
+function ownerCard() {
+  const status = () => (store.hasPassword
+    ? callout({ type: 'success', compact: true, iconName: 'shield', text: t('settings.security.protected') })
+    : callout({ type: 'danger', title: t('settings.security.unprotectedTitle'), text: t('settings.security.unprotectedText') }));
+  let state = status();
+  const username = input({ value: store.me?.username || 'admin', autocomplete: 'username' });
+  const pass = secretInput({ autocomplete: 'new-password', placeholder: store.hasPassword ? t('settings.security.keepPassword') : '' });
   const confirm = secretInput({ autocomplete: 'new-password' });
   const saveBtn = button(t('settings.security.save'), { variant: 'primary', type: 'submit', form: 'security-form' });
 
@@ -63,15 +70,14 @@ function securityCard(cfg) {
     await busy(saveBtn, async () => {
       try {
         const d = await api('/api/manager/config', { method: 'POST', body: { username: username.value.trim(), new_password: p1 || undefined } });
-        if (d.ok) {
-          toast(p1 ? t('settings.security.passwordSaved') : t('settings.security.saved'), 'success');
-          pass.input.value = '';
-          confirm.input.value = '';
-          if (p1) {
-            store.set({ hasPassword: true });
-            state.replaceWith(callout({ type: 'success', iconName: 'shield', text: t('settings.security.protected') }));
-          }
-        } else toastResult(d);
+        if (!d.ok) { toastResult(d); return; }
+        toast(p1 ? t('settings.security.passwordSaved') : t('settings.security.saved'), 'success');
+        pass.input.value = '';
+        confirm.input.value = '';
+        store.set({ me: { ...store.me, username: username.value.trim() }, ...(p1 ? { hasPassword: true } : {}) });
+        const next = status();
+        state.replaceWith(next);
+        state = next;
       } catch (err) { toastError(err); }
     });
   }
@@ -88,19 +94,10 @@ function securityCard(cfg) {
   });
 }
 
-/** Compte d'un utilisateur autre que le propriétaire : son mot de passe à lui. */
-function accountCard() {
-  const me = store.me || {};
-  const info = h('dl', { class: 'kv' },
-    h('dt', null, t('settings.account.username')), h('dd', null, me.username || '—'),
-    h('dt', null, t('settings.account.role')), h('dd', null, t(`users.roles.${me.role || 'viewer'}`)),
-    h('dt', null, t('settings.account.instances')),
-    h('dd', null, me.instances === '*' || !me.instances ? t('users.allInstances') : me.instances.join(', ')));
-  if (me.source === 'oidc') {
-    return card({
-      title: t('settings.account.title'), description: t('settings.account.oidcDesc'),
-      body: h('div', { class: 'form-stack' }, info, callout({ type: 'neutral', compact: true, iconName: 'shield', text: t('settings.account.oidcNote') })),
-    });
+/** Autre compte local : son propre mot de passe (l'actuel est redemandé). */
+function passwordCard() {
+  if (store.me?.source === 'oidc') {
+    return callout({ type: 'neutral', iconName: 'key', text: t('settings.account.oidcNote') });
   }
   const current = secretInput({ autocomplete: 'current-password' });
   const pass = secretInput({ autocomplete: 'new-password' });
@@ -123,9 +120,8 @@ function accountCard() {
   }
 
   return card({
-    title: t('settings.account.title'), description: t('settings.account.desc'),
+    title: t('settings.account.password'),
     body: h('form', { id: 'account-form', class: 'form-stack', onSubmit: submit, novalidate: true },
-      info,
       h('div', { class: 'form-grid' },
         field({ label: t('settings.account.current'), control: current }),
         field({ label: t('settings.security.newPassword'), hint: t('settings.security.passwordHint'), control: pass }),
@@ -134,7 +130,56 @@ function accountCard() {
   });
 }
 
-function networkCard(cfg) {
+// ── Apparence ──────────────────────────────────────────────────────────────
+
+const appearance = {
+  id: 'appearance',
+  icon: 'palette',
+  title: () => t('settings.prefs.title'),
+  description: () => t('settings.prefs.desc'),
+  mount(host) {
+    const theme = segmented([
+      { value: 'auto', label: t('settings.prefs.themeAuto'), icon: 'monitor' },
+      { value: 'light', label: t('settings.prefs.themeLight'), icon: 'sun' },
+      { value: 'dark', label: t('settings.prefs.themeDark'), icon: 'moon' },
+    ], getThemePref(), setThemePref, { label: t('settings.prefs.theme') });
+
+    const codes = Object.keys(LOCALES);
+    const langLabel = (c) => (PREVIEW_LOCALES.has(c) ? `${LOCALES[c]} (${t('settings.prefs.preview')})` : LOCALES[c]);
+    const lang = select(codes.map((c) => ({ value: c, label: langLabel(c) })), getLocale(), { class: 'select select-inline' });
+    lang.disabled = codes.length < 2;
+    lang.addEventListener('change', () => setLocale(lang.value));
+
+    host.append(card({
+      body: h('div', { class: 'form-grid-2' },
+        h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('settings.prefs.theme')), theme),
+        field({ label: t('settings.prefs.language'), hint: codes.length < 2 ? t('settings.prefs.languageSoon')
+          : PREVIEW_LOCALES.has(getLocale()) ? t('settings.prefs.languagePreview') : null, control: lang })),
+    }));
+  },
+};
+
+// ── Accès au panel ─────────────────────────────────────────────────────────
+
+const access = {
+  id: 'access',
+  icon: 'server',
+  title: () => t('settings.network.title'),
+  description: () => t('settings.network.desc'),
+  visible: () => can('settings.manage'),
+  async mount(host) {
+    let cfg;
+    try {
+      cfg = (await apiOk('/api/manager/config')).config || {};
+    } catch (e) {
+      host.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+      return;
+    }
+    host.append(listenCard(cfg), downloadsCard(cfg));
+  },
+};
+
+function listenCard(cfg) {
   const host = input({ value: cfg.bind_host || '127.0.0.1', mono: true });
   const port = input({ value: cfg.bind_port || 8765, inputmode: 'numeric', mono: true });
   const timeout = input({ value: Math.round((cfg.session_timeout || 3600) / 60), inputmode: 'numeric', mono: true });
@@ -160,47 +205,98 @@ function networkCard(cfg) {
   }
 
   return card({
-    title: t('settings.network.title'), description: t('settings.network.desc'),
+    title: t('settings.network.listenTitle'), description: t('settings.network.listenDesc'),
     body: h('form', { id: 'network-form', class: 'form-stack', onSubmit: submit, novalidate: true },
       h('div', { class: 'form-grid' },
         field({ label: t('settings.network.host'), hint: t('settings.network.hostHint'), tomlKey: 'bind_host', control: host }),
         field({ label: t('settings.network.port'), tomlKey: 'bind_port', control: port }),
         field({ label: t('settings.network.timeout'), hint: t('settings.network.timeoutHint'), control: timeout })),
-      callout({ type: 'neutral', text: t('settings.network.restartNote') }),
-      switchRow({
-        label: t('settings.network.mirrors'),
-        description: t('settings.network.mirrorsDesc'),
-        checked: cfg.download_mirrors !== false,
-        onChange: async (checked) => {
-          try {
-            const d = await api('/api/manager/config', { method: 'POST', body: { download_mirrors: checked } });
-            if (d.ok) toast(t('settings.network.mirrorsSaved'), 'success');
-            else toastResult(d);
-          } catch (err) { toastError(err); }
-        },
-      })),
+      callout({ type: 'neutral', compact: true, text: t('settings.network.restartNote') })),
     foot: [saveBtn],
   });
 }
 
-function preferencesCard() {
-  const theme = segmented([
-    { value: 'auto', label: t('settings.prefs.themeAuto'), icon: 'monitor' },
-    { value: 'light', label: t('settings.prefs.themeLight'), icon: 'sun' },
-    { value: 'dark', label: t('settings.prefs.themeDark'), icon: 'moon' },
-  ], getThemePref(), setThemePref, { label: t('settings.prefs.theme') });
-
-  const codes = Object.keys(LOCALES);
-  const langLabel = (c) => (PREVIEW_LOCALES.has(c) ? `${LOCALES[c]} (${t('settings.prefs.preview')})` : LOCALES[c]);
-  const lang = select(codes.map((c) => ({ value: c, label: langLabel(c) })), getLocale(), { class: 'select select-inline' });
-  lang.disabled = codes.length < 2;
-  lang.addEventListener('change', () => setLocale(lang.value));
-
+function downloadsCard(cfg) {
   return card({
-    title: t('settings.prefs.title'), description: t('settings.prefs.desc'),
-    body: h('div', { class: 'form-grid-2' },
-      h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('settings.prefs.theme')), theme),
-      field({ label: t('settings.prefs.language'), hint: codes.length < 2 ? t('settings.prefs.languageSoon')
-        : PREVIEW_LOCALES.has(getLocale()) ? t('settings.prefs.languagePreview') : null, control: lang })),
+    title: t('settings.network.downloadsTitle'),
+    body: switchRow({
+      label: t('settings.network.mirrors'),
+      description: t('settings.network.mirrorsDesc'),
+      checked: cfg.download_mirrors !== false,
+      onChange: async (checked) => {
+        try {
+          const d = await api('/api/manager/config', { method: 'POST', body: { download_mirrors: checked } });
+          if (d.ok) toast(t('settings.network.mirrorsSaved'), 'success');
+          else toastResult(d);
+        } catch (err) { toastError(err); }
+      },
+    }),
   });
 }
+
+// ── Page ───────────────────────────────────────────────────────────────────
+
+const GROUPS = [
+  ['personal', [account, appearance]],
+  ['access', [access, users, sso]],
+  ['system', [notifications, updates]],
+];
+
+let active = null;
+let unsubscribe = null;
+
+export default {
+  id: 'settings',
+  title: () => t('nav.settings'),
+
+  async mount(view, params = {}) {
+    const groups = GROUPS
+      .map(([id, list]) => [id, list.filter((s) => !s.visible || s.visible())])
+      .filter(([, list]) => list.length);
+    const sections = groups.flatMap(([, list]) => list);
+    const section = sections.find((s) => s.id === params.s) || sections[0];
+    // Section absente ou interdite à ce compte : l'adresse suit la section ouverte
+    if (params.s && params.s !== section.id) replaceParams({ s: section.id });
+
+    // Menu des sections ; pastille sur Mises à jour quand une version sort
+    const dots = new Map();
+    const nav = h('nav', { class: 'settings-nav', 'aria-label': t('settings.sections') },
+      groups.map(([id, list]) => h('div', { class: 'settings-nav-group' },
+        h('div', { class: 'settings-nav-title' }, t(`settings.groups.${id}`)),
+        list.map((s) => {
+          const dot = s.badge ? h('span', { class: 'nav-badge', title: t('nav.updateAvailable'), hidden: !s.badge() }) : null;
+          if (dot) dots.set(s, dot);
+          return h('a', {
+            class: 'settings-nav-link', href: hrefFor('settings', { s: s.id }),
+            'aria-current': s === section ? 'page' : null,
+          }, icon(s.icon), h('span', null, s.title()), dot);
+        }))));
+    unsubscribe = store.subscribe(() => dots.forEach((dot, s) => { dot.hidden = !s.badge(); }));
+
+    const actions = section.actions ? section.actions() : [];
+    const body = h('div', { class: 'settings-body' });
+    const pane = h('section', { class: 'settings-pane', 'aria-labelledby': 'settings-pane-title' },
+      h('header', { class: 'settings-pane-head' },
+        h('div', null,
+          h('h2', { class: 'settings-pane-title', id: 'settings-pane-title' }, section.title()),
+          h('p', { class: 'settings-pane-desc' }, section.description())),
+        actions.length ? h('div', { class: 'page-actions' }, actions) : null),
+      body);
+
+    view.append(h('div', { class: 'page' },
+      pageHeader({ title: t('settings.title'), description: t('settings.description') }),
+      h('div', { class: 'settings-layout' }, nav, pane)));
+    // Sur mobile, la section ouverte reste visible dans la rangée défilante
+    nav.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+
+    active = section;
+    await section.mount(body);
+  },
+
+  unmount() {
+    active?.unmount?.();
+    active = null;
+    unsubscribe?.();
+    unsubscribe = null;
+  },
+};

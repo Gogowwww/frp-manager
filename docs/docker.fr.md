@@ -104,7 +104,7 @@ Configuration candidate, **non vérifiée**, à tester sur une machine de test :
 ```
 
 Points à vérifier après l'essai : démarrage/arrêt d'un service frp depuis le
-panel, journaux en direct, installation de frp (page Mises à jour),
+panel, journaux en direct, installation de frp (Réglages → Mises à jour),
 application d'une règle de pare-feu, suppression d'une instance. Si vous
 validez une configuration réduite qui fonctionne, une pull request est la
 bienvenue.

@@ -100,7 +100,7 @@ Candidate configuration, **not verified**, to try on a test machine:
 ```
 
 Check afterwards: starting/stopping an frp service from the panel, live logs,
-installing frp (Updates page), applying a firewall rule, deleting an instance.
+installing frp (Settings → Updates), applying a firewall rule, deleting an instance.
 If you validate a reduced configuration that works, a pull request is welcome.
 
 **Safer alternative**: the standard install (`install.sh`) without Docker,

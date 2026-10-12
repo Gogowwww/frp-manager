@@ -12,6 +12,22 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.57] - 2026-10-12
+
+Pre-release.
+
+### Changed
+
+- **All settings in one place**: Notifications, Updates, Users and Single
+  sign-on leave the main menu and become sections of **Settings**, in three
+  groups (Personal: My account, Appearance; Access and security: Panel access,
+  Users, Single sign-on; System: Notifications, Updates). A menu on the left, a
+  scrolling row on mobile; each account only sees the sections it is allowed.
+  Old addresses (`#/notifications`, `#/updates`, `#/users`) lead to the right
+  section, and the update dot moves to Settings.
+- **My account** shows the profile (username, role, instances) above the
+  password.
+
 ## [0.0.56] - 2026-10-11
 
 Pre-release.
@@ -196,7 +212,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...HEAD
+[0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54

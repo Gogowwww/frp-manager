@@ -844,7 +844,7 @@ transport.useCompression = true
 
   on('GET', /^\/api\/me$/, () => {
     const u = userView(users()[0]);
-    return { ok: true, user: { ...u, permissions: u.effective } };
+    return { ok: true, user: { ...u, permissions: u.effective, full_admin: true } };
   });
   on('POST', /^\/api\/me\/password$/, () => ({ ok: true, msg: M('Mot de passe modifié.', 'Password changed.') }));
   on('GET', /^\/api\/users$/, () => ({

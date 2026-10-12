@@ -21,7 +21,7 @@
 - Architectures: `amd64`, `arm64`, `arm`
 
 No need to install frp first: the script downloads `frps`/`frpc` and creates
-their systemd services. frp is then updated from the **Updates** page, when
+their systemd services. frp is then updated from **Settings → Updates**, when
 you decide: nothing is updated automatically.
 
 ## Install script
@@ -176,7 +176,7 @@ log. If github.com is reachable for you, disable the mirrors
 
 ## Webhook notifications
 
-The **Notifications** page sends a message to an address of your choice when something happens on the
+**Settings → Notifications** sends a message to an address of your choice when something happens on the
 machine. Each webhook has its own destination, format, events and language, so you can send outages to
 Discord, updates to ntfy and security events to your own service.
 

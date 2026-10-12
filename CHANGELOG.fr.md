@@ -12,6 +12,23 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.57] - 2026-10-12
+
+Pré-release.
+
+### Modifié
+
+- **Tous les réglages au même endroit** : Notifications, Mises à jour,
+  Utilisateurs et Connexion unique quittent le menu principal pour devenir des
+  sections de **Réglages**, rangées en trois groupes (Personnel : Mon compte,
+  Apparence ; Accès et sécurité : Accès au panel, Utilisateurs, Connexion
+  unique ; Système : Notifications, Mises à jour). Un menu à gauche, une rangée
+  défilante sur mobile ; chaque compte ne voit que les sections permises. Les
+  anciennes adresses (`#/notifications`, `#/updates`, `#/users`) mènent à la
+  bonne section, et la pastille de mise à jour passe sur Réglages.
+- **Mon compte** affiche le profil (identifiant, rôle, instances) au-dessus du
+  mot de passe.
+
 ## [0.0.56] - 2026-10-11
 
 Pré-release.
@@ -210,7 +227,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...HEAD
+[0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
 [0.0.55]: https://github.com/Gogowwww/frp-manager/compare/v0.0.54...v0.0.55
 [0.0.54]: https://github.com/Gogowwww/frp-manager/compare/v0.0.53...v0.0.54

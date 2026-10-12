@@ -90,7 +90,7 @@ souhaitez.
    l'accès par IP.
 3. Utilisez un mot de passe long et unique, et un token frp long et unique
    par serveur.
-4. Désactivez les miroirs tiers (Réglages → Accès réseau) si github.com vous
+4. Désactivez les miroirs tiers (Réglages → Accès au panel) si github.com vous
    est accessible.
 
 ## Base de données

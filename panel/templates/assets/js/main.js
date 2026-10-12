@@ -13,12 +13,10 @@ import tunnels from './pages/tunnels.js';
 import firewall from './pages/firewall.js';
 import config from './pages/config.js';
 import logs from './pages/logs.js';
-import updates from './pages/updates.js';
-import notifications from './pages/notifications.js';
 import settings from './pages/settings.js';
-import users from './pages/users.js';
 
-const PAGES = [dashboard, tunnels, firewall, config, logs, notifications, updates, users, settings];
+// Notifications, mises à jour, comptes et connexion unique sont des sections de Réglages
+const PAGES = [dashboard, tunnels, firewall, config, logs, settings];
 const canOpen = (page) => !page.perm || can(page.perm);
 
 const WELCOME_KEY = 'frpMgrWelcomeSeen';

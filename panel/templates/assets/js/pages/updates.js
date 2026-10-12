@@ -1,10 +1,10 @@
-// ── Mises à jour : frp (binaires) et panel FRP Manager ────────────────────
+// ── Réglages › Mises à jour : frp (binaires) et panel FRP Manager ─────────
 
 import { t } from '../i18n.js';
 import { api } from '../api.js';
 import { store, can, refreshStatus } from '../store.js';
 import {
-  h, icon, button, busy, toast, toastError, field, input, callout, pageHeader, card, confirmDialog, copyButton,
+  h, icon, button, busy, toast, toastError, field, input, callout, card, confirmDialog, copyButton,
 } from '../ui.js';
 
 const DOCKER_PULL = 'docker pull ghcr.io/gogowwww/frp-manager:latest';
@@ -13,27 +13,26 @@ const later = (fn, ms) => { const id = setTimeout(() => { timers.delete(id); fn(
 
 export default {
   id: 'updates',
-  title: () => t('nav.updates'),
-  perm: 'updates.view',
+  icon: 'download',
+  title: () => t('updates.title'),
+  description: () => t('updates.description'),
+  visible: () => can('updates.view'),
+  badge: () => store.updates.frp || store.updates.panel,
 
-  mount(view) {
-    const page = h('div', { class: 'page' },
-      pageHeader({ title: t('updates.title'), description: t('updates.description') }));
-    view.append(page);
-
+  mount(host) {
     if (store.inDocker) {
-      page.append(
+      host.append(
         callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }),
         panelCard());
       return;
     }
     // frp et panel côte à côte, les outils de dépannage regroupés en dessous
-    page.append(
+    host.append(
       h('div', { class: 'grid-2 card-pair update-cards' }, frpCard(), panelCard()),
       h('section', null,
         h('div', { class: 'section-head' },
           h('div', null,
-            h('h2', { class: 'section-title' }, t('updates.toolsTitle')),
+            h('h3', { class: 'section-title' }, t('updates.toolsTitle')),
             h('p', { class: 'section-desc' }, t('updates.toolsDesc')))),
         h('div', { class: 'card' }, can('updates.install') && manualCard(), connectivityCard())));
   },
