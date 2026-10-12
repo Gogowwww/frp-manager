@@ -12,6 +12,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.59] - 2026-10-12
+
+Connexion par passkey, et la documentation dans le wiki GitHub.
+
+Pré-release.
+
 ### Ajouté
 
 - **Passkeys** : tout compte qui se connecte par mot de passe peut ajouter des
@@ -308,7 +314,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...HEAD
+[0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
 [0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
 [0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56

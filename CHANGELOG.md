@@ -12,6 +12,12 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.59] - 2026-10-12
+
+Sign in with a passkey, and the documentation in the GitHub wiki.
+
+Pre-release.
+
 ### Added
 
 - **Passkeys**: every account that signs in with a password can add passkeys
@@ -293,7 +299,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...HEAD
+[0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
 [0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
 [0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
 [0.0.56]: https://github.com/Gogowwww/frp-manager/compare/v0.0.55...v0.0.56
