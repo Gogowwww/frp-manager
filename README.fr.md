@@ -10,7 +10,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 
 [English](README.md) · **Français**
 
-![Tableau de bord de FRP Manager](docs/img/home.png)
+![Tableau de bord de FRP Manager](docs/img/dashboard-fr.png)
 
 ## Démarrage rapide
 
@@ -47,9 +47,11 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 - **Connexion unique** : OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), avec des comptes préparés par e-mail ou créés à la première connexion, et des rôles tirés des groupes du fournisseur.
 - **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
 
-| Ports | Éditeur de port | Journaux en direct |
-|:---:|:---:|:---:|
-| ![Ports](docs/img/tunnels.png) | ![Éditeur de port](docs/img/tunnel-editor.png) | ![Journaux](docs/img/logs.png) |
+| Ports | Éditeur de port |
+|:---:|:---:|
+| ![Ports](docs/img/ports-fr.png) | ![Éditeur de port](docs/img/port-editor-fr.png) |
+| **Journaux en direct** | **Réglages** |
+| ![Journaux en direct](docs/img/logs-fr.png) | ![Réglages](docs/img/settings-fr.png) |
 
 ## Pourquoi ce panel
 
@@ -87,6 +89,7 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.fr.md](docs/SE
 ## Documentation
 
 - [Site du projet](https://frp-manager.gogow.fr/fr/) : présentation, démo en ligne et toute la documentation
+- [Wiki](https://github.com/Gogowwww/frp-manager/wiki/Accueil) : la même documentation, sur GitHub
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
 - [Docker : privilèges et risques](docs/docker.fr.md)
 - [Politique de sécurité](docs/SECURITY.fr.md)

@@ -27,7 +27,7 @@ frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker golang s
 - **Settings → Code security → Private vulnerability reporting** : activer,
   sinon le lien de signalement de SECURITY.md ne fonctionne pas.
 - **Settings → General → Social preview** : téléverser une image 1280×640
-  (par exemple `website/demo/og.png`, déjà utilisée par la démo).
+  (par exemple une capture de `docs/img/`, recadrée).
 - **Settings → Actions** : désactivé. Toute la CI tourne sur Forgejo ; GitHub
   ne reçoit que les publications (`release.yml`, `promote.yml`, `github.yml`).
 

@@ -298,9 +298,10 @@ Dépôt
         js/                Application (modules ES, sans étape de build)
         locales/fr.js, en.js  Textes de l'interface
   docs/                    Documentation, politique de sécurité, guide de contribution
-  website/                 Site du projet et démo en ligne (website/demo/) : go run ./website
+                           (aussi sur le site et le wiki GitHub) ; img/ : captures
   internal/                Code partagé (règle des adresses publiques)
-  tools/blocklists/        Robot des listes communautaires du pare-feu
+  tools/                   Outils du dépôt : blocklists (listes communautaires du
+                           pare-feu), releasenotes (notes des releases), wiki
   packaging/               Paquet .deb, passage depuis une version Python
   Dockerfile, docker-compose.yml, go.mod
 

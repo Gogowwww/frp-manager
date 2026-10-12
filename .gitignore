@@ -38,9 +38,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Démo construite (go run ./website demo)
-dist-demo/
-frp-manager-demo.zip
-
-# Site construit (go run ./website build)
-dist-site/
+# Wiki généré (go run ./tools/wiki)
+/wiki/

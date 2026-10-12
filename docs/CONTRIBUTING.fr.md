@@ -36,17 +36,13 @@ echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
 FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 ```
 
-La [démo](../website/demo.go) (`go run ./website demo`) produit une version
-statique de l'interface avec des données fictives, pratique pour travailler
-sur le front sans frp installé.
-
-Le site du projet ([frp-manager.gogow.fr](https://frp-manager.gogow.fr)) se
-construit avec `go run ./website build` : page d'accueil, documentation
-rendue depuis `docs/`, `CHANGELOG.md`… et démo sous `/demo/`.
-Servez le résultat avec `go run ./website serve dist-site` ; `go run ./website seo dist-site`
-vérifie titres, liens et données structurées. Après un changement visible de
-l'interface, `go run ./website shots` refait les captures du site à partir de
-la démo (Chrome, Edge ou Chromium requis).
+La documentation s'écrit dans ce dépôt : `README.md`, `docs/` et les
+CHANGELOG, en anglais et en français. Elle est publiée telle quelle sur le
+[site du projet](https://frp-manager.gogow.fr/docs/) et sur le
+[wiki GitHub](https://github.com/Gogowwww/frp-manager/wiki) (`tools/wiki`,
+`go run ./tools/wiki -out wiki` pour voir les pages produites) : on ne modifie
+ni le site ni le wiki directement. Le site et la démo en ligne sont construits
+à part, à partir de ce dépôt.
 
 ## Avant d'ouvrir une pull request
 
@@ -95,6 +91,8 @@ Actions).
 - **Entre deux releases** : `github.yml` (Actions → « Publier sur GitHub »)
   publie le main Forgejo sur le main public (documentation, traductions,
   CHANGELOG…), en avance rapide et seulement si la CI du commit est passée.
+- **Wiki GitHub** : `promote.yml` et `github.yml` le régénèrent depuis le
+  commit qu'ils viennent de publier ; il suit donc toujours le main public.
 
 ## Traduire le panel
 

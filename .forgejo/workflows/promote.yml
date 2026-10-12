@@ -16,6 +16,7 @@
 #      → visible par le bouton « Mettre à jour » des panels installés ;
 #   4. paquets .deb de la release copiés dans la distribution « stable » du dépôt
 #      APT du Forgejo (apt upgrade les propose alors aux machines abonnées).
+#   5. wiki GitHub régénéré depuis le main public (job wiki).
 #
 # Prérequis : pré-release créée par release.yml, secret GHCR_TOKEN (repo + write:packages).
 
@@ -145,3 +146,23 @@ jobs:
           while read -r url; do curl -sfL -o "deb/$(basename "$url")" "$url"; done < deb/urls
           git -C src checkout --quiet "$SHA"
           sh src/packaging/deb/publish-apt.sh stable deb/*.deb
+
+  # Wiki GitHub régénéré depuis le main public qui vient d'être publié
+  # (tools/wiki) : il suit la documentation publiée, jamais en avance.
+  wiki:
+    needs: promote
+    runs-on: docker
+    container:
+      image: golang:1.26-alpine
+    steps:
+      - name: Wiki GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -eu
+          apk add --no-cache --quiet git
+          rm -rf pub
+          git clone --quiet --depth 1 "https://github.com/$GH_REPO.git" pub
+          git -C pub log -1 --format='main public : %h %s'
+          cd pub
+          go run ./tools/wiki -out ../wiki -push

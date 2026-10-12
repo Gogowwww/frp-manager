@@ -293,9 +293,10 @@ Repository
         js/                Application (ES modules, no build step)
         locales/fr.js, en.js  Interface texts
   docs/                    Documentation, security policy, contributing guide
-  website/                 Project website and live demo (website/demo/): go run ./website
+                           (also on the website and the GitHub wiki); img/: screenshots
   internal/                Shared code (public address rule)
-  tools/blocklists/        Robot for the firewall community lists
+  tools/                   Repository tools: blocklists (firewall community lists),
+                           releasenotes (release notes), wiki
   packaging/               .deb package, move from a Python version
   Dockerfile, docker-compose.yml, go.mod
 

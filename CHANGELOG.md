@@ -12,6 +12,21 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub wiki**: the documentation (README, installation, Docker, security,
+  contributing, changelog), in English and French, is also published to the
+  repository wiki, as on the website; it is regenerated each time the public
+  main is published.
+
+### Changed
+
+- **README screenshots** retaken from the current interface, in English in the
+  English README and in French in the French one, settings included.
+- **Project website and demo**: their generator has left the public
+  repository; they are still built automatically from `docs/` and the panel
+  interface.
+
 ## [0.0.58] - 2026-10-12
 
 The panel moves to Go: a single, lighter program that can also be installed with apt.

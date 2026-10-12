@@ -107,8 +107,8 @@ jobs:
             -d "{\"state\": \"$STATE\", \"context\": \"ci-go\", \"description\": \"$DESC\"}" \
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
 
-  # Le reste du dépôt (le panel est testé par le job go, dans l'image) : site,
-  # robot des listes, code partagé, vulnérabilités connues des dépendances,
+  # Le reste du dépôt (le panel est testé par le job go, dans l'image) : outils
+  # (robot des listes, notes de release, wiki), code partagé, vulnérabilités connues des dépendances,
   # syntaxe des scripts shell et de la passerelle Python.
   outils:
     runs-on: docker
@@ -127,7 +127,7 @@ jobs:
           git config --global user.name ci && git config --global user.email ci@frp-manager.invalid
           test -z "$(gofmt -l .)" || { echo "gofmt :"; gofmt -l .; exit 1; }
           go vet ./...
-          go test -count=1 ./internal/... ./tools/... ./website
+          go test -count=1 ./internal/... ./tools/...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
           bash -n panel/install.sh
           for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh; do

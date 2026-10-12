@@ -10,7 +10,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 
 **English** · [Français](README.fr.md)
 
-![FRP Manager dashboard](docs/img/home.png)
+![FRP Manager dashboard](docs/img/dashboard-en.png)
 
 ## Quick start
 
@@ -47,9 +47,11 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 - **Single sign-on**: OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), with accounts prepared by email or created on first sign-in, and roles taken from the provider's groups.
 - **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
 
-| Ports | Port editor | Live logs |
-|:---:|:---:|:---:|
-| ![Ports](docs/img/tunnels.png) | ![Port editor](docs/img/tunnel-editor.png) | ![Logs](docs/img/logs.png) |
+| Ports | Port editor |
+|:---:|:---:|
+| ![Ports](docs/img/ports-en.png) | ![Port editor](docs/img/port-editor-en.png) |
+| **Live logs** | **Settings** |
+| ![Live logs](docs/img/logs-en.png) | ![Settings](docs/img/settings-en.png) |
 
 ## Why this panel
 
@@ -87,6 +89,7 @@ Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 ## Documentation
 
 - [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
+- [Wiki](https://github.com/Gogowwww/frp-manager/wiki): the same documentation, on GitHub
 - [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Docker: privileges and risks](docs/docker.md)
 - [Security policy](docs/SECURITY.md)

@@ -1,12 +1,19 @@
 # Forgejo Actions : site de FRP Manager (https://frp-manager.gogow.fr) —
 # page d'accueil, documentation et démo en ligne (interface réelle, données fictives).
 #
-# À chaque push sur main qui touche l'interface, la démo, le site ou la
-# documentation, le générateur Go du site (go run ./website build) construit
-# l'application : site/ (la démo est dans site/demo/) et un module Go autonome
-# qui le sert (bibliothèque standard uniquement). Il la publie sur la branche
-# main du dépôt administrator/frp-manager-demo. Le cloudpod Go de Webstrator
-# clone ce dépôt et le lance (« go run main.go » : tout le serveur tient dans main.go).
+# Le générateur du site vit dans le dépôt privé administrator/frp-manager-demo
+# (dossier website/, module Go à part), pas dans ce dépôt public : il lit la
+# documentation (README, docs/, CHANGELOG) et l'interface (panel/templates) d'ici.
+#
+# À chaque push sur main qui touche l'interface ou la documentation, ce workflow
+# clone les deux dépôts, construit le site (go run . build, dans website/) et
+# publie l'application à la racine de frp-manager-demo : site/ et un module Go
+# autonome qui le sert (bibliothèque standard uniquement), à côté de website/.
+# Le cloudpod Go de Webstrator clone ce dépôt et le lance (« go run main.go » :
+# tout le serveur tient dans main.go ; website/, module à part, est ignoré).
+#
+# Après un changement du site lui-même (frp-manager-demo/website), lancer ce
+# workflow à la main : Actions → « Site et démo » → Run workflow.
 #
 # Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
 # d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
@@ -16,7 +23,7 @@ name: Site et démo
 on:
   push:
     branches: [main]
-    paths: ['panel/templates/**', 'website/**', 'docs/**', '*.md', 'go.mod', 'go.sum', '.forgejo/workflows/demo.yml']
+    paths: ['panel/templates/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
   workflow_dispatch:
 
 env:
@@ -49,38 +56,25 @@ jobs:
           [ -n "$DEMO_REPO_TOKEN" ] || { echo "Secret DEMO_REPO_TOKEN manquant"; exit 1; }
           AUTH="Authorization: token $DEMO_REPO_TOKEN"
           URL="${{ github.server_url }}/$DEMO_REPO.git"
-          # Accès au dépôt vérifié d'abord : sinon on repartirait d'un dépôt
-          # vide et l'échec n'apparaîtrait qu'au push, sans explication.
-          git -c "http.extraHeader=$AUTH" ls-remote --heads "$URL" >/dev/null \
-            || { echo "DEMO_REPO_TOKEN refusé ou sans accès à $DEMO_REPO ($URL)"; exit 1; }
           rm -rf out
-          if [ -n "$(git -c "http.extraHeader=$AUTH" ls-remote --heads "$URL" main)" ]; then
-            git -c "http.extraHeader=$AUTH" clone --quiet --depth 1 "$URL" out
-          else
-            git init --quiet -b main out      # dépôt encore vide
-          fi
+          # Historique sans le contenu des anciennes versions (--filter) : dates du
+          # sitemap pour les pages du site, sans retélécharger chaque site publié
+          git -c "http.extraHeader=$AUTH" clone --quiet --filter=blob:none "$URL" out \
+            || { echo "DEMO_REPO_TOKEN refusé ou sans accès à $DEMO_REPO ($URL)"; exit 1; }
+          [ -f out/website/content.json ] || { echo "$DEMO_REPO : dossier website/ absent"; exit 1; }
+          git -C out log -1 --format='Site : %h %s' -- website
 
           # Numéro affiché : dernière version publiée
           VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           SHA=$(git -C src rev-parse --short HEAD)
-          cd src
-          go test -count=1 ./website
-          go run ./website build --out ../dist-site --version "${VERSION:-dev}" --bundle ../out
+          export FRP_MANAGER_REPO="$PWD/src"
+          cd out/website
+          go test -count=1 .
+          go run . build --out ../../dist-site --version "${VERSION:-dev}" --bundle ..
           # Audit SEO : un titre en double, un lien cassé ou un JSON-LD invalide bloque la publication
-          go run ./website seo ../dist-site
+          go run . seo ../../dist-site
           cd ..
-          cat > out/README.md <<EOF
-          # FRP Manager — site et démo
 
-          Construit automatiquement depuis frp-manager (commit $SHA) par
-          .forgejo/workflows/demo.yml : ne pas modifier ce dépôt à la main.
-
-          Lancer : \`go run .\`, ou \`go build -o frp-manager-site . && ./frp-manager-site\`
-          (port \`\$PORT\` ou \`\$SERVER_PORT\`, 8080 par défaut). Module Go sans
-          dépendance (bibliothèque standard), Go 1.22 ou plus récent.
-          EOF
-
-          cd out
           git add -A
           if git diff --cached --quiet; then
             echo "Site inchangé, rien à publier"

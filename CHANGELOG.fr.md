@@ -12,6 +12,20 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Wiki GitHub** : la documentation (README, installation, Docker, sécurité,
+  contribution, journal des modifications), en anglais et en français, est
+  aussi publiée dans le wiki du dépôt, comme sur le site ; elle est régénérée
+  à chaque publication du main public.
+
+### Modifié
+
+- **Captures du README** refaites sur l'interface actuelle, en anglais dans le
+  README anglais et en français dans le README français, avec les réglages.
+- **Site du projet et démo** : leur générateur a quitté le dépôt public ; ils
+  restent construits automatiquement depuis `docs/` et l'interface du panel.
+
 ## [0.0.58] - 2026-10-12
 
 Le panel passe en Go : un seul programme, plus léger, qui s'installe aussi par apt.
