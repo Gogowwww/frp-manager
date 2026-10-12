@@ -24,7 +24,7 @@ jobs:
       - name: Récupérer le code
         run: |
           set -eu
-          apk add --no-cache --quiet git zip dpkg
+          apk add --no-cache --quiet git zip dpkg curl
           rm -rf src ci
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
