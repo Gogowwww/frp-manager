@@ -36,12 +36,12 @@ souhaitez.
 
 - L'accès à l'interface et à l'API : identifiant et mot de passe obligatoires
   (configuration initiale imposée au premier lancement), mot de passe haché en
-  argon2id (scrypt en repli), limitation des tentatives par IP, sessions
+  argon2id (deux calculs à la fois au plus), limitation des tentatives par IP, sessions
   HttpOnly / SameSite=Strict / Secure en HTTPS, jeton CSRF sur toute requête
   qui modifie quelque chose.
 - Le navigateur de l'administrateur : Content-Security-Policy stricte pour les
   scripts (nonce), X-Frame-Options, échappement systématique des données
-  (autoescape Jinja2, DOM construit sans `innerHTML`).
+  (valeurs insérées dans les pages du serveur, DOM construit sans `innerHTML`).
 - Le système : aucune commande passée à un shell avec des données saisies,
   noms de services et de conteneurs validés par liste blanche, configurations
   validées (TOML parsé) et confinées aux dossiers de configuration de frp,

@@ -9,7 +9,6 @@ export default {
     dashboard: 'Tableau de bord',
     tunnels: 'Ports',
     firewall: 'Pare-feu',
-    config: 'Configuration',
     logs: 'Journaux',
     settings: 'Réglages',
     logout: 'Se déconnecter',
@@ -379,6 +378,8 @@ export default {
 
   config: {
     title: 'Configuration',
+    randomPort: 'Aléatoire',
+    randomPortHint: 'Tirer un port au hasard (10000–32767)',
     readOnly: 'Votre compte peut consulter cette configuration, pas la modifier.',
     description: 'Connexion et sécurité de frps ou frpc. Chaque champ indique la clé correspondante dans le fichier TOML.',
     emptyTitle: 'Rien à configurer',
@@ -416,7 +417,7 @@ export default {
       },
     },
     fields: {
-      bindPort: { label: 'Port d’écoute', hint: 'Le port que les clients frpc utilisent pour se connecter.' },
+      bindPort: { label: 'Port d’écoute', hint: 'Le port que les clients frpc utilisent pour se connecter. Un port aléatoire évite les robots qui visent 7000 ; reportez-le dans serverPort des clients.' },
       bindAddr: { label: 'Adresse d’écoute', hint: '0.0.0.0 pour toutes les interfaces IPv4, :: pour IPv6.' },
       proxyBindAddr: { label: 'Adresse des ports', hint: 'IP publique sur laquelle ouvrir les ports, si elle diffère.' },
       authMethod: { label: 'Méthode' },
@@ -529,10 +530,11 @@ export default {
 
   settings: {
     title: 'Réglages',
-    description: 'Votre compte, l’accès au panel, les utilisateurs, les notifications et les mises à jour.',
+    description: 'Votre compte, la configuration de frp, l’accès au panel, les notifications et les mises à jour.',
     sections: 'Sections des réglages',
     groups: {
       personal: 'Personnel',
+      frp: 'frp',
       access: 'Accès et sécurité',
       system: 'Système',
     },

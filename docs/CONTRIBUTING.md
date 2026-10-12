@@ -19,20 +19,20 @@ requests are welcome, in English or French. By taking part, you agree to the
 
 ## Setting up the environment
 
-The panel is a Flask application with no build step: Python on the server
-(`panel/app.py`), native ES modules in the browser (`panel/templates/assets/js/`).
+The panel is a Go program (`panel/*.go`, Go 1.26 or later) that embeds its
+interface at build time: native ES modules in the browser
+(`panel/templates/assets/js/`), with no build step.
 
 ```bash
 git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r panel/requirements.txt pytest ruff
+go build -o frp-manager ./panel
 ```
 
 To run the panel locally without touching `/etc/frp-manager`:
 
 ```bash
 echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
-FRP_MANAGER_CONFIG=/tmp/frpm.json python3 panel/app.py
+FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 ```
 
 The [demo](../website/demo/build.py) (`python3 website/demo/build.py`) produces a static version
@@ -49,8 +49,8 @@ from the demo (requires Pillow and Chrome or Edge).
 ## Before opening a pull request
 
 ```bash
-ruff check .
-python3 -m pytest
+go vet ./panel && go test ./panel && gofmt -l panel
+ruff check .        # Python scripts of the website and demo
 ```
 
 - One pull request = one topic. Describe the problem it solves and how you

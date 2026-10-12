@@ -54,10 +54,13 @@ jobs:
           docker run --privileged --rm tonistiigi/binfmt --install arm64,arm >/dev/null
           # Builder buildx propre à ce job (supprimé en sortie)
           BUILDER="frpm-$(date +%s)-$$"
-          # network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
+          # network=host : le réseau de l'hôte (go mod download, apk), nécessaire sur ce homelab
           docker buildx create --name "$BUILDER" --driver docker-container \
             --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
           trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true; docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          # Tests Go d'abord : une image n'est poussée que si tout passe
+          docker buildx build --builder "$BUILDER" --network=host --allow network.host \
+            --target test --progress plain src
           docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
             --network=host --allow network.host --pull \
             --build-arg PANEL_VERSION="$VERSION" \

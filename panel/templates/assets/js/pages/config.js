@@ -1,4 +1,4 @@
-// ── Configuration frps / frpc (hors tunnels) ──────────────────────────────
+// ── Réglages › Configuration frps / frpc (hors tunnels) ───────────────────
 // Formulaire décrit par un schéma : sections → champs. Chaque champ connaît sa
 // clé TOML (lecture) et son nom dans l'objet de valeurs passé au générateur.
 
@@ -7,7 +7,7 @@ import { apiOk, post } from '../api.js';
 import { store, can, instanceIds, displayName, isDocker, waitRunning } from '../store.js';
 import {
   h, icon, button, toast, toastError, confirmDialog, field, input, select, secretInput, switchRow,
-  callout, emptyState, pageHeader, card, saveBar,
+  callout, emptyState, card, saveBar,
 } from '../ui.js';
 import { parseToml, generateServer, generateClient, extractBlocks } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
@@ -17,12 +17,13 @@ const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
 // kind           : text | number | secret | select | switch
 // toggle         : interrupteur de section (activé ⇔ la clé toggle.key existe)
 // optionalToggle : champ précédé d'un interrupteur (la clé n'est écrite que s'il est activé)
+// random         : bouton « Port aléatoire » à côté du champ
 const SCHEMA = {
   frps: [
     {
       id: 'connection',
       fields: [
-        { name: 'bindPort', key: 'bindPort', kind: 'number', def: '7000' },
+        { name: 'bindPort', key: 'bindPort', kind: 'number', def: '7000', random: true },
         { name: 'bindAddr', key: 'bindAddr', kind: 'text', def: '0.0.0.0', placeholder: '0.0.0.0' },
         { name: 'proxyBindAddr', key: 'proxyBindAddr', kind: 'text', def: '', optional: true, placeholder: '203.0.113.10' },
       ],
@@ -152,17 +153,19 @@ function beforeUnload(e) { if (isDirty()) { e.preventDefault(); e.returnValue = 
 
 export default {
   id: 'config',
-  title: () => t('nav.config'),
-  perm: 'config.read',
+  icon: 'config',
+  title: () => t('config.title'),
+  description: () => t('config.description'),
+  visible: () => can('config.read'),
 
-  async mount(view, params) {
+  // actions : en-tête de la section (choix de l'instance)
+  async mount(host, { params = {}, actions } = {}) {
     const ids = instanceIds();
     S.iid = ids.includes(params.iid) ? params.iid : ids.find((id) => !isDocker(store.instances[id])) || ids[0] || '';
     S.snapshot = '';
     S.controls = {};
     window.addEventListener('beforeunload', beforeUnload);
 
-    const actions = [];
     if (ids.length > 1) {
       const sel = select(ids.map((id) => ({ value: id, label: displayName(id) })), S.iid, {
         class: 'select select-inline', 'aria-label': t('common.instance'),
@@ -170,10 +173,10 @@ export default {
       sel.addEventListener('change', async () => {
         if (isDirty() && !(await confirmLeave())) { sel.value = S.iid; return; }
         S.iid = sel.value;
-        replaceParams({ iid: S.iid });
+        replaceParams({ s: 'config', iid: S.iid });
         load();
       });
-      actions.push(sel);
+      actions?.append(sel);
     }
 
     S.els.body = h('div', { class: 'form-stack', style: { gap: '20px' } });
@@ -184,10 +187,10 @@ export default {
       onSave: () => save(false),
       onSaveRestart: () => save(true),
     });
-    view.append(h('div', { class: 'page' },
-      pageHeader({ title: t('config.title'), description: t('config.description'), actions }),
-      !can('config.write') && callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }),
-      S.els.body, S.els.savebar));
+    if (!can('config.write')) {
+      host.append(callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }));
+    }
+    host.append(S.els.body, S.els.savebar);
 
     if (!S.iid) {
       S.els.body.append(h('div', { class: 'card' }, emptyState({
@@ -267,6 +270,14 @@ async function load() {
   updateSaveBar();
 }
 
+/** Port tiré au hasard dans 10000–32767 : loin du 7000 que visent les robots,
+ * sous la plage des ports éphémères de Linux (même tirage qu'install.sh). */
+function randomPort() {
+  const n = new Uint16Array(1);
+  crypto.getRandomValues(n);
+  return String(10000 + (n[0] % 22768));
+}
+
 function sectionTitle(section) {
   return t(`config.sections.${S.type}.${section.id}.title`);
 }
@@ -306,7 +317,10 @@ function buildFields(section, cfg) {
       ctrl = el.input;
     } else {
       ctrl = input({ value: raw || f.def, placeholder: f.placeholder || '', mono: true, inputmode: f.kind === 'number' ? 'numeric' : null });
-      el = ctrl;
+      el = f.random && can('config.write') ? h('div', { class: 'input-group' }, ctrl, button(t('config.randomPort'), {
+        iconName: 'refresh', title: t('config.randomPortHint'),
+        onClick: () => { ctrl.value = randomPort(); ctrl.dispatchEvent(new Event('input', { bubbles: true })); },
+      })) : ctrl;
     }
     S.controls[f.name] = ctrl;
 

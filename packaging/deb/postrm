@@ -1,0 +1,12 @@
+#!/bin/sh
+# Après suppression. « purge » efface aussi la configuration du panel (comptes,
+# réglages, certificat) ; les configurations de frp (/etc/frp), les binaires frp
+# et leurs services restent en place.
+set -e
+if [ "$1" = purge ]; then
+    rm -rf /etc/frp-manager /var/lib/frp-manager
+fi
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+exit 0

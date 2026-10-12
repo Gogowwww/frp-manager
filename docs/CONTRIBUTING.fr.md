@@ -19,20 +19,21 @@ requests sont les bienvenus, en français comme en anglais. En participant, vous
 
 ## Préparer l'environnement
 
-Le panel est une application Flask sans étape de build : Python côté serveur
-(`panel/app.py`), modules ES natifs côté navigateur (`panel/templates/assets/js/`).
+Le panel est un programme Go (`panel/*.go`, Go 1.26 ou plus récent) qui
+intègre son interface à la compilation : modules ES natifs côté navigateur
+(`panel/templates/assets/js/`), sans étape de build.
 
 ```bash
 git clone https://github.com/Gogowwww/frp-manager.git && cd frp-manager
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r panel/requirements.txt pytest ruff
+go build -o frp-manager ./panel
 ```
 
-Pour lancer le panel en local sans toucher à `/etc/frp-manager` :
+Pour lancer le panel en local sans toucher à `/etc/frp-manager` (Windows et
+macOS conviennent pour l'interface ; systemd, nftables et Docker demandent Linux) :
 
 ```bash
 echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
-FRP_MANAGER_CONFIG=/tmp/frpm.json python3 panel/app.py
+FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 ```
 
 La [démo](../website/demo/build.py) (`python3 website/demo/build.py`) produit une version
@@ -49,8 +50,8 @@ captures du site à partir de la démo (Pillow et Chrome ou Edge requis).
 ## Avant d'ouvrir une pull request
 
 ```bash
-ruff check .
-python3 -m pytest
+go vet ./panel && go test ./panel && gofmt -l panel
+ruff check .        # scripts Python du site et de la démo
 ```
 
 - Une pull request = un sujet. Décrivez le problème résolu et comment vous

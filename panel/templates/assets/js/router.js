@@ -9,6 +9,7 @@ const routes = new Map();
 // Anciennes adresses encore valides (favoris) → [page actuelle, paramètres]
 const ALIASES = {
   tunnels: ['ports'],
+  config: ['settings', { s: 'config' }],
   notifications: ['settings', { s: 'notifications' }],
   updates: ['settings', { s: 'updates' }],
   users: ['settings', { s: 'users' }],

@@ -12,6 +12,51 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **The panel is rewritten in Go**: a single static program, with no Python and
+  no dependency to install, for amd64, arm64 and armv7; about 18 MB of memory
+  when idle, and a much lighter Docker image (Alpine).
+  The interface, the API, the configuration (`/etc/frp-manager/frp-manager.json`),
+  accounts and passwords stay the same; only the session has to be opened again
+  once. Passwords hashed by the Python versions (argon2id, scrypt, old SHA-256)
+  are accepted, then rehashed with argon2id when needed.
+- **Automatic move from a Python version**: updating from 0.0.57 or earlier
+  (**Update** button) installs the Go program for the machine, SHA-256 checked,
+  and points the service to it. `install.sh` does the same and removes the
+  Python environment that is no longer needed.
+- Panel updates now require the SHA-256 published with the release: the running
+  program is never replaced without it.
+- argon2 computations (sign-in, password change) are limited to two at a time:
+  a burst of attempts can no longer exhaust memory.
+- **Configuration** moves into Settings, in an **frp** group: the instance
+  picker sits in the section header, and leaving the section with unsaved
+  changes still asks for confirmation. The old address (`#/config?iid=…`) leads
+  to the section.
+
+### Added
+
+- **APT repository**: once the repository is added (key and `deb` line, see
+  the installation documentation), `sudo apt install frp-manager` installs the
+  panel and `apt upgrade` updates it. The package prepares frp like
+  `install.sh` (frps/frpc services, default configurations with a random frps
+  port, frp download). `stable` distribution for releases, `testing` for
+  pre-releases; amd64, arm64 and armhf. The `.deb` files are also attached to
+  every release.
+- **Random frps port**: at install time, `install.sh` offers a listening port
+  picked at random between 10000 and 32767 for `frps.toml` (Enter to accept,
+  `7000` or another number otherwise), free on the machine, instead of the 7000
+  that bots target; `FRPS_BIND_PORT` answers without asking, and the port is
+  shown at the end of the install. In Settings → Configuration, a **Random**
+  button next to the frps listening port picks one the same way (Docker
+  installs included).
+
+### Fixed
+
+- Connections blocked by the firewall are shown live again: since 0.0.56, the
+  `/ws/firewall` WebSocket closed right after opening, and the interface fell
+  back to periodic polling.
+
 ## [0.0.57] - 2026-10-12
 
 Pre-release.

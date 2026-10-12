@@ -1,0 +1,392 @@
+{
+ "rules": [
+  {
+   "id": "a1",
+   "name": "Maison",
+   "mode": "allow",
+   "ports": "*",
+   "sources": [
+    {
+     "cidr": "192.0.2.10",
+     "note": ""
+    },
+    {
+     "cidr": "2001:db8:1::/48",
+     "note": ""
+    }
+   ],
+   "enabled": true
+  },
+  {
+   "id": "b2",
+   "name": "Scanners",
+   "mode": "block",
+   "ports": "7000, 8000-8100",
+   "sources": [
+    {
+     "asn": 64500,
+     "note": ""
+    },
+    {
+     "cidr": "203.0.113.128/25",
+     "note": ""
+    },
+    {
+     "cidr": "10.0.0.1",
+     "note": ""
+    }
+   ],
+   "list": "scan",
+   "enabled": true
+  },
+  {
+   "id": "c3",
+   "name": "off",
+   "mode": "block",
+   "ports": "9000",
+   "sources": [
+    {
+     "cidr": "1.2.3.4",
+     "note": ""
+    }
+   ],
+   "enabled": false
+  },
+  {
+   "id": "d4",
+   "name": "v4",
+   "mode": "block",
+   "ports": "7000",
+   "sources": [
+    {
+     "cidr": "8.8.8.8",
+     "note": ""
+    }
+   ],
+   "enabled": true
+  }
+ ],
+ "known": [
+  {
+   "start": 7000,
+   "end": 7000,
+   "proto": "tcp",
+   "label": "x",
+   "kind": "config",
+   "online": null
+  },
+  {
+   "start": 8000,
+   "end": 8800,
+   "proto": "any",
+   "label": "y",
+   "kind": "range",
+   "online": null
+  }
+ ],
+ "ruleset_seen": "table inet frp_manager\ndelete table inet frp_manager\ntable inet frp_manager {\n  set r0_ports { type inet_service; flags interval; auto-merge; elements = { 7000, 8000-8764, 8766-8800 } }\n  set r0_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 192.0.2.10/32 } }\n  set r0_v6 { type ipv6_addr; flags interval; auto-merge; elements = { 2001:db8:1::/48 } }\n  set seen4_a1 { type ipv4_addr . inet_proto . inet_service; flags dynamic, timeout; timeout 86400s; size 4096; }\n  set seen6_a1 { type ipv6_addr . inet_proto . inet_service; flags dynamic, timeout; timeout 86400s; size 4096; }\n  set r1_ports { type inet_service; flags interval; auto-merge; elements = { 7000, 8000-8100 } }\n  set r1_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 10.0.0.1/32, 45.0.0.0/15, 198.51.100.0/24, 203.0.113.0/24 } }\n  set r1_v6 { type ipv6_addr; flags interval; auto-merge; elements = { 2001:db8::/32 } }\n  set seen4_b2 { type ipv4_addr . inet_proto . inet_service; flags dynamic, timeout; timeout 86400s; size 4096; }\n  set seen6_b2 { type ipv6_addr . inet_proto . inet_service; flags dynamic, timeout; timeout 86400s; size 4096; }\n  set r2_ports { type inet_service; flags interval; auto-merge; elements = { 7000 } }\n  set r2_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 8.8.8.8/32 } }\n  set r2_v6 { type ipv6_addr; flags interval; auto-merge; }\n  set seen4_d4 { type ipv4_addr . inet_proto . inet_service; flags dynamic, timeout; timeout 86400s; size 4096; }\n  chain filter {\n    type filter hook prerouting priority -150; policy accept;\n    iifname \"lo\" return\n    ct state != new return\n    fib daddr type != local return\n    meta l4proto != { tcp, udp } return\n    meta nfproto ipv4 th dport @r0_ports ip saddr != @r0_v4 update @seen4_a1 { ip saddr . meta l4proto . th dport }\n    meta nfproto ipv4 th dport @r0_ports ip saddr != @r0_v4 counter drop comment \"a1\"\n    meta nfproto ipv6 th dport @r0_ports ip6 saddr != @r0_v6 update @seen6_a1 { ip6 saddr . meta l4proto . th dport }\n    meta nfproto ipv6 th dport @r0_ports ip6 saddr != @r0_v6 counter drop comment \"a1\"\n    meta nfproto ipv4 th dport @r1_ports ip saddr @r1_v4 update @seen4_b2 { ip saddr . meta l4proto . th dport }\n    meta nfproto ipv4 th dport @r1_ports ip saddr @r1_v4 counter drop comment \"b2\"\n    meta nfproto ipv6 th dport @r1_ports ip6 saddr @r1_v6 update @seen6_b2 { ip6 saddr . meta l4proto . th dport }\n    meta nfproto ipv6 th dport @r1_ports ip6 saddr @r1_v6 counter drop comment \"b2\"\n    meta nfproto ipv4 th dport @r2_ports ip saddr @r2_v4 update @seen4_d4 { ip saddr . meta l4proto . th dport }\n    meta nfproto ipv4 th dport @r2_ports ip saddr @r2_v4 counter drop comment \"d4\"\n  }\n}\n",
+ "ruleset_noseen": "table inet frp_manager\ndelete table inet frp_manager\ntable inet frp_manager {\n  set r0_ports { type inet_service; flags interval; auto-merge; elements = { 7000, 8000-8764, 8766-8800 } }\n  set r0_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 192.0.2.10/32 } }\n  set r0_v6 { type ipv6_addr; flags interval; auto-merge; elements = { 2001:db8:1::/48 } }\n  set r1_ports { type inet_service; flags interval; auto-merge; elements = { 7000, 8000-8100 } }\n  set r1_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 10.0.0.1/32, 45.0.0.0/15, 198.51.100.0/24, 203.0.113.0/24 } }\n  set r1_v6 { type ipv6_addr; flags interval; auto-merge; elements = { 2001:db8::/32 } }\n  set r2_ports { type inet_service; flags interval; auto-merge; elements = { 7000 } }\n  set r2_v4 { type ipv4_addr; flags interval; auto-merge; elements = { 8.8.8.8/32 } }\n  set r2_v6 { type ipv6_addr; flags interval; auto-merge; }\n  chain filter {\n    type filter hook prerouting priority -150; policy accept;\n    iifname \"lo\" return\n    ct state != new return\n    fib daddr type != local return\n    meta l4proto != { tcp, udp } return\n    meta nfproto ipv4 th dport @r0_ports ip saddr != @r0_v4 counter drop comment \"a1\"\n    meta nfproto ipv6 th dport @r0_ports ip6 saddr != @r0_v6 counter drop comment \"a1\"\n    meta nfproto ipv4 th dport @r1_ports ip saddr @r1_v4 counter drop comment \"b2\"\n    meta nfproto ipv6 th dport @r1_ports ip6 saddr @r1_v6 counter drop comment \"b2\"\n    meta nfproto ipv4 th dport @r2_ports ip saddr @r2_v4 counter drop comment \"d4\"\n  }\n}\n",
+ "ruleset_disabled": "table inet frp_manager\ndelete table inet frp_manager\n",
+ "verdicts": {
+  "192.0.2.10": [
+   {
+    "start": 7000,
+    "end": 7000,
+    "proto": "tcp",
+    "label": "x",
+    "kind": "config",
+    "online": null,
+    "blocked_by": []
+   },
+   {
+    "start": 8000,
+    "end": 8800,
+    "proto": "any",
+    "label": "y",
+    "kind": "range",
+    "online": null,
+    "blocked_by": []
+   }
+  ],
+  "203.0.113.200": [
+   {
+    "start": 7000,
+    "end": 7000,
+    "proto": "tcp",
+    "label": "x",
+    "kind": "config",
+    "online": null,
+    "blocked_by": [
+     "Maison",
+     "Scanners"
+    ]
+   },
+   {
+    "start": 8000,
+    "end": 8800,
+    "proto": "any",
+    "label": "y",
+    "kind": "range",
+    "online": null,
+    "blocked_by": [
+     "Maison",
+     "Scanners"
+    ]
+   }
+  ],
+  "8.8.8.8": [
+   {
+    "start": 7000,
+    "end": 7000,
+    "proto": "tcp",
+    "label": "x",
+    "kind": "config",
+    "online": null,
+    "blocked_by": [
+     "Maison",
+     "v4"
+    ]
+   },
+   {
+    "start": 8000,
+    "end": 8800,
+    "proto": "any",
+    "label": "y",
+    "kind": "range",
+    "online": null,
+    "blocked_by": [
+     "Maison"
+    ]
+   }
+  ],
+  "45.1.2.3": [
+   {
+    "start": 7000,
+    "end": 7000,
+    "proto": "tcp",
+    "label": "x",
+    "kind": "config",
+    "online": null,
+    "blocked_by": [
+     "Maison",
+     "Scanners"
+    ]
+   },
+   {
+    "start": 8000,
+    "end": 8800,
+    "proto": "any",
+    "label": "y",
+    "kind": "range",
+    "online": null,
+    "blocked_by": [
+     "Maison",
+     "Scanners"
+    ]
+   }
+  ],
+  "2001:db8:1::5": [
+   {
+    "start": 7000,
+    "end": 7000,
+    "proto": "tcp",
+    "label": "x",
+    "kind": "config",
+    "online": null,
+    "blocked_by": [
+     "Scanners"
+    ]
+   },
+   {
+    "start": 8000,
+    "end": 8800,
+    "proto": "any",
+    "label": "y",
+    "kind": "range",
+    "online": null,
+    "blocked_by": [
+     "Scanners"
+    ]
+   }
+  ]
+ },
+ "collapse_v4": [
+  "10.0.0.0/22",
+  "192.168.1.0/30"
+ ],
+ "collapse_v4_all": [
+  "0.0.0.0/0"
+ ],
+ "collapse_v6": [
+  "2001:db8::/32",
+  "fe80::1/128"
+ ],
+ "is_global": {
+  "8.8.8.0/24": true,
+  "10.0.0.0/8": false,
+  "100.64.1.0/24": false,
+  "192.0.0.9/32": true,
+  "192.0.0.0/24": false,
+  "198.51.100.0/24": false,
+  "224.0.0.0/4": true,
+  "2606:4700::/32": true,
+  "fc00::/7": false,
+  "2001:db8::/32": false,
+  "2001:4:112::/48": true,
+  "100.0.0.0/8": true
+ },
+ "nft_input": {
+  "nftables": [
+   {
+    "rule": {
+     "comment": "b2",
+     "expr": [
+      {
+       "match": {}
+      },
+      {
+       "counter": {
+        "packets": 12,
+        "bytes": 600
+       }
+      },
+      {
+       "drop": null
+      }
+     ]
+    }
+   },
+   {
+    "rule": {
+     "comment": "b2",
+     "expr": [
+      {
+       "counter": {
+        "packets": 3,
+        "bytes": 100
+       }
+      }
+     ]
+    }
+   },
+   {
+    "set": {
+     "name": "seen4_b2",
+     "elem": [
+      {
+       "elem": {
+        "val": {
+         "concat": [
+          "203.0.113.200",
+          "tcp",
+          7000
+         ]
+        },
+        "timeout": 86400,
+        "expires": 86000
+       }
+      },
+      {
+       "elem": {
+        "val": {
+         "concat": [
+          "198.51.100.7",
+          17,
+          8001
+         ]
+        },
+        "timeout": 86400,
+        "expires": 80000
+       }
+      }
+     ]
+    }
+   },
+   {
+    "set": {
+     "name": "r0_v4",
+     "elem": [
+      "1.2.3.4"
+     ]
+    }
+   }
+  ]
+ },
+ "nft_counts": {
+  "b2": 15
+ },
+ "nft_seen": [
+  {
+   "src": "203.0.113.200",
+   "proto": "tcp",
+   "port": 7000,
+   "rule": "b2",
+   "last": 999600
+  },
+  {
+   "src": "198.51.100.7",
+   "proto": "udp",
+   "port": 8001,
+   "rule": "b2",
+   "last": 993600
+  }
+ ],
+ "list_sources_in": [
+  "AS16276  # OVH",
+  "8.8.8.8",
+  "10.0.0.0/8",
+  "1.0.0.0/7",
+  "2001:db8::/32",
+  "2606:4700::/15",
+  "pas une ip",
+  "8.8.8.8",
+  {
+   "asn": 13335,
+   "note": "cf"
+  },
+  {
+   "cidr": "9.9.9.9",
+   "note": "q"
+  }
+ ],
+ "list_sources": [
+  {
+   "asn": 16276,
+   "note": "OVH"
+  },
+  {
+   "cidr": "8.8.8.8",
+   "note": ""
+  },
+  {
+   "asn": 13335,
+   "note": "cf"
+  },
+  {
+   "cidr": "9.9.9.9",
+   "note": "q"
+  }
+ ],
+ "list_skipped": [
+  {
+   "entry": "10.0.0.0/8",
+   "reason": "private or reserved address"
+  },
+  {
+   "entry": "1.0.0.0/7",
+   "reason": "network too wide"
+  },
+  {
+   "entry": "2001:db8::/32",
+   "reason": "private or reserved address"
+  },
+  {
+   "entry": "2606:4700::/15",
+   "reason": "network too wide"
+  },
+  {
+   "entry": "pas une ip",
+   "reason": "“pas une ip” is neither an IP address, a network (203.0.113.0/24) nor an AS (AS16276)"
+  }
+ ]
+}

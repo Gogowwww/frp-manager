@@ -23,12 +23,14 @@ docker compose up -d
 
 The panel listens on `127.0.0.1:8765` only. From your computer, open an SSH tunnel with `ssh -L 8765:127.0.0.1:8765 user@server`, browse to `https://127.0.0.1:8765` and create the administrator account. To open it to your network, see [Reaching the panel from another machine](docs/installation.md#reaching-the-panel-from-another-machine).
 
-Without Docker, the install script sets up the panel, frp and their systemd services:
+Without Docker, the install script sets up the panel (a single program, no dependency), frp and their systemd services:
 
 ```bash
 curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
+
+Or with apt, once FRP Manager's repository is added: `sudo apt install frp-manager`, then `apt upgrade` for updates; see [Install with apt](docs/installation.md#install-with-apt).
 
 Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs the real interface with sample data.
 
@@ -69,7 +71,7 @@ The panel does not replace frp nor change its configuration format: files stay p
 The panel controls exposed ports and runs as root, so it is locked down by default:
 
 - **Mandatory initial setup**: no page or API route answers until an administrator account exists (password of 12 characters or more).
-- **Password hashing** with argon2id (scrypt as a fallback); older SHA-256 hashes are accepted once and rehashed automatically.
+- **Password hashing** with argon2id; older hashes (scrypt, SHA-256) are accepted once and rehashed automatically.
 - **Listens on `127.0.0.1`** in a new install; opening it to the network is an explicit choice.
 - **Brute-force protection**: attempts limited per IP, with a growing lockout.
 - **Least privilege**: every API route and WebSocket checks the account's permissions; an account that manages users can't grant more than it has, and only a full administrator configures single sign-on.

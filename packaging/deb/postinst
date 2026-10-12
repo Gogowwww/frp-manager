@@ -1,0 +1,116 @@
+#!/bin/sh
+# Après installation ou mise à jour du paquet : prépare frps/frpc comme
+# install.sh (services créés mais non démarrés, configurations par défaut,
+# binaires frp), puis (re)démarre le panel.
+set -e
+
+case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
+    fr*) m() { printf '%s\n' "$1"; } ;;
+    *)   m() { printf '%s\n' "$2"; } ;;
+esac
+
+port_in_use() {
+    command -v ss >/dev/null 2>&1 && [ -n "$(ss -Hltn "sport = :$1" 2>/dev/null)" ]
+}
+
+# Port de frps tiré au hasard dans 10000–32767 (les robots visent 7000) ;
+# FRPS_BIND_PORT=7000 (ou un autre numéro) le fixe.
+random_port() {
+    i=0
+    while [ $i -lt 50 ]; do
+        n=$(od -An -N2 -tu2 /dev/urandom | tr -d ' ')
+        p=$((10000 + n % 22768))
+        port_in_use "$p" || { echo "$p"; return; }
+        i=$((i + 1))
+    done
+    echo 7000
+}
+
+unit() {
+    cat <<EOF
+[Unit]
+Description=frp $2 ($1)
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/local/bin/$1 -c /etc/frp/$1.toml
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+if [ "$1" = configure ]; then
+    mkdir -p /etc/frp /var/log/frp /var/lib/frp-manager /etc/frp-manager
+
+    # Une installation par install.sh garde son propre service dans
+    # /etc/systemd/system, qui passerait avant celui du paquet : on le met de côté.
+    legacy=/etc/systemd/system/frp-manager.service
+    if [ -f "$legacy" ] && grep -q '^ExecStart=/opt/frp-manager' "$legacy"; then
+        mv "$legacy" "$legacy.install-sh"
+        m "frp-manager : service d'install.sh remplacé par celui du paquet ($legacy.install-sh conservé ; /opt/frp-manager peut être supprimé)." \
+          "frp-manager: install.sh service replaced by the package's ($legacy.install-sh kept; /opt/frp-manager can be removed)."
+    fi
+
+    # Services frps/frpc : créés une fois, dans /etc (le panel peut les supprimer)
+    [ -e /etc/systemd/system/frps.service ] || unit frps server > /etc/systemd/system/frps.service
+    [ -e /etc/systemd/system/frpc.service ] || unit frpc client > /etc/systemd/system/frpc.service
+
+    if [ ! -e /etc/frp/frps.toml ]; then
+        case "${FRPS_BIND_PORT:-random}" in
+            random) port=$(random_port) ;;
+            *)      port=$FRPS_BIND_PORT ;;
+        esac
+        cat > /etc/frp/frps.toml <<EOF
+bindAddr = "0.0.0.0"
+bindPort = $port
+
+auth.method = "token"
+auth.token = "changeme"
+
+log.to = "/var/log/frp/frps.log"
+log.level = "info"
+log.maxDays = 3
+EOF
+        m "frp-manager : port d'écoute de frps : $port (à ouvrir dans le pare-feu, à reporter dans serverPort des clients frpc)." \
+          "frp-manager: frps listening port: $port (open it in the firewall, set it as serverPort on frpc clients)."
+    fi
+    if [ ! -e /etc/frp/frpc.toml ]; then
+        cat > /etc/frp/frpc.toml <<'EOF'
+serverAddr = ""
+serverPort = 7000
+
+auth.method = "token"
+auth.token = "changeme"
+
+log.to = "/var/log/frp/frpc.log"
+log.level = "info"
+log.maxDays = 3
+EOF
+    fi
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable frp-manager >/dev/null 2>&1 || true
+        systemctl restart frp-manager || true
+    fi
+
+    # frp lui-même (somme SHA-256 vérifiée), s'il manque
+    if [ ! -x /usr/local/bin/frps ] || [ ! -x /usr/local/bin/frpc ]; then
+        /usr/bin/frp-manager --install-frp >/dev/null 2>&1 \
+            && m "frp-manager : frps et frpc installés dans /usr/local/bin." "frp-manager: frps and frpc installed in /usr/local/bin." \
+            || m "frp-manager : frp non téléchargé (réseau ?) : installez-le depuis Réglages → Mises à jour." \
+                 "frp-manager: frp not downloaded (network?): install it from Settings → Updates."
+    fi
+
+    if [ -z "$2" ]; then
+        m "frp-manager : panel sur https://127.0.0.1:8765 (première ouverture : créez l'identifiant administrateur)." \
+          "frp-manager: panel at https://127.0.0.1:8765 (first visit: create the administrator account)."
+    fi
+fi
+
+exit 0

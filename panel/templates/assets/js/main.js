@@ -11,12 +11,12 @@ import { registerPage, startRouter, navigate } from './router.js';
 import dashboard from './pages/dashboard.js';
 import tunnels from './pages/tunnels.js';
 import firewall from './pages/firewall.js';
-import config from './pages/config.js';
 import logs from './pages/logs.js';
 import settings from './pages/settings.js';
 
-// Notifications, mises à jour, comptes et connexion unique sont des sections de Réglages
-const PAGES = [dashboard, tunnels, firewall, config, logs, settings];
+// Configuration, notifications, mises à jour, comptes et connexion unique sont
+// des sections de Réglages
+const PAGES = [dashboard, tunnels, firewall, logs, settings];
 const canOpen = (page) => !page.perm || can(page.perm);
 
 const WELCOME_KEY = 'frpMgrWelcomeSeen';

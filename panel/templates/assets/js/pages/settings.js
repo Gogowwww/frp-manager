@@ -3,7 +3,8 @@
 // droite : #/settings?s=users. Chaque section ne s'affiche qu'aux comptes qui
 // ont la permission correspondante (le serveur vérifie de toute façon).
 // Une section = { id, icon, title(), description(), visible?(), actions?(),
-// badge?(), mount(host), unmount?() }.
+// badge?(), mount(host, { params, actions }), unmount?(), canLeave?() } ;
+// actions est le conteneur des boutons de l'en-tête, params ceux de l'adresse.
 
 import { t, LOCALES, PREVIEW_LOCALES, getLocale, setLocale } from '../i18n.js';
 import { api, apiOk } from '../api.js';
@@ -17,6 +18,7 @@ import { getThemePref, setThemePref } from '../theme.js';
 import notifications from './notifications.js';
 import updates from './updates.js';
 import { users, sso } from './users.js';
+import config from './config.js';
 
 const PASSWORD_MIN = 12;
 
@@ -238,6 +240,7 @@ function downloadsCard(cfg) {
 
 const GROUPS = [
   ['personal', [account, appearance]],
+  ['frp', [config]],
   ['access', [access, users, sso]],
   ['system', [notifications, updates]],
 ];
@@ -273,14 +276,14 @@ export default {
         }))));
     unsubscribe = store.subscribe(() => dots.forEach((dot, s) => { dot.hidden = !s.badge(); }));
 
-    const actions = section.actions ? section.actions() : [];
+    const actions = h('div', { class: 'page-actions' }, section.actions ? section.actions() : []);
     const body = h('div', { class: 'settings-body' });
     const pane = h('section', { class: 'settings-pane', 'aria-labelledby': 'settings-pane-title' },
       h('header', { class: 'settings-pane-head' },
         h('div', null,
           h('h2', { class: 'settings-pane-title', id: 'settings-pane-title' }, section.title()),
           h('p', { class: 'settings-pane-desc' }, section.description())),
-        actions.length ? h('div', { class: 'page-actions' }, actions) : null),
+        actions),
       body);
 
     view.append(h('div', { class: 'page' },
@@ -290,8 +293,11 @@ export default {
     nav.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
 
     active = section;
-    await section.mount(body);
+    await section.mount(body, { params, actions });
   },
+
+  // Modifications non enregistrées dans la section ouverte (Configuration)
+  canLeave() { return active?.canLeave ? active.canLeave() : true; },
 
   unmount() {
     active?.unmount?.();

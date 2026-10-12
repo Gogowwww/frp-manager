@@ -12,6 +12,51 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Le panel est réécrit en Go** : un seul programme statique, sans Python ni
+  dépendance à installer, pour amd64, arm64 et armv7 ; environ 18 Mo de
+  mémoire au repos, et une image Docker bien plus légère (Alpine).
+  L'interface, l'API, la configuration (`/etc/frp-manager/frp-manager.json`),
+  les comptes et les mots de passe restent les mêmes ; seule la session est à
+  rouvrir une fois. Les mots de passe hachés par les versions Python (argon2id,
+  scrypt, ancien SHA-256) sont acceptés, puis rehachés en argon2id si besoin.
+- **Passage automatique depuis une version Python** : la mise à jour depuis la
+  0.0.57 ou avant (bouton **Mettre à jour**) installe le programme Go de la
+  machine, somme SHA-256 vérifiée, et fait pointer le service dessus.
+  `install.sh` fait de même et retire l'environnement Python devenu inutile.
+- La mise à jour du panel exige désormais la somme SHA-256 publiée avec la
+  release : le programme qui tourne n'est jamais remplacé sans elle.
+- Les calculs argon2 (connexion, changement de mot de passe) sont limités à
+  deux à la fois : une rafale de tentatives ne peut plus épuiser la mémoire.
+- **Configuration** rejoint les Réglages, dans un groupe **frp** : le choix de
+  l'instance passe dans l'en-tête de la section, et quitter la section avec des
+  modifications non enregistrées demande toujours confirmation. L'ancienne
+  adresse (`#/config?iid=…`) mène à la section.
+
+### Ajouté
+
+- **Dépôt APT** : une fois le dépôt ajouté (clé et ligne `deb`, voir la
+  documentation d'installation), `sudo apt install frp-manager` installe le
+  panel et `apt upgrade` le met à jour. Le paquet prépare frp comme
+  `install.sh` (services frps/frpc, configurations par défaut avec un port frps
+  aléatoire, téléchargement de frp). Distribution `stable` pour les releases,
+  `testing` pour les pré-releases ; amd64, arm64 et armhf. Les `.deb` sont aussi
+  joints à chaque release.
+- **Port de frps aléatoire** : à l'installation, `install.sh` propose un port
+  d'écoute tiré au hasard entre 10000 et 32767 pour `frps.toml` (Entrée pour
+  l'accepter, `7000` ou un autre numéro sinon), libre sur la machine, au lieu
+  du 7000 que visent les robots ; `FRPS_BIND_PORT` répond sans question, et le
+  port est rappelé en fin d'installation. Dans Réglages → Configuration, un
+  bouton **Aléatoire** à côté du port d'écoute de frps fait le même tirage
+  (installations Docker comprises).
+
+### Corrigé
+
+- Les connexions bloquées par le pare-feu s'affichent de nouveau en direct :
+  depuis la 0.0.56, le WebSocket `/ws/firewall` se fermait aussitôt ouvert, et
+  l'interface se rabattait sur une relecture périodique.
+
 ## [0.0.57] - 2026-10-12
 
 Pré-release.

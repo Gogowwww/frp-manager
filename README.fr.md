@@ -23,12 +23,14 @@ docker compose up -d
 
 Le panel n'écoute que sur `127.0.0.1:8765`. Depuis votre ordinateur, ouvrez un tunnel SSH avec `ssh -L 8765:127.0.0.1:8765 utilisateur@serveur`, allez sur `https://127.0.0.1:8765` et créez l'identifiant administrateur. Pour l'ouvrir à votre réseau, voir [Accéder au panel depuis un autre poste](docs/installation.fr.md#accéder-au-panel-depuis-un-autre-poste).
 
-Sans Docker, le script d'installation met en place le panel, frp et leurs services systemd :
+Sans Docker, le script d'installation met en place le panel (un seul programme, sans dépendance), frp et leurs services systemd :
 
 ```bash
 curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-manager.zip
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
+
+Ou avec apt, après avoir ajouté le dépôt de FRP Manager une fois : `sudo apt install frp-manager`, puis `apt upgrade` pour les mises à jour ; voir [Installation avec apt](docs/installation.fr.md#installation-avec-apt).
 
 Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr/demo/) fait tourner la vraie interface avec des données fictives.
 
@@ -69,7 +71,7 @@ Le panel ne remplace pas frp et ne change pas son format de configuration : les 
 Le panel contrôle des ports exposés et tourne en root : il est verrouillé par défaut.
 
 - **Configuration initiale obligatoire** : aucune page ni route de l'API ne répond tant qu'aucun compte administrateur n'existe (mot de passe de 12 caractères ou plus).
-- **Mot de passe haché** en argon2id (scrypt en repli) ; les anciens hashs SHA-256 sont acceptés une fois puis rehachés automatiquement.
+- **Mot de passe haché** en argon2id ; les anciens hashs (scrypt, SHA-256) sont acceptés une fois puis rehachés automatiquement.
 - **Écoute sur `127.0.0.1`** pour une nouvelle installation ; l'ouvrir au réseau est un choix explicite.
 - **Protection contre la force brute** : tentatives limitées par IP, avec un verrouillage croissant.
 - **Moindre privilège** : chaque route de l'API et chaque WebSocket vérifie les permissions du compte ; un compte qui gère les utilisateurs ne peut pas accorder plus qu'il n'a, et seul un administrateur complet configure la connexion unique.

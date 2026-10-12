@@ -13,7 +13,9 @@
 #      que par des README (jamais de force-push) ;
 #   2. image :X.Y.Z re-taguée en :latest (même image, toutes architectures, pas de rebuild) ;
 #   3. release GitHub passée de pré-release à release normale, marquée « latest »
-#      → visible par le bouton « Mettre à jour » des panels installés.
+#      → visible par le bouton « Mettre à jour » des panels installés ;
+#   4. paquets .deb de la release copiés dans la distribution « stable » du dépôt
+#      APT du Forgejo (apt upgrade les propose alors aux machines abonnées).
 #
 # Prérequis : pré-release créée par release.yml, secret GHCR_TOKEN (repo + write:packages).
 
@@ -125,3 +127,21 @@ jobs:
           curl -sf -X PATCH -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github+json" \
             -d '{"prerelease": false, "make_latest": "true"}' \
             "https://api.github.com/repos/$GH_REPO/releases/$REL_ID" | jq -r '"Release publiée : " + .html_url'
+
+      - name: Dépôt APT (stable)
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          FORGEJO_URL: ${{ github.server_url }}
+          APT_OWNER: ${{ github.repository_owner }}
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # Les .deb de la pré-release, tels quels (pas de rebuild)
+          mkdir -p deb
+          curl -sf -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$GH_REPO/releases/$REL_ID/assets?per_page=100" \
+            | jq -r '.[] | select(.name | endswith(".deb")) | .browser_download_url' > deb/urls
+          [ -s deb/urls ] || { echo "Aucun paquet .deb dans la release $TAG (version Python ?)"; exit 0; }
+          while read -r url; do curl -sfL -o "deb/$(basename "$url")" "$url"; done < deb/urls
+          git -C src checkout --quiet "$SHA"
+          sh src/packaging/deb/publish-apt.sh stable deb/*.deb

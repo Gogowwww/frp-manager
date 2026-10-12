@@ -22,7 +22,6 @@ title() { echo -e "\n${BOLD}${CYAN}═══ $* ═══${RESET}\n"; }
 
 [[ $EUID -ne 0 ]] && error "$(m "Ce script doit être lancé en root (sudo bash install.sh)." \
                                "This script must be run as root (sudo bash install.sh).")"
-command -v python3   &>/dev/null || error "$(m "Python3 requis (apt install python3)." "Python3 required (apt install python3).")"
 command -v systemctl &>/dev/null || error "$(m "systemd requis." "systemd required.")"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,60 +41,96 @@ INSTALL_DIR="/opt/frp-manager"
 FRP_CONF_DIR="/etc/frp"
 LOG_DIR="/var/log/frp"
 STATE_DIR="/var/lib/frp-manager"
-VENV_DIR="${INSTALL_DIR}/venv"
 MANAGER_PORT="${FRP_MANAGER_PORT:-8765}"
+FRPS_PORT_CREATED=""
 
-title "$(m "Vérification des dépendances" "Checking dependencies")"
+# ── Port d'écoute de frps ───────────────────────────────────────────────────
+# Les robots qui balaient Internet visent le port 7000 de frp : un port tiré au
+# hasard dans 10000–32767 (sous la plage des ports éphémères de Linux, libre au
+# moment de l'installation) les évite. FRPS_BIND_PORT=7000 (ou un autre numéro,
+# ou « random ») répond à la question sans la poser.
+port_in_use() {
+    command -v ss &>/dev/null && ss -Hltn "sport = :$1" 2>/dev/null | grep -q .
+}
 
-if ! python3 -m venv --help &>/dev/null; then
-    info "$(m "Installation de python3-venv…" "Installing python3-venv…")"
-    apt-get install -y python3-venv &>/dev/null || error "$(m "Impossible d'installer python3-venv." "Could not install python3-venv.")"
+random_port() {
+    local p
+    for _ in $(seq 1 50); do
+        p=$(( 10000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 22768 ))
+        port_in_use "$p" || { echo "$p"; return; }
+    done
+    echo 7000
+}
+
+valid_port() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
+
+choose_frps_port() {
+    local suggested answer
+    suggested=$(random_port)
+    case "${FRPS_BIND_PORT:-}" in
+        "")      ;;
+        random)  echo "$suggested"; return ;;
+        *)       valid_port "$FRPS_BIND_PORT" || error "$(m "FRPS_BIND_PORT invalide :" "Invalid FRPS_BIND_PORT:") $FRPS_BIND_PORT"
+                 echo $(( 10#$FRPS_BIND_PORT )); return ;;
+    esac
+    # Pas de terminal (installation automatisée) : le port aléatoire
+    if ! { : </dev/tty; } 2>/dev/null; then echo "$suggested"; return; fi
+    {
+        echo ""
+        echo -e "  ${BOLD}$(m "Port d'écoute de frps" "frps listening port")${RESET} $(m "(les clients frpc s'y connectent)" "(frpc clients connect to it)")"
+        echo -e "    $(m "Entrée" "Enter")   ${CYAN}${suggested}${RESET}  $(m "port aléatoire, recommandé : les robots visent 7000" "random port, recommended: bots target 7000")"
+        echo -e "    7000    $(m "port standard de frp" "frp's standard port")"
+        echo -e "    $(m "ou un autre numéro (1–65535)" "or any other number (1–65535)")"
+    } >/dev/tty
+    exec 3</dev/tty
+    for _ in 1 2 3; do
+        read -r -u 3 -p "  $(m "Port" "Port") [${suggested}] : " answer || answer=""
+        answer="${answer// /}"
+        [[ -z "$answer" ]] && { echo "$suggested"; return; }
+        if valid_port "$answer"; then
+            answer=$(( 10#$answer ))
+            port_in_use "$answer" && echo -e "  ${YELLOW}$(m "Port déjà utilisé sur cette machine : frps ne pourra pas démarrer tant qu'il l'est."                                                          "Port already in use on this machine: frps won't start while it is.")${RESET}" >/dev/tty
+            echo "$answer"; return
+        fi
+        echo -e "  ${YELLOW}$(m "Numéro de port invalide." "Invalid port number.")${RESET}" >/dev/tty
+    done
+    echo "$suggested"
+}
+
+title "$(m "Programme frp-manager" "frp-manager program")"
+
+# Binaire de cette architecture : bin/ de l'archive de release, ou frp-manager
+# à côté du script (compilé à la main : go build -o frp-manager ./panel)
+case "$(uname -m)" in
+    x86_64|amd64)          ARCH="amd64" ;;
+    aarch64|arm64)         ARCH="arm64" ;;
+    armv7l|armv7*|armv8l)  ARCH="armv7" ;;
+    *) error "$(m "Architecture non prise en charge :" "Unsupported architecture:") $(uname -m)" ;;
+esac
+BINARY="$SCRIPT_DIR/bin/frp-manager-linux-$ARCH"
+[[ -f "$BINARY" ]] || BINARY="$SCRIPT_DIR/frp-manager"
+[[ -f "$BINARY" ]] || error "$(m "Programme introuvable :" "Program not found:") bin/frp-manager-linux-$ARCH"
+
+mkdir -p "$INSTALL_DIR" "$LOG_DIR" "$STATE_DIR"
+# Fichier voisin puis renommage : le panel en marche n'est jamais à moitié remplacé
+install -m 755 "$BINARY" "$INSTALL_DIR/frp-manager.new"
+mv -f "$INSTALL_DIR/frp-manager.new" "$INSTALL_DIR/frp-manager"
+"$INSTALL_DIR/frp-manager" --version >/dev/null \
+    || error "$(m "Le programme ne démarre pas sur cette machine." "The program does not run on this machine.")"
+cp "$SCRIPT_DIR/install.sh" "$INSTALL_DIR/install.sh" 2>/dev/null || true
+
+# Ancienne installation Python (jusqu'à 0.0.57) : environnement et fichiers
+# devenus inutiles ; la configuration (/etc/frp-manager) est gardée telle quelle.
+if [[ -d "$INSTALL_DIR/venv" || -f "$INSTALL_DIR/app.py" ]]; then
+    rm -rf "$INSTALL_DIR/venv" "$INSTALL_DIR/app.py" "$INSTALL_DIR/templates" "$INSTALL_DIR/__pycache__" \
+           "$INSTALL_DIR/requirements.txt"
+    ok "$(m "Ancienne version Python retirée (configuration conservée)." "Old Python version removed (configuration kept).")"
 fi
-ok "$(m "python3-venv disponible." "python3-venv available.")"
-
-command -v curl &>/dev/null || apt-get install -y curl &>/dev/null
-
-title "$(m "Environnement Python" "Python environment")"
-
-mkdir -p "$INSTALL_DIR"
-python3 -m venv "$VENV_DIR"
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-
-if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-    # argon2-cffi peut manquer de paquet précompilé sur certaines architectures :
-    # sans lui, le panel hache le mot de passe avec scrypt (bibliothèque standard).
-    "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt" || {
-        warn "$(m "Certaines dépendances n'ont pas pu être installées : installation du minimum." \
-                  "Some dependencies could not be installed: installing the minimum.")"
-        "$VENV_DIR/bin/pip" install --quiet flask requests flask-sock
-    }
-else
-    "$VENV_DIR/bin/pip" install --quiet flask requests flask-sock
-fi
-
-"$VENV_DIR/bin/pip" install --quiet cryptography 2>/dev/null || \
-    warn "$(m "cryptography non installé — SSL utilisera openssl en fallback." \
-              "cryptography not installed: SSL will fall back to openssl.")"
-
-ok "$(m "Dépendances Python installées dans" "Python dependencies installed in") $VENV_DIR"
-
-title "$(m "Déploiement des fichiers" "Deploying files")"
-
-mkdir -p "$INSTALL_DIR/templates" "$LOG_DIR" "$STATE_DIR"
-
-cp "$SCRIPT_DIR/app.py" "$INSTALL_DIR/app.py"
-# Mise à jour automatique de frp retirée en 0.0.53 : frp se met à jour depuis
-# la page Mises à jour du panel. On supprime le script et sa tâche cron.
+# Mise à jour automatique de frp retirée en 0.0.53, go-mmproxy en 0.0.26
 rm -f "$INSTALL_DIR/frp-autoupdate.py" /etc/cron.d/frp-autoupdate
-
-rm -rf "$INSTALL_DIR/templates"
-cp -r "$SCRIPT_DIR/templates" "$INSTALL_DIR/templates"
-
-# Option « IP réelle » (go-mmproxy) retirée en 0.0.26 : le panel migre les
-# tunnels concernés au démarrage ; on supprime juste l'ancien dossier du patch.
 rm -rf "$INSTALL_DIR/mmproxy-patch"
 
-ok "$(m "Fichiers copiés dans" "Files copied to") $INSTALL_DIR"
+ok "$(m "Programme installé :" "Program installed:") $INSTALL_DIR/frp-manager ($ARCH, v$("$INSTALL_DIR/frp-manager" --version))"
 
 title "$(m "Service systemd : frp-manager" "systemd service: frp-manager")"
 
@@ -109,7 +144,7 @@ Type=simple
 Restart=on-failure
 RestartSec=5s
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=${VENV_DIR}/bin/python3 ${INSTALL_DIR}/app.py
+ExecStart=${INSTALL_DIR}/frp-manager
 StandardOutput=journal
 StandardError=journal
 
@@ -125,12 +160,12 @@ if [[ -x /usr/local/bin/frps && -x /usr/local/bin/frpc ]]; then
     ok "$(m "Binaires frps/frpc déjà présents dans /usr/local/bin." "frps/frpc binaries already in /usr/local/bin.")"
 else
     info "$(m "Récupération de la dernière version de frp depuis GitHub…" "Fetching the latest frp version from GitHub…")"
-    # Même code que la page Mises à jour du panel (somme SHA-256 vérifiée)
-    if (cd "$INSTALL_DIR" && "$VENV_DIR/bin/python3" app.py --install-frp); then
+    # Même code que Réglages → Mises à jour dans le panel (somme SHA-256 vérifiée)
+    if "$INSTALL_DIR/frp-manager" --install-frp; then
         ok "$(m "Binaires frps/frpc installés dans /usr/local/bin." "frps/frpc binaries installed in /usr/local/bin.")"
     else
         warn "$(m "Téléchargement des binaires échoué (réseau ?)." "Binary download failed (network?).")"
-        warn "$(m "Installez frp plus tard depuis la page Mises à jour du panel." "Install frp later from the panel's Updates page.")"
+        warn "$(m "Installez frp plus tard depuis Réglages → Mises à jour dans le panel." "Install frp later from Settings → Updates in the panel.")"
     fi
 fi
 
@@ -141,9 +176,10 @@ mkdir -p "$FRP_CONF_DIR"
 if [[ -f "$FRP_CONF_DIR/frps.toml" ]]; then
     ok "$(m "frps.toml existe déjà — conservé." "frps.toml already exists: kept.")"
 else
-    cat > "$FRP_CONF_DIR/frps.toml" <<'EOF'
+    FRPS_PORT_CREATED=$(choose_frps_port)
+    cat > "$FRP_CONF_DIR/frps.toml" <<EOF
 bindAddr = "0.0.0.0"
-bindPort = 7000
+bindPort = ${FRPS_PORT_CREATED}
 
 auth.method = "token"
 auth.token = "changeme"
@@ -152,7 +188,7 @@ log.to = "/var/log/frp/frps.log"
 log.level = "info"
 log.maxDays = 3
 EOF
-    ok "$(m "Config par défaut créée :" "Default config created:") $FRP_CONF_DIR/frps.toml"
+    ok "$(m "Config par défaut créée :" "Default config created:") $FRP_CONF_DIR/frps.toml ($(m "port" "port") ${FRPS_PORT_CREATED})"
 fi
 
 if [[ -f "$FRP_CONF_DIR/frpc.toml" ]]; then
@@ -230,13 +266,9 @@ BIND_HOST="127.0.0.1"
 # Le panel crée sa config au premier démarrage : on lui laisse un instant
 for _ in 1 2 3 4 5; do [[ -f /etc/frp-manager/frp-manager.json ]] && break; sleep 1; done
 if [[ -f /etc/frp-manager/frp-manager.json ]]; then
-    read -r SSL_EN BIND_HOST < <(python3 -c "
-import json
-try:
-    d=json.load(open('/etc/frp-manager/frp-manager.json'))
-    print('false' if d.get('ssl_enabled',True)==False else 'true', d.get('bind_host') or '127.0.0.1')
-except Exception: print('true 127.0.0.1')
-" 2>/dev/null || echo "true 127.0.0.1")
+    grep -Eq '"ssl_enabled": *false' /etc/frp-manager/frp-manager.json && SSL_EN=false || SSL_EN=true
+    BIND_HOST=$(sed -n 's/.*"bind_host": *"\([^"]*\)".*/\1/p' /etc/frp-manager/frp-manager.json | head -n1)
+    BIND_HOST="${BIND_HOST:-127.0.0.1}"
     [[ "$SSL_EN" == "false" ]] && PROTO="http"
 fi
 if [[ "$BIND_HOST" == "127.0.0.1" || "$BIND_HOST" == "::1" ]]; then
@@ -269,9 +301,13 @@ echo -e "  $(m "Première ouverture : créez l'identifiant administrateur (12 ca
 echo ""
 echo -e "  $(m "Config panel  :" "Panel config  :") ${CYAN}/etc/frp-manager/frp-manager.json${RESET}"
 echo -e "  $(m "Journaux      :" "Logs          :") ${CYAN}${LOG_DIR}/${RESET}"
-echo -e "  $(m "Mises à jour  :" "Updates       :") $(m "page Mises à jour du panel (frp et panel)" "the panel's Updates page (frp and panel)")"
+echo -e "  $(m "Mises à jour  :" "Updates       :") $(m "Réglages → Mises à jour dans le panel (frp et panel)" "Settings → Updates in the panel (frp and panel)")"
 echo -e "  $(m "Services frp  :" "frp services  :") ${CYAN}frps.service${RESET} + ${CYAN}frpc.service${RESET} $(m "créés (non démarrés)" "created (not started)")"
 echo -e "                  $(m "→ configurez-les puis démarrez-les depuis le panel." "→ configure them, then start them from the panel.")"
+if [[ -n "$FRPS_PORT_CREATED" ]]; then
+    echo -e "  $(m "Port frps     :" "frps port     :") ${BOLD}${FRPS_PORT_CREATED}${RESET} $(m "(TCP) : à ouvrir dans le pare-feu de l'hébergeur si cette machine" "(TCP): open it in your host's firewall if this machine")"
+    echo -e "                  $(m "sert de serveur frp, et à reporter dans serverPort des clients frpc." "acts as the frp server, and set it as serverPort on frpc clients.")"
+fi
 echo ""
 echo -e "  $(m "Commandes utiles :" "Useful commands:")"
 echo -e "    ${YELLOW}systemctl status frp-manager${RESET}"

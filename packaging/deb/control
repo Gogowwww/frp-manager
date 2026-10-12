@@ -1,0 +1,14 @@
+Package: frp-manager
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: Gogowwww <57223449+Gogowwww@users.noreply.github.com>
+Installed-Size: @SIZE@
+Section: net
+Priority: optional
+Homepage: https://github.com/Gogowwww/frp-manager
+Recommends: nftables
+Description: web panel to manage frp (frps and frpc)
+ FRP Manager drives frps and frpc from the browser: instances and live logs,
+ tunnels and ports, an nftables firewall for frps, accounts with permissions,
+ OpenID Connect single sign-on, webhook notifications and verified frp updates.
+ A single static program, with no runtime dependency.

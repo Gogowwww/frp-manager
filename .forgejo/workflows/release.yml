@@ -7,18 +7,23 @@
 #   git tag -a v0.0.24 -m "…" && git push origin v0.0.24
 #
 # Pré-release :
-#   - pré-release GitHub ; un panel installé en pré-release ne propose aucune
-#     mise à jour (il interroge GitHub sur le statut de sa propre version) ;
+#   - pré-release GitHub ; un panel installé en pré-release suit les pré-releases ;
 #   - image :X.Y.Z + :dev (:dev = toujours la dernière pré-release) ; :latest ne bouge pas ;
-#     amd64, arm64 et armv7 (émulation QEMU sur l'hôte du runner) ;
+#     amd64, arm64 et armv7 (programme compilé en croisé, image finale par émulation QEMU) ;
+#   - paquets .deb (amd64, arm64, armhf) joints à la release et publiés dans le
+#     dépôt APT du Forgejo, distribution « testing » (promote.yml les copie dans
+#     « stable ») ;
 #   - seul le tag est poussé sur GitHub, le main public ne bouge pas.
 #
-# Fichiers joints : frp-manager.zip (nom attendu par le README et l'auto-update du panel)
-# et frp-manager.zip.sha256 (vérifiée par l'auto-update à partir de 0.0.51).
+# Fichiers joints : frp-manager.zip (programme des trois architectures, install.sh,
+# et app.py : passage automatique d'un panel Python au programme Go), sa somme
+# frp-manager.zip.sha256 (vérifiée par la mise à jour du panel), et les .deb.
 #
 # Prérequis :
 #   - runner Forgejo avec le label « docker » et container.valid_volumes: [/var/run/docker.sock]
 #   - secret de dépôt GHCR_TOKEN : token GitHub *classic*, scopes « repo » et « write:packages »
+#   - secret FORGEJO_PACKAGES_TOKEN : jeton Forgejo, portée write:package (dépôt APT ;
+#     sans lui, le jeton automatique du workflow est essayé)
 
 name: Release
 
@@ -45,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -eu
-          apk add --no-cache --quiet git zip curl jq
+          apk add --no-cache --quiet git zip curl jq dpkg
 
           TAG="${{ github.ref_name }}"
           echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
@@ -64,47 +69,59 @@ jobs:
             "https://api.github.com/repos/$GH_REPO/releases/tags/$TAG")
           [ "$CODE" = 404 ] || { echo "Une release $TAG existe déjà sur GitHub (HTTP $CODE)"; exit 1; }
 
+          # Émulation arm64/armv7 (étapes RUN de l'image finale) et builder buildx propre au job
+          docker run --privileged --rm tonistiigi/binfmt --install arm64,arm >/dev/null
+          BUILDER="frpm-$(date +%s)-$$"
+          # network=host : le réseau de l'hôte, nécessaire sur ce homelab (go mod download, apk)
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
+
           {
             echo "TAG=$TAG"
             echo "VERSION=$VERSION"
             echo "SHA=$SHA"
+            echo "BUILDER=$BUILDER"
           } >> "$GITHUB_ENV"
           echo "Pré-release $TAG ($SHA)"
 
-      - name: Archive frp-manager.zip
+      - name: Tests
         run: |
           set -eu
-          mkdir -p dist/frp-manager
+          docker buildx build --builder "$BUILDER" --network=host --allow network.host \
+            --target test --progress plain src
+
+      - name: Programme (trois architectures)
+        run: |
+          set -eu
+          docker buildx build --builder "$BUILDER" --network=host --allow network.host \
+            --target binaries --build-arg PANEL_VERSION="$VERSION" --output type=local,dest=dist/bin src
+          ls -l dist/bin
+
+      - name: Archive frp-manager.zip et paquets .deb
+        run: |
+          set -eu
+          mkdir -p dist/frp-manager/bin
+          cp dist/bin/frp-manager-linux-* dist/frp-manager/bin/
+          chmod 755 dist/frp-manager/bin/*
           cd src
-          # Même contenu à plat qu'avant le rangement du dépôt dans panel/ : install.sh
-          # et la mise à jour du panel attendent app.py, templates/ et install.sh côte à côte
-          cp -r panel/. docs CHANGELOG.md CHANGELOG.fr.md README.md README.fr.md LICENSE \
-                docker-compose.yml ../dist/frp-manager/
-          # SECURITY à la racine de l'archive, comme dans les versions précédentes
+          cp -r panel/install.sh docs CHANGELOG.md CHANGELOG.fr.md README.md README.fr.md LICENSE \
+             docker-compose.yml ../dist/frp-manager/
           cp docs/SECURITY.md docs/SECURITY.fr.md ../dist/frp-manager/
+          # Passage d'un panel Python (≤ 0.0.57) au programme Go : sa mise à jour
+          # copie app.py puis relance le service, qui installe alors ce programme
+          sed "s/__VERSION__/$VERSION/" packaging/python-bridge/app.py > ../dist/frp-manager/app.py
+          grep -q "VERSION = \"$VERSION\"" ../dist/frp-manager/app.py
           cd ../dist
-          # Version affichée par les installations via install.sh (hors Docker)
-          sed -i "s/^_PANEL_VERSION_FALLBACK = \"[^\"]*\"/_PANEL_VERSION_FALLBACK = \"$VERSION\"/" frp-manager/app.py
-          grep -q "_PANEL_VERSION_FALLBACK = \"$VERSION\"" frp-manager/app.py
           zip -qr frp-manager.zip frp-manager
-          # Somme vérifiée par la mise à jour du panel (PANEL_CHECKSUM_ASSET dans app.py)
           sha256sum frp-manager.zip > frp-manager.zip.sha256
-          ls -l frp-manager.zip frp-manager.zip.sha256
+          sh ../src/packaging/deb/build-deb.sh "$VERSION" bin deb
+          ls -l frp-manager.zip frp-manager.zip.sha256 deb/
 
       # Construite pour toutes les architectures AVANT de publier quoi que ce
       # soit ; le push plus bas repart du cache de ce builder.
       - name: Image Docker
         run: |
           set -eu
-          # Architectures de l'image : amd64 (natif), arm64 et armv7 par émulation QEMU,
-          # enregistrée dans le noyau de l'hôte du runner (idempotent)
-          docker run --privileged --rm tonistiigi/binfmt --install arm64,arm >/dev/null
-          # Builder buildx propre à ce job (supprimé en sortie)
-          BUILDER="frpm-$(date +%s)-$$"
-          # network=host : l'apt-get du Dockerfile a besoin du réseau de l'hôte sur ce homelab
-          docker buildx create --name "$BUILDER" --driver docker-container \
-            --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
-          echo "BUILDER=$BUILDER" >> "$GITHUB_ENV"
           docker buildx build --builder "$BUILDER" --platform "$PLATFORMS" \
             --network=host --allow network.host --pull \
             --build-arg PANEL_VERSION="$VERSION" src
@@ -145,11 +162,24 @@ jobs:
           REL=$(curl -sf -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" -d "$BODY" "$API/releases")
           ID=$(echo "$REL" | jq -r .id)
-          for f in dist/frp-manager.zip dist/frp-manager.zip.sha256; do
+          for f in dist/frp-manager.zip dist/frp-manager.zip.sha256 dist/deb/*.deb; do
             NAME=$(basename "$f")
-            case "$NAME" in *.zip) TYPE=application/zip ;; *.sha256) TYPE=text/plain ;; *) TYPE=application/gzip ;; esac
+            case "$NAME" in
+              *.zip) TYPE=application/zip ;;
+              *.sha256) TYPE=text/plain ;;
+              *.deb) TYPE=application/vnd.debian.binary-package ;;
+              *) TYPE=application/octet-stream ;;
+            esac
             curl -sf -X POST -H "Authorization: token $GH_TOKEN" -H "Content-Type: $TYPE" \
               --data-binary "@$f" "https://uploads.github.com/repos/$GH_REPO/releases/$ID/assets?name=$NAME" >/dev/null
             echo "Joint : $NAME"
           done
           echo "Pré-release publiée : $(echo "$REL" | jq -r .html_url)"
+
+      - name: Dépôt APT (testing)
+        env:
+          FORGEJO_URL: ${{ github.server_url }}
+          APT_OWNER: ${{ github.repository_owner }}
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh src/packaging/deb/publish-apt.sh testing dist/deb/*.deb

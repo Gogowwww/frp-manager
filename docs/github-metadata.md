@@ -19,7 +19,7 @@ Site web (About → Website) : `https://frp-manager.gogow.fr`
 ## Topics (About → Topics)
 
 ```
-frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker flask systemd port-forwarding
+frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker golang systemd port-forwarding
 ```
 
 ## Autres réglages conseillés

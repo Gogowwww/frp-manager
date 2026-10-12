@@ -4,7 +4,9 @@
 
 - [Requirements](#requirements)
 - [Install script](#install-script)
+- [Install with apt](#install-with-apt)
 - [Docker and Portainer](#docker-and-portainer)
+- [From a Python version (0.0.57 and earlier)](#from-a-python-version-0057-and-earlier)
 - [First launch](#first-launch)
 - [Reaching the panel from another machine](#reaching-the-panel-from-another-machine)
 - [Versions and pre-releases](#versions-and-pre-releases)
@@ -17,8 +19,9 @@
 ## Requirements
 
 - Linux with **systemd**
-- **Python 3.8+** (install script) or **Docker**
-- Architectures: `amd64`, `arm64`, `arm`
+- Nothing else: the panel is a single program with no dependency (install
+  script or `.deb` package), or **Docker**
+- Architectures: `amd64`, `arm64`, `armv7`
 
 No need to install frp first: the script downloads `frps`/`frpc` and creates
 their systemd services. frp is then updated from **Settings → Updates**, when
@@ -32,20 +35,57 @@ unzip frp-manager.zip && cd frp-manager
 sudo bash install.sh
 ```
 
-The script installs the panel in an isolated Python environment
-(`/opt/frp-manager/venv`), creates the `frp-manager` systemd service and
-starts it. It also prepares frp:
+The script installs the `frp-manager` program for your architecture in
+`/opt/frp-manager`, creates the `frp-manager` systemd service and starts it.
+It also prepares frp:
 
 - `frps` / `frpc` binaries in `/usr/local/bin` (latest version, SHA-256
   checked);
 - default configs `/etc/frp/frps.toml` and `/etc/frp/frpc.toml`, only if they
-  don't exist yet;
+  don't exist yet. For `frps.toml`, the script offers a listening port picked
+  at random between 10000 and 32767 (Enter to accept it, `7000` for the
+  standard port, or any other number): bots scanning the Internet target port
+  7000. Without a terminal, the random port is used;
+  `FRPS_BIND_PORT=7000 sudo -E bash install.sh` (or `random`, or another
+  number) answers without asking. The chosen port is shown at the end: open it
+  in the firewall and set it as `serverPort` on clients;
 - `frps.service` and `frpc.service`, created but neither enabled nor started:
   you configure them, then start them from the panel.
 
 Running `install.sh` again from a newer archive updates the panel and keeps
 its configuration. The panel's **Update** button does the same without the
 command line.
+
+## Install with apt
+
+FRP Manager has its own APT repository (Debian, Ubuntu, Raspberry Pi OS;
+`amd64`, `arm64`, `armhf`). Add it once, then the panel installs and updates
+like any other package:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL https://forgejo.gogow.fr/api/packages/administrator/debian/repository.key -o /etc/apt/keyrings/frp-manager.asc
+echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://forgejo.gogow.fr/api/packages/administrator/debian stable main" \
+  | sudo tee /etc/apt/sources.list.d/frp-manager.list
+sudo apt update
+sudo apt install frp-manager
+```
+
+Updates then come with `sudo apt update && sudo apt upgrade` (the panel's
+**Update** button reminds you). To follow pre-releases, replace `stable` with
+`testing` in `/etc/apt/sources.list.d/frp-manager.list`.
+
+The package installs `/usr/bin/frp-manager` and the `frp-manager` service, then
+does what `install.sh` does: `frps` and `frpc` services (created, not started),
+default configurations with a random frps port
+(`sudo FRPS_BIND_PORT=7000 apt install frp-manager` for the standard port), frp
+download, panel start. An installation made with `install.sh` is taken over by
+the package, configuration included.
+
+`sudo apt remove frp-manager` stops and removes the panel but keeps its
+configuration; `sudo apt purge frp-manager` deletes it too. frp, its
+configurations and its services stay in place. To remove the repository:
+`sudo rm /etc/apt/sources.list.d/frp-manager.list /etc/apt/keyrings/frp-manager.asc`.
 
 ## Docker and Portainer
 
@@ -71,6 +111,20 @@ Older versions only exist for `amd64`.
 The container drives frp on the host through `pid: host` and `nsenter`,
 which gives it root-equivalent access to the host: read
 [docker.md](docker.md) before deploying it.
+
+## From a Python version (0.0.57 and earlier)
+
+Up to 0.0.57, the panel was a Python application; since 0.0.58, it is a single Go
+program. Nothing special to do: the old panel's **Update** button installs the
+new version as usual. On restart, that version downloads the Go program for
+your architecture (SHA-256 checked), installs it in `/opt/frp-manager`, points
+the `frp-manager` service to it and restarts the panel.
+
+The configuration does not change: accounts, passwords, settings, webhooks,
+firewall and single sign-on are kept; you only need to sign in again once.
+Running `install.sh` from the new archive does the same and also removes the
+Python environment that is no longer needed (`/opt/frp-manager/venv`). With
+Docker, `docker compose pull && docker compose up -d` is enough.
 
 ## First launch
 
@@ -215,22 +269,21 @@ followed.
 ## Lost password
 
 ```bash
-sudo /opt/frp-manager/venv/bin/python3 /opt/frp-manager/app.py --reset-password
+sudo /opt/frp-manager/frp-manager --reset-password     # .deb package: sudo frp-manager --reset-password
 sudo systemctl restart frp-manager
 ```
 
-With Docker: `docker exec -it frp-manager python3 app.py --reset-password`,
+With Docker: `docker exec -it frp-manager frp-manager --reset-password`,
 then `docker restart frp-manager`.
 
 ## File structure
 
 ```
 Repository
-  panel/                   The panel (the release archive holds this folder's content)
-    app.py                 Flask server + API
+  panel/                   The panel: a Go program (go build ./panel)
+    *.go                   HTTP server, API, firewall, updates…; *_test.go: tests
     install.sh             Install script
-    requirements.txt
-    templates/
+    templates/             Interface, embedded in the program at build time
       index.html, login.html, setup.html
       partials/icons.html  SVG icons (embedded, no CDN)
       assets/
@@ -239,10 +292,10 @@ Repository
         locales/fr.js, en.js  Interface texts
   docs/                    Documentation, security policy, contributing guide
   website/                 Project website and live demo (website/demo/)
-  tests/                   pytest tests
-  Dockerfile, docker-compose.yml
+  packaging/               .deb package, move from a Python version
+  Dockerfile, docker-compose.yml, go.mod
 
-/opt/frp-manager/          Installed panel (script)
+/opt/frp-manager/          Installed panel (script); /usr/bin/frp-manager (.deb package)
 /etc/frp-manager/          Panel configuration + SSL certificates
 /etc/frp/                  frps/frpc configurations (TOML)
 /var/log/frp/              frp logs
@@ -261,6 +314,8 @@ sudo rm /etc/systemd/system/frp-manager.service
 sudo rm -rf /opt/frp-manager /etc/frp-manager
 sudo systemctl daemon-reload
 ```
+
+With the `.deb` package: `sudo apt purge frp-manager`.
 
 frp configurations (`/etc/frp/`) and binaries (`/usr/local/bin/`) are kept.
 

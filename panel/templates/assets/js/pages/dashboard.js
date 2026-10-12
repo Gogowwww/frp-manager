@@ -171,7 +171,7 @@ function serviceCard(iid) {
   if (can('instances.control')) menuItems.push({ label: t('dashboard.rename'), icon: 'edit', onSelect: () => rename(iid) });
   if (can('logs.view')) menuItems.push({ label: t('dashboard.viewLogs'), icon: 'logs', onSelect: () => navigate('logs', { iid }) });
   if (!docker) {
-    if (can('config.read')) menuItems.push({ label: t('dashboard.editConfig'), icon: 'config', onSelect: () => navigate('config', { iid }) });
+    if (can('config.read')) menuItems.push({ label: t('dashboard.editConfig'), icon: 'config', onSelect: () => navigate('settings', { s: 'config', iid }) });
     if (status !== 'missing' && can('instances.control')) {
       menuItems.push('sep', { label: t('dashboard.reload'), icon: 'refresh', onSelect: () => serviceAction(iid, 'reload') });
     }

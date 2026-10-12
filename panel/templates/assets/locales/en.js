@@ -8,7 +8,6 @@ export default {
     dashboard: 'Dashboard',
     tunnels: 'Ports',
     firewall: 'Firewall',
-    config: 'Configuration',
     logs: 'Logs',
     settings: 'Settings',
     logout: 'Log out',
@@ -378,6 +377,8 @@ export default {
 
   config: {
     title: 'Configuration',
+    randomPort: 'Random',
+    randomPortHint: 'Pick a random port (10000–32767)',
     readOnly: 'Your account can view this configuration, not change it.',
     description: 'Connection and security of frps or frpc. Each field shows the matching key in the TOML file.',
     emptyTitle: 'Nothing to configure',
@@ -415,7 +416,7 @@ export default {
       },
     },
     fields: {
-      bindPort: { label: 'Listening port', hint: 'The port frpc clients use to connect.' },
+      bindPort: { label: 'Listening port', hint: 'The port frpc clients use to connect. A random port avoids bots that target 7000; set it as serverPort on clients.' },
       bindAddr: { label: 'Listening address', hint: '0.0.0.0 for all IPv4 interfaces, :: for IPv6.' },
       proxyBindAddr: { label: 'Ports address', hint: 'Public IP to open the ports on, if different.' },
       authMethod: { label: 'Method' },
@@ -528,10 +529,11 @@ export default {
 
   settings: {
     title: 'Settings',
-    description: 'Your account, panel access, users, notifications and updates.',
+    description: 'Your account, frp configuration, panel access, notifications and updates.',
     sections: 'Settings sections',
     groups: {
       personal: 'Personal',
+      frp: 'frp',
       access: 'Access and security',
       system: 'System',
     },

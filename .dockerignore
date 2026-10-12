@@ -1,4 +1,7 @@
 # L'image ne contient que le panel (voir Dockerfile) : tout le reste est exclu
 *
-!panel/app.py
+!go.mod
+!go.sum
+!panel/*.go
 !panel/templates/
+!panel/testdata/

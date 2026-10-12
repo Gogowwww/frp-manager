@@ -1,0 +1,55 @@
+# Forgejo Actions : intégration continue du panel Go, à chaque push (toutes
+# branches) et sur les pull requests : go vet, tests, gofmt, compilation des trois
+# architectures, scripts d'installation et paquets .deb.
+#
+# Prérequis : un forgejo-runner avec le label « docker ».
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  go:
+    runs-on: docker
+    container:
+      image: golang:1.26-alpine
+    steps:
+      # git simple plutôt qu'actions/checkout : pas besoin de Node dans le conteneur
+      - name: Récupérer le code
+        run: |
+          apk add --no-cache --quiet git bash dpkg
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
+          git -C src checkout --quiet "${{ github.sha }}"
+          git -C src log -1 --format='Commit %h : %s'
+
+      - name: go vet et tests
+        run: |
+          set -eu
+          cd src
+          go vet ./panel
+          go test -count=1 ./panel
+
+      - name: gofmt
+        run: |
+          cd src
+          out=$(gofmt -l panel)
+          [ -z "$out" ] || { echo "Fichiers à formater (gofmt -w) :"; echo "$out"; exit 1; }
+
+      - name: Compilation et paquets .deb
+        run: |
+          set -eu
+          cd src
+          mkdir -p ../ci/bin
+          export CGO_ENABLED=0
+          GOOS=linux GOARCH=amd64 go build -trimpath -o ../ci/bin/frp-manager-linux-amd64 ./panel
+          GOOS=linux GOARCH=arm64 go build -trimpath -o ../ci/bin/frp-manager-linux-arm64 ./panel
+          GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o ../ci/bin/frp-manager-linux-armv7 ./panel
+          ../ci/bin/frp-manager-linux-amd64 --version
+          bash -n panel/install.sh
+          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh; do sh -n "$f"; done
+          sh packaging/deb/build-deb.sh 0.0.0-ci ../ci/bin ../ci/deb
+          for f in ../ci/deb/*.deb; do dpkg-deb --info "$f" | sed -n 's/^ *\(Package\|Version\|Architecture\):/  \1:/p'; done

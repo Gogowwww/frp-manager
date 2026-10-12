@@ -33,12 +33,12 @@ soon as possible. The report is credited in the release notes if you wish.
 **What the panel protects**
 
 - Access to the interface and the API: username and password required (initial
-  setup enforced on first launch), password hashed with argon2id (scrypt as a
-  fallback), login attempts limited per IP, HttpOnly / SameSite=Strict / Secure
+  setup enforced on first launch), password hashed with argon2id (at most two
+  hashes computed at once), login attempts limited per IP, HttpOnly / SameSite=Strict / Secure
   (over HTTPS) sessions, CSRF token on every request that changes something.
 - The administrator's browser: strict Content-Security-Policy for scripts
-  (nonce), X-Frame-Options, data escaped everywhere (Jinja2 autoescape, DOM
-  built without `innerHTML`).
+  (nonce), X-Frame-Options, data escaped everywhere (values inserted in the
+  server's pages, DOM built without `innerHTML`).
 - The system: no command passed to a shell with user input, service and
   container names allow-listed, configurations validated (TOML parsed) and
   confined to frp's configuration directories, archives extracted without
