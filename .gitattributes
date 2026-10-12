@@ -3,8 +3,14 @@
 *.bash      text eol=lf
 Dockerfile  text eol=lf
 
-# Python — LF aussi
+# Python et Go — LF aussi
 *.py        text eol=lf
+*.go        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+
+# Paquet .deb : scripts de maintenance et fichiers lus sous Linux
+packaging/deb/*  text eol=lf
 
 # Configs serveur — LF (consommées par des outils Linux)
 *.toml      text eol=lf

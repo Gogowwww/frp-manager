@@ -1,8 +1,10 @@
 # Forgejo Actions : intégration continue du panel Go, à chaque push (toutes
-# branches) et sur les pull requests : go vet, tests, gofmt, compilation des trois
-# architectures, scripts d'installation et paquets .deb.
+# branches) et sur les pull requests. Mêmes étapes que release.yml, sans rien
+# publier : tests Go (go vet, go test, gofmt), programme des trois
+# architectures, archive frp-manager.zip et paquets .deb.
 #
-# Prérequis : un forgejo-runner avec le label « docker ».
+# Prérequis : runner Forgejo avec le label « docker » et
+# container.valid_volumes: [/var/run/docker.sock] (comme release.yml).
 
 name: CI
 
@@ -14,42 +16,88 @@ jobs:
   go:
     runs-on: docker
     container:
-      image: golang:1.26-alpine
+      image: docker:27-cli
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
     steps:
       # git simple plutôt qu'actions/checkout : pas besoin de Node dans le conteneur
       - name: Récupérer le code
         run: |
-          apk add --no-cache --quiet git bash dpkg
-          rm -rf src
+          set -eu
+          apk add --no-cache --quiet git zip dpkg
+          rm -rf src ci
           git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             clone --quiet "${{ github.server_url }}/${{ github.repository }}.git" src
           git -C src checkout --quiet "${{ github.sha }}"
           git -C src log -1 --format='Commit %h : %s'
+          # Builder buildx propre au job ; network=host : réseau de l'hôte, nécessaire sur ce homelab
+          BUILDER="frpm-ci-$(date +%s)-$$"
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt network=host --buildkitd-flags '--allow-insecure-entitlement network.host' >/dev/null
+          echo "BUILDER=$BUILDER" >> "$GITHUB_ENV"
 
-      - name: go vet et tests
+      - name: go vet, go test, gofmt
         run: |
           set -eu
-          cd src
-          go vet ./panel
-          go test -count=1 ./panel
+          docker buildx build --builder "$BUILDER" --network=host --allow network.host \
+            --target test --progress plain src
 
-      - name: gofmt
-        run: |
-          cd src
-          out=$(gofmt -l panel)
-          [ -z "$out" ] || { echo "Fichiers à formater (gofmt -w) :"; echo "$out"; exit 1; }
-
-      - name: Compilation et paquets .deb
+      - name: Programme (trois architectures)
         run: |
           set -eu
-          cd src
-          mkdir -p ../ci/bin
-          export CGO_ENABLED=0
-          GOOS=linux GOARCH=amd64 go build -trimpath -o ../ci/bin/frp-manager-linux-amd64 ./panel
-          GOOS=linux GOARCH=arm64 go build -trimpath -o ../ci/bin/frp-manager-linux-arm64 ./panel
-          GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -o ../ci/bin/frp-manager-linux-armv7 ./panel
-          ../ci/bin/frp-manager-linux-amd64 --version
-          bash -n panel/install.sh
-          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh; do sh -n "$f"; done
-          sh packaging/deb/build-deb.sh 0.0.0-ci ../ci/bin ../ci/deb
-          for f in ../ci/deb/*.deb; do dpkg-deb --info "$f" | sed -n 's/^ *\(Package\|Version\|Architecture\):/  \1:/p'; done
+          docker buildx build --builder "$BUILDER" --network=host --allow network.host \
+            --target binaries --build-arg PANEL_VERSION=0.0.0-ci --output type=local,dest=ci/bin src
+          ls -l ci/bin
+
+      - name: Archive et paquets .deb
+        run: |
+          set -eu
+          trap 'docker buildx rm "$BUILDER" >/dev/null 2>&1 || true' EXIT
+          bash_ok=$(command -v bash || true)
+          sh -n src/packaging/deb/postinst && sh -n src/packaging/deb/prerm && sh -n src/packaging/deb/postrm
+          [ -z "$bash_ok" ] || bash -n src/panel/install.sh
+          mkdir -p ci/frp-manager/bin
+          cp ci/bin/frp-manager-linux-* ci/frp-manager/bin/
+          cp src/panel/install.sh ci/frp-manager/
+          sed "s/__VERSION__/0.0.0-ci/" src/packaging/python-bridge/app.py > ci/frp-manager/app.py
+          (cd ci && zip -qr frp-manager.zip frp-manager && ls -l frp-manager.zip)
+          sh src/packaging/deb/build-deb.sh 0.0.0-ci ci/bin ci/deb
+          for f in ci/deb/*.deb; do
+            dpkg-deb --field "$f" Package Version Architecture | tr '\n' ' '; echo
+            dpkg-deb --contents "$f" | awk '{print "   " $6}' | grep -v '/$'
+          done
+
+      # Le jeton automatique du workflow peut-il publier dans le dépôt APT ? (sinon
+      # release.yml a besoin du secret FORGEJO_PACKAGES_TOKEN). Essai sur une
+      # distribution « ci » à part, nettoyée aussitôt ; résultat en statut du commit.
+      - name: Dépôt APT, droit de publication
+        if: github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PKG_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+        run: |
+          set -u
+          API="${{ github.server_url }}/api/packages/${{ github.repository_owner }}/debian"
+          try() {
+            [ -n "$1" ] || { echo "absent"; return; }
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: token $1" \
+              --upload-file ci/deb/frp-manager_0.0.0-ci_amd64.deb "$API/pool/ci/main/upload")
+            curl -s -o /dev/null -X DELETE -H "Authorization: token $1" "$API/pool/ci/main/frp-manager/0.0.0-ci/amd64"
+            echo "$code"
+          }
+          AUTO=$(try "$TOKEN")
+          PERSO=$(try "${PKG_TOKEN:-}")
+          echo "jeton automatique : HTTP $AUTO ; FORGEJO_PACKAGES_TOKEN : $PERSO"
+          case "$AUTO$PERSO" in *201*|*409*) STATE=success ;; *) STATE=failure ;; esac
+          curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+            -d "{\"state\": \"$STATE\", \"context\": \"apt-publish\", \"description\": \"automatique: $AUTO, FORGEJO_PACKAGES_TOKEN: $PERSO\"}" \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
+
+      - name: Statut en cas d'échec
+        if: failure()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -o /dev/null -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
+            -d '{"state": "failure", "context": "ci-detail", "description": "échec : voir le journal du job CI"}' \
+            "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
