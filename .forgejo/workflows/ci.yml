@@ -1,5 +1,5 @@
-# Forgejo Actions : intégration continue du panel Go, à chaque push (toutes
-# branches) et sur les pull requests. Mêmes étapes que release.yml : tests Go
+# Forgejo Actions : intégration continue du panel Go, à chaque push sur une
+# branche (pas les tags) et sur les pull requests. Mêmes étapes que release.yml : tests Go
 # (go vet, go test, gofmt), programme des trois architectures, archive
 # frp-manager.zip et paquets .deb.
 #
@@ -19,6 +19,9 @@ name: CI
 
 on:
   push:
+    # Branches seulement : un tag est testé et construit par release.yml (sur un
+    # tag, les jobs apt réservés à main finissaient en « failure » au lieu d'être ignorés)
+    branches: ['**']
   pull_request:
 
 env:

@@ -14,7 +14,7 @@ number. Versions older than 0.0.51 are described in the
 
 ## [0.0.58] - 2026-10-12
 
-Pre-release: first version of the panel in Go.
+First version of the panel in Go. Pre-release, then final release, on the same day.
 
 ### Changed
 
