@@ -368,6 +368,13 @@ func (s *session) get(k string) string {
 
 func (s *session) set(k string, v any) { s.data[k] = v; s.modified = true }
 
+func (s *session) del(k string) {
+	if _, ok := s.data[k]; ok {
+		delete(s.data, k)
+		s.modified = true
+	}
+}
+
 func (s *session) clear() { s.data = map[string]any{}; s.permanent = false; s.modified = true }
 
 func (s *session) save(c *Ctx) {
@@ -525,14 +532,16 @@ func init() {
 // requête pour le reste (jeton CSRF, nonce, état initial).
 
 var (
-	pages        = map[string]string{}
-	assetCallRe  = regexp.MustCompile(`\{\{ asset\('([^']+)'\) \}\}`)
-	preloadRe    = regexp.MustCompile(`(?s)\{% for m in preload_modules %\}(.*?)\{% endfor %\}`)
-	ifOidcRe     = regexp.MustCompile(`(?s)\{% if oidc_enabled %\}(.*?)\{% endif %\}`)
+	pages       = map[string]string{}
+	assetCallRe = regexp.MustCompile(`\{\{ asset\('([^']+)'\) \}\}`)
+	preloadRe   = regexp.MustCompile(`(?s)\{% for m in preload_modules %\}(.*?)\{% endfor %\}`)
+	// {% if x %}…{% endif %} sans imbrication, x parmi ifVars (booléen de vars)
+	ifRe         = regexp.MustCompile(`(?s)\{% if (\w+) %\}(.*?)\{% endif %\}`)
+	ifVars       = map[string]bool{"oidc_enabled": true, "passkeys": true}
 	leftoverTmpl = regexp.MustCompile(`\{\{.*?\}\}|\{%.*?%\}`)
 	dynamicTmpl  = map[string]bool{"{{ csrf_token() }}": true, "{{ csp_nonce() }}": true, "{{ boot|tojson }}": true,
 		"{{ panel_version }}": true, "{{ oidc_error }}": true, "{{ oidc_label }}": true,
-		"{% if oidc_enabled %}": true, "{% endif %}": true}
+		"{% if oidc_enabled %}": true, "{% if passkeys %}": true, "{% endif %}": true}
 )
 
 func loadPages() {
@@ -563,14 +572,14 @@ func loadPages() {
 	}
 }
 
-// render : page HTML ; vars donne panel_version, boot, oidc_* au besoin.
+// render : page HTML ; vars donne panel_version, boot, oidc_*, passkeys au besoin.
 func (c *Ctx) render(name string, vars map[string]any) {
 	t := pages[name]
-	if strings.Contains(t, "{% if oidc_enabled %}") {
-		on, _ := vars["oidc_enabled"].(bool)
-		t = ifOidcRe.ReplaceAllStringFunc(t, func(s string) string {
-			if on {
-				return ifOidcRe.FindStringSubmatch(s)[1]
+	if strings.Contains(t, "{% if ") {
+		t = ifRe.ReplaceAllStringFunc(t, func(s string) string {
+			m := ifRe.FindStringSubmatch(s)
+			if on, _ := vars[m[1]].(bool); on && ifVars[m[1]] {
+				return m[2]
 			}
 			return ""
 		})

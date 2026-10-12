@@ -14,6 +14,13 @@ number. Versions older than 0.0.51 are described in the
 
 ### Added
 
+- **Passkeys**: every account that signs in with a password can add passkeys
+  (Settings → My account, password asked again) and then sign in without a
+  password, from the "Sign in with a passkey" button or the suggestions of the
+  username field. Passkeys can be renamed and deleted (sessions opened with a
+  deleted passkey are closed); an administrator sees how many each account has
+  and can remove them (lost device). Requires a domain name with a valid HTTPS
+  certificate, or `localhost`.
 - **GitHub wiki**: the documentation (README, installation, Docker, security,
   contributing, changelog), in English and French, is also published to the
   repository wiki, as on the website; it is regenerated each time the public

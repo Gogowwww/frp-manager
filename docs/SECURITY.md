@@ -77,6 +77,13 @@ soon as possible. The report is credited in the release notes if you wish.
   endpoint over HTTPS, so its signature is not checked (OpenID Connect Core
   §3.1.3.7); its issuer, audience, expiry and nonce are. Accounts are linked by
   email only when the provider marks the email as verified.
+- **Passkeys (WebAuthn)**: adding one requires the account password; signing
+  in requires user verification by the device (biometrics or PIN). The panel
+  checks the challenge (single use, 5 minutes), the origin, the domain the
+  passkey was created on, the signature (ES256, EdDSA, RS256) and the signature
+  counter when the authenticator keeps one. The authenticator model is not
+  checked (attestation "none"). Failed passkey sign-ins count towards the
+  per-IP lockout, like passwords.
 
 **Recommendations**
 

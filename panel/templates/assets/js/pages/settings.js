@@ -12,8 +12,9 @@ import { store, can } from '../store.js';
 import { hrefFor, replaceParams } from '../router.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, field, setFieldError, input, select, secretInput,
-  segmented, callout, pageHeader, card, switchRow,
+  segmented, callout, pageHeader, card, switchRow, badge, openDialog, confirmDialog, promptDialog,
 } from '../ui.js';
+import { passkeysUnavailable, createPasskey } from '../passkey.js';
 import { getThemePref, setThemePref } from '../theme.js';
 import notifications from './notifications.js';
 import updates from './updates.js';
@@ -31,6 +32,7 @@ const account = {
   description: () => t(store.me?.source === 'oidc' ? 'settings.account.oidcDesc' : 'settings.account.desc'),
   mount(host) {
     host.append(profileCard(), store.me?.owner ? ownerCard() : passwordCard());
+    if (store.me?.source !== 'oidc') host.append(passkeysCard());
   },
 };
 
@@ -129,6 +131,119 @@ function passwordCard() {
         field({ label: t('settings.security.newPassword'), hint: t('settings.security.passwordHint'), control: pass }),
         field({ label: t('settings.security.confirm'), control: confirm }))),
     foot: [saveBtn],
+  });
+}
+
+/** Passkeys du compte : connexion sans mot de passe, déverrouillée par
+ * l'appareil (empreinte, visage, code PIN). Ajout : mot de passe redemandé. */
+function passkeysCard() {
+  const reason = passkeysUnavailable();
+  const list = h('div', null, h('p', { class: 'muted' }, t('common.loading')));
+  const addBtn = button(t('settings.passkeys.add'), { variant: 'primary', iconName: 'plus', onClick: add });
+  addBtn.disabled = true;
+  const when = (iso) => (iso ? new Date(iso).toLocaleString(getLocale()) : t('users.never'));
+  let items = [];
+  let max = 20;
+
+  async function load() {
+    try {
+      const d = await apiOk('/api/me/passkeys');
+      items = d.passkeys || [];
+      max = d.max || max;
+      render();
+    } catch (e) {
+      list.replaceChildren(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+    }
+  }
+
+  function render() {
+    addBtn.disabled = Boolean(reason) || items.length >= max;
+    if (!items.length) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('settings.passkeys.empty')));
+      return;
+    }
+    list.replaceChildren(h('ul', { class: 'rows' }, items.map((pk) => h('li', { class: 'row us-row' },
+      h('div', { class: 'row-name' }, h('span', { title: pk.rp_id }, pk.name),
+        pk.synced && badge(t('settings.passkeys.synced'), 'info')),
+      h('div', { class: 'fw-detail' },
+        h('span', null, h('small', null, t('settings.passkeys.created')), h('span', null, when(pk.created))),
+        h('span', null, h('small', null, t('settings.passkeys.lastUsed')), h('span', null, when(pk.last_used)))),
+      h('div', { class: 'row-actions' },
+        button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('settings.passkeys.rename'), onClick: () => rename(pk) }),
+        button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: () => remove(pk) }))))));
+  }
+
+  async function add() {
+    const added = await openDialog({
+      title: t('settings.passkeys.addTitle'),
+      description: t('settings.passkeys.addDesc'),
+      size: 'sm',
+      build: ({ close }) => {
+        const pw = secretInput({ autocomplete: 'current-password' });
+        const name = input({ maxLength: 64, placeholder: t('settings.passkeys.namePlaceholder') });
+        const go = button(t('settings.passkeys.continue'), { variant: 'primary', type: 'submit', form: 'passkey-form' });
+        async function submit(e) {
+          e.preventDefault();
+          setFieldError(pw.input, pw.input.value ? '' : t('validation.required'));
+          if (!pw.input.value) return;
+          await busy(go, async () => {
+            try {
+              const o = await api('/api/me/passkeys/options', { method: 'POST', body: { current_password: pw.input.value } });
+              if (!o.ok) { setFieldError(pw.input, o.msg || t('errors.generic')); return; }
+              let cred;
+              try {
+                cred = await createPasskey(o.publicKey);
+              } catch (err) {
+                const key = { InvalidStateError: 'already', NotAllowedError: 'cancelled', SecurityError: 'refused' }[err?.name] || 'failed';
+                toast(t(`settings.passkeys.${key}`), 'error');
+                return;
+              }
+              const d = await api('/api/me/passkeys', { method: 'POST', body: { name: name.value.trim(), credential: cred } });
+              if (!d.ok) { toastResult(d); return; }
+              toast(d.msg, 'success');
+              close(true);
+            } catch (err) { toastError(err); }
+          });
+        }
+        return {
+          body: [h('form', { id: 'passkey-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+            field({ label: t('settings.account.current'), control: pw }),
+            field({ label: t('settings.passkeys.name'), hint: t('settings.passkeys.nameHint'), optional: true, control: name }))],
+          foot: [button(t('common.cancel'), { onClick: () => close(false) }), go],
+        };
+      },
+    }).result;
+    if (added) load();
+  }
+
+  async function rename(pk) {
+    const name = await promptDialog({ title: t('settings.passkeys.renameTitle'), label: t('settings.passkeys.name'), value: pk.name, maxLength: 64 });
+    if (!name || name === pk.name) return;
+    try {
+      const d = await api(`/api/me/passkeys/${encodeURIComponent(pk.id)}`, { method: 'PUT', body: { name } });
+      toastResult(d);
+      if (d.ok) load();
+    } catch (err) { toastError(err); }
+  }
+
+  async function remove(pk) {
+    const ok = await confirmDialog({
+      title: t('settings.passkeys.deleteTitle', { name: pk.name }), message: t('settings.passkeys.deleteText'),
+      confirmLabel: t('common.delete'), danger: true,
+    });
+    if (!ok) return;
+    try {
+      const d = await api(`/api/me/passkeys/${encodeURIComponent(pk.id)}`, { method: 'DELETE' });
+      toastResult(d);
+      if (d.ok) load();
+    } catch (err) { toastError(err); }
+  }
+
+  load();
+  return card({
+    title: t('settings.passkeys.title'), description: t('settings.passkeys.desc'),
+    body: [reason && callout({ type: 'neutral', compact: true, iconName: 'info', text: t(`settings.passkeys.unavailable.${reason}`) }), list],
+    foot: [addBtn],
   });
 }
 

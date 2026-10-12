@@ -14,6 +14,14 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Ajouté
 
+- **Passkeys** : tout compte qui se connecte par mot de passe peut ajouter des
+  passkeys (Réglages → Mon compte, mot de passe redemandé), puis se connecter
+  sans mot de passe, par le bouton « Se connecter avec une passkey » ou les
+  suggestions du champ identifiant. Les passkeys se renomment et se suppriment
+  (les sessions ouvertes avec une passkey supprimée sont fermées) ; un
+  administrateur voit combien chaque compte en a et peut les retirer (appareil
+  perdu). Exige un nom de domaine avec un certificat HTTPS valide, ou
+  `localhost`.
 - **Wiki GitHub** : la documentation (README, installation, Docker, sécurité,
   contribution, journal des modifications), en anglais et en français, est
   aussi publiée dans le wiki du dépôt, comme sur le site ; elle est régénérée

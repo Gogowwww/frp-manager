@@ -81,6 +81,14 @@ souhaitez.
   n'est donc pas vérifiée (OpenID Connect Core §3.1.3.7) ; son émetteur, son
   audience, son expiration et son nonce le sont. Un compte n'est lié par e-mail
   que si le fournisseur indique l'e-mail comme vérifié.
+- **Passkeys (WebAuthn)** : en ajouter une exige le mot de passe du compte ; se
+  connecter exige que l'appareil vérifie l'utilisateur (biométrie ou code PIN).
+  Le panel vérifie le défi (usage unique, 5 minutes), l'origine, le domaine sur
+  lequel la passkey a été créée, la signature (ES256, EdDSA, RS256) et le
+  compteur de signatures quand l'authentificateur en tient un. Le modèle de
+  l'authentificateur n'est pas vérifié (attestation « none »). Les échecs de
+  connexion par passkey comptent dans le verrouillage par IP, comme les mots
+  de passe.
 
 **Recommandations**
 

@@ -329,7 +329,7 @@ func init() {
 		safe := J{}
 		for k, v := range cfg() {
 			switch k {
-			case "password_hash", "secret_key", "webhooks", "users", "oidc", "firewall":
+			case "password_hash", "secret_key", "webhooks", "users", "oidc", "firewall", ownerPasskeysKey:
 			default:
 				safe[k] = v
 			}

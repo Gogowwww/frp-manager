@@ -823,8 +823,9 @@ legend.fieldset-title + * { clear: both; }
 .auth-form { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
 .auth-error { color: var(--danger-text); font-size: 13px; }
 .auth-error:empty { display: none; }
-.auth-sso { margin-top: 16px; display: flex; flex-direction: column; gap: 16px; }
-.auth-sep { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: 12px; }
+.auth-sso { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+.auth-sso:not(:has(.btn:not([hidden]))) { display: none; }
+.auth-sep { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; color: var(--text-3); font-size: 12px; }
 .auth-sep::before, .auth-sep::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 .auth-sso .btn { justify-content: center; text-decoration: none; }
 

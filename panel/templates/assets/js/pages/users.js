@@ -83,6 +83,7 @@ function renderList() {
     if (u.owner) badges.push(badge(t('users.owner'), 'success'));
     if (u.id === S.data.me) badges.push(badge(t('users.you')));
     if (u.source === 'oidc') badges.push(badge(u.linked ? 'OIDC' : t('users.oidcPending'), u.linked ? 'info' : 'warn'));
+    if (u.passkeys) badges.push(badge(t('users.passkeysBadge', { count: u.passkeys })));
     return h('li', {
       class: `row us-row${u.enabled ? '' : ' is-off'}`, tabindex: editable ? '0' : null, onClick: open,
       onKeydown: (e) => { if (e.key === 'Enter') open(); },
@@ -235,6 +236,10 @@ function edit(existing) {
       });
 
       const enabled = switchRow({ label: t('users.enabled'), description: t('users.enabledDesc'), checked: draft.enabled });
+      // Appareil perdu : retirer les passkeys du compte (il garde son mot de passe)
+      const dropPasskeys = !isNew && existing.passkeys
+        ? switchRow({ label: t('users.removePasskeys', { count: existing.passkeys }), description: t('users.removePasskeysDesc'), checked: false })
+        : null;
 
       async function submit(e) {
         e.preventDefault();
@@ -251,6 +256,7 @@ function edit(existing) {
           if (short) return;
           body.password = password.input.value;
         }
+        if (dropPasskeys?.input.checked) body.remove_passkeys = true;
         if (draft.source === 'oidc' && !email.disabled) {
           setFieldError(email, email.value.trim() ? '' : t('validation.required'));
           if (!email.value.trim()) return;
@@ -282,7 +288,8 @@ function edit(existing) {
           h('div', { class: 'field' }, h('label', { class: 'field-label', for: 'us-role' }, t('users.role')), Object.assign(role, { id: 'us-role' }), roleHint),
           permGrid,
           scopeBlock,
-          enabled)],
+          enabled,
+          dropPasskeys)],
         foot: [button(t('common.cancel'), { onClick: () => close(false) }), saveBtn],
       };
     },

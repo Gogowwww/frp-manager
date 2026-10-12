@@ -170,6 +170,27 @@ Derrière un reverse proxy TLS avec `ssl_enabled: false`, ajoutez
 `"cookie_secure": true` au fichier de config pour que le cookie de session
 reste marqué *Secure*.
 
+## Passkeys
+
+Chaque compte qui se connecte par mot de passe peut ajouter des **passkeys**
+(Réglages → Mon compte → Passkeys ; le mot de passe est redemandé) : l'appareil
+vous connecte ensuite tout seul (empreinte, visage, code PIN, clé de sécurité),
+sans saisir d'identifiant ni de mot de passe. Le mot de passe reste valable.
+
+- Les navigateurs n'autorisent les passkeys que sur un **nom de domaine avec un
+  certificat HTTPS valide**, par exemple derrière un reverse proxy avec
+  Let's Encrypt (`https://panel.exemple.fr`), ou sur `http://localhost`. Le
+  certificat auto-signé du panel et l'accès par adresse IP
+  (`https://192.0.2.10:8765`) sont refusés : la carte Passkeys l'indique.
+- Une passkey est liée au domaine sur lequel elle a été créée : créée sur
+  `panel.exemple.fr`, elle ne sert que là.
+- Derrière un reverse proxy, transmettez l'en-tête `Host` d'origine
+  (`proxy_set_header Host $host;`, comme ci-dessus) ou `X-Forwarded-Host`.
+- Appareil perdu : supprimez la passkey dans Réglages → Mon compte après vous
+  être connecté avec votre mot de passe, ou demandez à un administrateur de
+  retirer les passkeys du compte (Utilisateurs → compte → *Retirer ses
+  passkeys*). Les sessions ouvertes avec une passkey supprimée sont fermées.
+
 ## Versions et pré-releases
 
 Chaque nouvelle version sort d'abord en **pré-release**, pour être testée
@@ -282,6 +303,9 @@ sudo systemctl restart frp-manager
 
 En Docker : `docker exec -it frp-manager frp-manager --reset-password`, puis
 `docker restart frp-manager`.
+
+Les passkeys du propriétaire sont gardées : elles permettent toujours de se
+connecter.
 
 ## Structure des fichiers
 

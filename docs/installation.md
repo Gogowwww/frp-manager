@@ -167,6 +167,27 @@ Behind a TLS reverse proxy with `ssl_enabled: false`, add
 `"cookie_secure": true` to the config file so the session cookie stays
 *Secure*.
 
+## Passkeys
+
+Each account that signs in with a password can add **passkeys**
+(Settings → My account → Passkeys; the password is asked again): the device
+then signs you in on its own (fingerprint, face, PIN, security key), without
+typing a username or password. The password keeps working.
+
+- Browsers only allow passkeys on a **domain name with a valid HTTPS
+  certificate**, for example behind a reverse proxy with Let's Encrypt
+  (`https://panel.example.com`), or on `http://localhost`. The panel's
+  self-signed certificate and access by IP address (`https://192.0.2.10:8765`)
+  are refused: the Passkeys card says so.
+- A passkey is tied to the domain it was created on: one created on
+  `panel.example.com` only works there.
+- Behind a reverse proxy, forward the original `Host` header
+  (`proxy_set_header Host $host;`, as above) or `X-Forwarded-Host`.
+- Lost device: delete the passkey from Settings → My account after signing in
+  with your password, or ask an administrator to remove the account's passkeys
+  (Users → account → *Remove their passkeys*). Sessions opened with a deleted
+  passkey are closed.
+
 ## Versions and pre-releases
 
 Every new version first ships as a **pre-release**, to be tested before it is
@@ -277,6 +298,8 @@ sudo systemctl restart frp-manager
 
 With Docker: `docker exec -it frp-manager frp-manager --reset-password`,
 then `docker restart frp-manager`.
+
+The owner's passkeys are kept: they still sign in.
 
 ## File structure
 

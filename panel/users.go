@@ -46,7 +46,7 @@ func userView(u User) J {
 		"owner": u["id"] == ownerID, "role": role, "permissions": perms,
 		"effective": userPermissions(u).sorted(), "instances": instances,
 		"last_login": u["last_login"], "created": u["created"],
-		"linked": truthy(mapv(u, "oidc")["sub"]),
+		"linked": truthy(mapv(u, "oidc")["sub"]), "passkeys": len(userPasskeys(u)),
 	}
 }
 
@@ -406,6 +406,11 @@ func init() {
 				return
 			}
 			patch["password_hash"] = hashPassword(pw)
+		}
+		// Appareil perdu : l'administrateur retire les passkeys du compte
+		// (les sessions ouvertes avec l'une d'elles se ferment)
+		if truthy(raw["remove_passkeys"]) {
+			patch["passkeys"] = []any{}
 		}
 		cfgMu.Lock()
 		if name, ok := patch["username"].(string); ok && nameTaken(name, uid) {

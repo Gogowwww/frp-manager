@@ -45,6 +45,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 - **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
 - **Utilisateurs et permissions** : plusieurs comptes, chacun avec un rôle (administrateur, opérateur, lecteur) ou des permissions choisies une à une, éventuellement limités à certaines instances ; les changements s'appliquent aussitôt, sessions ouvertes comprises.
 - **Connexion unique** : OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), avec des comptes préparés par e-mail ou créés à la première connexion, et des rôles tirés des groupes du fournisseur.
+- **Passkeys** : connexion sans mot de passe, avec votre téléphone, votre ordinateur ou une clé de sécurité (empreinte, visage, code PIN) ; plusieurs passkeys par compte.
 - **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
 
 | Ports | Éditeur de port |
@@ -77,6 +78,7 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Écoute sur `127.0.0.1`** pour une nouvelle installation ; l'ouvrir au réseau est un choix explicite.
 - **Protection contre la force brute** : tentatives limitées par IP, avec un verrouillage croissant.
 - **Moindre privilège** : chaque route de l'API et chaque WebSocket vérifie les permissions du compte ; un compte qui gère les utilisateurs ne peut pas accorder plus qu'il n'a, et seul un administrateur complet configure la connexion unique.
+- **Passkeys (WebAuthn)** : ajoutées seulement après confirmation du mot de passe, vérification de l'utilisateur exigée, passkeys liées au domaine du panel, compteur de signatures contrôlé.
 - **OpenID Connect** : flux « authorization code » avec PKCE, `state` et `nonce` ; émetteur, audience et expiration du jeton d'identité vérifiés ; comptes liés par fournisseur et sujet, ou par un e-mail vérifié par le fournisseur.
 - **Durcissement web** : jeton CSRF sur chaque modification, cookies HttpOnly / SameSite=Strict / Secure, Content-Security-Policy, X-Frame-Options, Referrer-Policy.
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.

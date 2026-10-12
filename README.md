@@ -45,6 +45,7 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
 - **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included.
 - **Single sign-on**: OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), with accounts prepared by email or created on first sign-in, and roles taken from the provider's groups.
+- **Passkeys**: sign in without a password, with your phone, computer or security key (fingerprint, face, PIN); several passkeys per account.
 - **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
 
 | Ports | Port editor |
@@ -77,6 +78,7 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 - **Listens on `127.0.0.1`** in a new install; opening it to the network is an explicit choice.
 - **Brute-force protection**: attempts limited per IP, with a growing lockout.
 - **Least privilege**: every API route and WebSocket checks the account's permissions; an account that manages users can't grant more than it has, and only a full administrator configures single sign-on.
+- **Passkeys (WebAuthn)**: added only after confirming the password, user verification required, passkeys tied to the panel's domain, signature counter checked.
 - **OpenID Connect**: authorization code flow with PKCE, `state` and `nonce`; the ID token's issuer, audience and expiry are checked; accounts are linked by provider and subject, or by an email the provider has verified.
 - **Web hardening**: CSRF token on every change, HttpOnly / SameSite=Strict / Secure cookies, Content-Security-Policy, X-Frame-Options, Referrer-Policy.
 - **System hardening**: no shell commands built from user input, allow-listed service and container names, configs confined to frp's directories, safe archive extraction.

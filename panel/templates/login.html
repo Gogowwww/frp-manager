@@ -43,20 +43,26 @@
       <p class="auth-error" id="login-error" role="alert"></p>
       <button class="btn btn-primary btn-block" type="submit" id="login-submit" data-i18n="login.submit"></button>
     </form>
-    {% if oidc_enabled %}
     <div class="auth-sso">
       <div class="auth-sep" role="presentation"><span data-i18n="login.or"></span></div>
+      {% if passkeys %}
+      <button class="btn btn-secondary btn-block" type="button" id="login-passkey">
+        <svg class="icon"><use href="#i-key"/></svg><span data-i18n="login.passkey"></span>
+      </button>
+      {% endif %}
+      {% if oidc_enabled %}
       <a class="btn btn-secondary btn-block" href="/auth/oidc/login" id="login-sso">
         <svg class="icon"><use href="#i-shield"/></svg><span id="login-sso-label" data-label="{{ oidc_label }}"></span>
       </a>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 </main>
 
 <script type="module" nonce="{{ csp_nonce() }}">
   import { initI18n, applyI18n, t, getLocale } from "{{ asset('js/i18n.js') }}";
   import { csrfToken } from "{{ asset('js/api.js') }}";
+  import { passkeysUnavailable, passkeyAutofill, getPasskey } from "{{ asset('js/passkey.js') }}";
 
   await initI18n();
   applyI18n();
@@ -96,6 +102,66 @@
     submit.removeAttribute('aria-busy');
     submit.disabled = false;
   });
+
+  // ── Passkeys : bouton, et suggestion dans le champ identifiant ─────────────
+  const post = async (path, body) => {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken(), 'X-Lang': getLocale() },
+      body: JSON.stringify(body || {}),
+    });
+    return r.json();
+  };
+  const pkButton = document.getElementById('login-passkey');
+  if (pkButton && passkeysUnavailable()) pkButton.hidden = true;
+  if (pkButton && !pkButton.hidden) {
+    let autofill = null; // { ctrl, ready } : demande en attente dans le champ identifiant
+
+    // Un seul défi à la fois dans la session : le bouton attend que la demande
+    // de la suggestion ait reçu le sien, puis l'annule.
+    const finish = async (cred) => {
+      const d = await post('/api/login/passkey', { credential: cred });
+      if (d.ok) { location.href = '/'; return true; }
+      error.textContent = d.msg || t('login.passkeyFailed');
+      return false;
+    };
+    const startAutofill = async () => {
+      if (!(await passkeyAutofill())) return;
+      const ctrl = new AbortController();
+      const ready = post('/api/login/passkey/options').catch(() => null);
+      autofill = { ctrl, ready };
+      const d = await ready;
+      if (!d?.ok || ctrl.signal.aborted) return;
+      try {
+        const cred = await getPasskey(d.publicKey, { signal: ctrl.signal, mediation: 'conditional' });
+        if (cred && !(await finish(cred))) startAutofill();
+      } catch { /* annulée, ou remplacée par le bouton */ }
+    };
+
+    pkButton.addEventListener('click', async () => {
+      error.textContent = '';
+      pkButton.disabled = true;
+      pkButton.setAttribute('aria-busy', 'true');
+      try {
+        if (autofill) { await autofill.ready; autofill.ctrl.abort(); autofill = null; }
+        const d = await post('/api/login/passkey/options');
+        if (!d.ok) { error.textContent = d.msg || t('login.passkeyFailed'); return; }
+        const cred = await getPasskey(d.publicKey);
+        if (cred && (await finish(cred))) return;
+      } catch (err) {
+        error.textContent = err?.name === 'NotAllowedError' ? t('login.passkeyCancelled')
+          : err?.name === 'SecurityError' ? t('login.passkeyRefused')
+          : err?.name === 'TypeError' ? t('errors.network') : t('login.passkeyFailed');
+      } finally {
+        pkButton.disabled = false;
+        pkButton.removeAttribute('aria-busy');
+      }
+      startAutofill();
+    });
+
+    form.username.setAttribute('autocomplete', 'username webauthn');
+    startAutofill();
+  }
 </script>
 </body>
 </html>

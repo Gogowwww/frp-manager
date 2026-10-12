@@ -419,7 +419,10 @@ func (c *Ctx) currentUser() User {
 	u := allUsers()[uid]
 	if u != nil && boolv(u, "enabled", true) &&
 		subtle.ConstantTimeCompare([]byte(c.sess.get("pwfp")), []byte(sessionFingerprint(u))) == 1 {
-		c.user = u
+		// Session ouverte avec une passkey : elle se ferme quand la passkey est supprimée
+		if pk := c.sess.get("pk"); pk == "" || passkeyByID(u, pk) != nil {
+			c.user = u
+		}
 	}
 	return c.user
 }
@@ -582,6 +585,25 @@ func loginSucceeded(ip string) {
 	loginMu.Unlock()
 }
 
+// loginRejected : échec de connexion (mot de passe ou passkey) compté pour
+// cette adresse, alerte au verrouillage, réponse msg ou « trop d'essais ».
+func (c *Ctx) loginRejected(ip, msg string) {
+	loginFailed(ip)
+	wait := loginRetryAfter(ip)
+	fails := loginFailureCount(ip)
+	if wait > 0 && (fails == loginFreeAttempts || fails%10 == 0) {
+		webhookEmit("login.locked", [2]string{"Verrouillage de " + ip, ip + " locked out"},
+			[2]string{fmt.Sprintf("%d échecs de connexion consécutifs depuis %s : adresse verrouillée %d s.", fails, ip, wait),
+				fmt.Sprintf("%d failed sign-ins in a row from %s: address locked for %d s.", fails, ip, wait)},
+			ip, J{"ip": ip, "failures": fails, "locked_seconds": wait})
+	}
+	if wait > 0 {
+		c.tooManyAttempts(wait)
+		return
+	}
+	c.Fail(http.StatusUnauthorized, msg)
+}
+
 func (c *Ctx) tooManyAttempts(wait int) {
 	c.W.Header().Set("Retry-After", strconv.Itoa(wait))
 	c.Fail(http.StatusTooManyRequests, c.M(fmt.Sprintf("Trop de tentatives : réessayez dans %d s.", wait),
@@ -612,7 +634,8 @@ func init() {
 		if !oidcErrors[errCode] {
 			errCode = ""
 		}
-		c.render("login.html", J{"oidc_enabled": oidcEnabled(), "oidc_label": label, "oidc_error": errCode})
+		c.render("login.html", J{"oidc_enabled": oidcEnabled(), "oidc_label": label, "oidc_error": errCode,
+			"passkeys": anyPasskey()})
 	})
 
 	route("POST /api/login", "api_login", func(c *Ctx) {
@@ -635,20 +658,7 @@ func init() {
 		}
 		pwOK, rehash := verifyPassword(pw, stored)
 		if !pwOK || account == nil {
-			loginFailed(ip)
-			wait := loginRetryAfter(ip)
-			fails := loginFailureCount(ip)
-			if wait > 0 && (fails == loginFreeAttempts || fails%10 == 0) {
-				webhookEmit("login.locked", [2]string{"Verrouillage de " + ip, ip + " locked out"},
-					[2]string{fmt.Sprintf("%d échecs de connexion consécutifs depuis %s : adresse verrouillée %d s.", fails, ip, wait),
-						fmt.Sprintf("%d failed sign-ins in a row from %s: address locked for %d s.", fails, ip, wait)},
-					ip, J{"ip": ip, "failures": fails, "locked_seconds": wait})
-			}
-			if wait > 0 {
-				c.tooManyAttempts(wait)
-				return
-			}
-			c.Fail(http.StatusUnauthorized, c.M("Identifiants incorrects", "Wrong username or password"))
+			c.loginRejected(ip, c.M("Identifiants incorrects", "Wrong username or password"))
 			return
 		}
 		loginSucceeded(ip)
