@@ -16,7 +16,7 @@ number. Versions older than 0.0.51 are described in the
 
 Sign in with a passkey, and the documentation in the GitHub wiki.
 
-Pre-release.
+Pre-release, then final release, on the same day.
 
 ### Added
 

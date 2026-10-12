@@ -16,7 +16,7 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 Connexion par passkey, et la documentation dans le wiki GitHub.
 
-Pré-release.
+Pré-release, puis release définitive le même jour.
 
 ### Ajouté
 
