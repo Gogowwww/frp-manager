@@ -9,7 +9,7 @@ import {
   h, icon, button, toast, toastError, confirmDialog, field, input, select, secretInput, switchRow,
   callout, emptyState, card, saveBar,
 } from '../ui.js';
-import { parseToml, generateServer, generateClient, extractBlocks } from '../toml.js';
+import { parseToml, generateServer, generateClient, extractBlocks, randomPort } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
@@ -268,14 +268,6 @@ async function load() {
   S.els.body.replaceChildren(...top, ...rows, advancedSection);
   S.snapshot = JSON.stringify(values());
   updateSaveBar();
-}
-
-/** Port tiré au hasard dans 10000–32767 : loin du 7000 que visent les robots,
- * sous la plage des ports éphémères de Linux (même tirage qu'install.sh). */
-function randomPort() {
-  const n = new Uint16Array(1);
-  crypto.getRandomValues(n);
-  return String(10000 + (n[0] % 22768));
 }
 
 function sectionTitle(section) {

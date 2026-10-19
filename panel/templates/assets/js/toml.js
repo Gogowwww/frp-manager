@@ -206,6 +206,14 @@ export function proxyFromBlock(block) {
   };
 }
 
+/** Port tiré au hasard dans 10000–32767 : loin du 7000 que visent les robots,
+ * sous la plage des ports éphémères de Linux (même tirage qu'install.sh). */
+export function randomPort() {
+  const n = new Uint16Array(1);
+  crypto.getRandomValues(n);
+  return String(10000 + (n[0] % 22768));
+}
+
 export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',

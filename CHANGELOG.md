@@ -12,6 +12,21 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-19
+
+The panel picks the public port of a new port by itself.
+
+Pre-release.
+
+### Changed
+
+- **Public port picked by the panel**: a new TCP or UDP port gets a public
+  port picked at random (10000–32767), with a "Random" button to pick
+  another one. The port is thus known and no longer changes each time frpc
+  starts, with nothing else to turn on. Leaving it empty is still possible
+  (the server picks one). For ports already opened without a number, a "Pick
+  a random port" button gives them one.
+
 ## [0.1.0] - 2026-10-19
 
 The port assigned by the server shows in Ports.
@@ -341,7 +356,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60
 [0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59

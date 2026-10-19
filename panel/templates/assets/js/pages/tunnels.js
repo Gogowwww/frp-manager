@@ -12,7 +12,7 @@ import {
 } from '../ui.js';
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
-  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
+  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret, randomPort,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -138,7 +138,8 @@ async function load() {
   loadStatus();
 }
 
-const randomPort = (p) => hasRemotePort(p.type) && !p.remotePort;
+// Port ouvert sans numéro : frps en choisit un à chaque démarrage de frpc
+const serverPicked = (p) => hasRemotePort(p.type) && !p.remotePort;
 
 /** Adresses attribuées par frps, lues sur l'API de frpc. frpc vient peut-être de
  *  (re)démarrer : un proxy pas encore enregistré est redemandé une fois. */
@@ -151,7 +152,7 @@ async function loadStatus(retry = true) {
     S.status = d;
   } catch { S.status = null; }
   render();
-  const pending = S.status?.reachable && S.proxies.some((p) => randomPort(p) && !S.status.proxies?.[p.name]?.remote_addr);
+  const pending = S.status?.reachable && S.proxies.some((p) => serverPicked(p) && !S.status.proxies?.[p.name]?.remote_addr);
   if (retry && pending) statusTimer = setTimeout(() => loadStatus(false), 2500);
 }
 
@@ -194,12 +195,21 @@ function renderStatusHint() {
   const host = S.els.statusHint;
   const st = S.status;
   let hint = null;
-  if (st && S.proxies.some(randomPort)) {
-    if (!st.admin) hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin') });
+  if (st && S.proxies.some(serverPicked)) {
+    if (!st.admin) {
+      hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin'),
+        actions: can('config.write') ? [button(t('tunnels.pickPorts'), { size: 'sm', iconName: 'refresh', onClick: pickPorts })] : [] });
+    }
     else if (!st.reachable) hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable') });
   }
   host.replaceChildren(...(hint ? [hint] : []));
   host.hidden = !hint;
+}
+
+/** Donne un port tiré au hasard aux ports sans numéro (à enregistrer). */
+function pickPorts() {
+  S.proxies = S.proxies.map((p) => (serverPicked(p) ? { ...p, remotePort: randomPort() } : p));
+  render();
 }
 
 function publicEndpoint(p) {
@@ -224,7 +234,7 @@ function proxyRow(p) {
   if (p.encryption) flags.push(badge(t('tunnels.flags.encrypted'), ''));
   if (p.compression) flags.push(badge(t('tunnels.flags.compressed'), ''));
   const live = S.status?.proxies?.[p.name];
-  if (randomPort(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
+  if (serverPicked(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
   if (live?.err) flags.push(badge(t('tunnels.flags.error'), 'danger', { title: live.err }));
 
   const state = stateOf(p, 'proxies');
@@ -235,7 +245,7 @@ function proxyRow(p) {
   },
   h('div', { class: 'row-name' }, h('span', null, p.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, p.type.toUpperCase())),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
-    hasSecret(p.type) || (randomPort(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains)),
+    hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains)),
   h('div', { class: 'row-flags' }, flags),
   h('div', { class: 'row-actions' },
     button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
@@ -291,7 +301,7 @@ const PORT_RE = /^\d{1,5}$/;
 const validPort = (v) => PORT_RE.test(v) && +v >= 1 && +v <= 65535;
 
 function editProxy(existing) {
-  const draft = existing ? { ...existing, extras: existing.extras } : newProxy();
+  const draft = existing ? { ...existing, extras: existing.extras } : { ...newProxy(), remotePort: randomPort() };
 
   openDialog({
     title: existing ? t('tunnels.editTitle', { name: existing.name }) : t('tunnels.newTitle'),
@@ -308,7 +318,11 @@ function editProxy(existing) {
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
 
-      const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
+      const remoteGroup = h('div', { class: 'input-group' }, remotePort, button(t('config.randomPort'), {
+        iconName: 'refresh', title: t('config.randomPortHint'),
+        onClick: () => { remotePort.value = randomPort(); remotePort.dispatchEvent(new Event('input', { bubbles: true })); },
+      }));
+      const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remoteGroup });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
 

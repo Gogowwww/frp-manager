@@ -12,6 +12,21 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.1.1] - 2026-10-19
+
+Le panel tire lui-même le port public d'un nouveau port.
+
+Pré-release.
+
+### Modifié
+
+- **Port public tiré par le panel** : un nouveau port TCP ou UDP reçoit un
+  port public tiré au hasard (10000–32767), avec un bouton « Aléatoire » pour
+  en tirer un autre. Le port est ainsi connu et ne change plus à chaque
+  démarrage de frpc, sans rien activer de plus. Le laisser vide reste
+  possible (le serveur en choisit un). Pour les ports déjà ouverts sans
+  numéro, un bouton « Tirer un port au hasard » leur en donne un.
+
 ## [0.1.0] - 2026-10-19
 
 Le port attribué par le serveur s'affiche dans Ports.
@@ -357,7 +372,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60
 [0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
