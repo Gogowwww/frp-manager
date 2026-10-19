@@ -12,7 +12,7 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
-## [0.0.61] - 2026-10-19
+## [0.1.0] - 2026-10-19
 
 The port assigned by the server shows in Ports.
 
@@ -340,8 +340,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.61...HEAD
-[0.0.61]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.0.61
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60
 [0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
 [0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
