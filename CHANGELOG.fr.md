@@ -12,6 +12,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.0.61] - 2026-10-19
+
+Le port attribué par le serveur s'affiche dans Ports.
+
+Pré-release.
+
 ### Ajouté
 
 - **Port attribué par le serveur** : un port ouvert sans numéro (`remotePort`
@@ -350,7 +356,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.0.61...HEAD
+[0.0.61]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.0.61
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60
 [0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
 [0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
