@@ -195,7 +195,8 @@ export function proxyFromBlock(block) {
     type: PROXY_TYPES.includes(v.type) ? v.type : (v.type || 'tcp'),
     localIP: v.localIP || '127.0.0.1',
     localPort: String(v.localPort || ''),
-    remotePort: v.remotePort || '',
+    // remotePort = 0 : port attribué par le serveur, comme s'il était absent
+    remotePort: Number(v.remotePort) ? String(v.remotePort) : '',
     domains: (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', '),
     secretKey: v.secretKey || '',
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',

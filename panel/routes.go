@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"net/http"
@@ -201,6 +202,29 @@ func init() {
 			return
 		}
 		c.JSON(J{"ok": true, "content": validUTF8(string(b)), "exists": true})
+	}))
+
+	// État des proxys d'un frpc (adresse publique attribuée par frps), lu sur
+	// son API d'administration : rien si [webServer] n'est pas configuré.
+	route("GET /api/instance/{iid}/proxies", "api_instance_proxies", perm(P("config.read"), func(c *Ctx) {
+		detectFrp(false)
+		inst := getInstance(c.Param("iid"))
+		if inst == nil || inst.Type != "frpc" {
+			c.Fail(http.StatusNotFound, c.M("Instance inconnue", "Unknown instance"))
+			return
+		}
+		var content string
+		if inst.Source == "docker" {
+			content, _ = dockerFrpcConfig(inst.ContainerName)
+		} else if b, err := os.ReadFile(inst.Config); err == nil {
+			content = string(b)
+		}
+		proxies, admin, err := frpcProxyStatus(content)
+		res := J{"ok": true, "admin": admin, "reachable": admin && err == nil, "proxies": proxies}
+		if err != nil {
+			res["error"] = short(err.Error(), 160)
+		}
+		c.JSON(res)
 	}))
 
 	route("POST /api/config/{iid}", "api_config_save", perm(P("config.write"), func(c *Ctx) {
@@ -784,6 +808,52 @@ func deleteInstance(c *Ctx) {
 	invalidateCache(true)
 	list := strings.Join(done, ", ")
 	c.JSON(J{"ok": true, "msg": c.M("Supprimé : "+list, "Deleted: "+list)})
+}
+
+// ── État des proxys d'un frpc ───────────────────────────────────────────────
+
+// frpcProxyStatus interroge l'API d'administration de frpc ([webServer] de sa
+// config TOML) → (état par nom de proxy, API configurée, erreur). remote_addr
+// est l'adresse publique, port attribué par frps compris (remotePort = 0).
+func frpcProxyStatus(content string) (map[string]J, bool, error) {
+	var conf map[string]any
+	if toml.Unmarshal([]byte(content), &conf) != nil {
+		return nil, false, nil
+	}
+	ws := mapv(conf, "webServer")
+	port := tomlInt(ws["port"])
+	if port == 0 {
+		return nil, false, nil
+	}
+	addr := str(ws, "addr", "")
+	if addr == "" || addr == "0.0.0.0" || addr == "::" {
+		addr = "127.0.0.1"
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://"+netJoin(addr, port)+"/api/status", nil)
+	if user := str(ws, "user", ""); user != "" {
+		req.SetBasicAuth(user, str(ws, "password", ""))
+	}
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		return nil, true, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, true, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var byType map[string][]map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&byType); err != nil {
+		return nil, true, err
+	}
+	out := map[string]J{}
+	for _, list := range byType {
+		for _, p := range list {
+			if name := str(p, "name", ""); name != "" {
+				out[name] = J{"status": str(p, "status", ""), "err": str(p, "err", ""), "remote_addr": str(p, "remote_addr", "")}
+			}
+		}
+	}
+	return out, true, nil
 }
 
 // ── Réinstallation d'un service supprimé ────────────────────────────────────

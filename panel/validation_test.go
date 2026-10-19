@@ -7,6 +7,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -330,6 +332,41 @@ func TestReinstallService(t *testing.T) {
 	expectCode(t, c.login("admin", testPassword), 200)
 	expectCode(t, c.post("/api/instance/reinstall/sshd", nil), 400)
 	expectCode(t, c.post("/api/instance/reinstall/frpc", nil), 409)
+}
+
+// Port attribué par frps (remotePort = 0) : lu sur l'API d'administration de frpc.
+func TestFrpcProxyStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, _ := r.BasicAuth(); r.URL.Path != "/api/status" || u != "admin" || p != "secret" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Write([]byte(`{"tcp":[{"name":"ssh","type":"tcp","status":"running","err":"","local_addr":"127.0.0.1:22","remote_addr":"vps.example.com:34567"}],
+			"udp":[{"name":"jeu","type":"udp","status":"start error","err":"port already used","remote_addr":""}]}`))
+	}))
+	defer srv.Close()
+	port := srv.URL[strings.LastIndex(srv.URL, ":")+1:]
+	conf := func(password string) string {
+		return "serverAddr = \"vps.example.com\"\n[webServer]\naddr = \"127.0.0.1\"\nport = " + port +
+			"\nuser = \"admin\"\npassword = \"" + password + "\"\n"
+	}
+
+	proxies, admin, err := frpcProxyStatus(conf("secret"))
+	if err != nil || !admin {
+		t.Fatal(admin, err)
+	}
+	if proxies["ssh"]["remote_addr"] != "vps.example.com:34567" || proxies["jeu"]["err"] != "port already used" {
+		t.Fatalf("%v", proxies)
+	}
+	if _, admin, err := frpcProxyStatus(conf("faux")); !admin || err == nil {
+		t.Fatal("mauvais mot de passe accepté")
+	}
+	// Sans [webServer], ou config illisible : pas d'API, pas d'erreur
+	for _, c := range []string{"serverAddr = \"vps.example.com\"\n", "serverAddr = [", ""} {
+		if p, admin, err := frpcProxyStatus(c); admin || err != nil || p != nil {
+			t.Errorf("%q : %v %v %v", c, p, admin, err)
+		}
+	}
 }
 
 func TestDecompressionBombRejected(t *testing.T) {

@@ -23,8 +23,11 @@ const S = {
   proxies: [],
   visitors: [],
   snapshot: '',
+  status: null, // état des proxys lu sur l'API de frpc (adresse attribuée par frps)
   els: {},
 };
+
+let statusTimer = null;
 
 const snapshotOf = () => JSON.stringify([S.proxies, S.visitors]);
 // Lecture seule (pas de config.write) : jamais de modification à enregistrer
@@ -61,6 +64,7 @@ export default {
     const addBtn = button(t('tunnels.add'), { variant: 'primary', iconName: 'plus', onClick: () => editProxy(null) });
     if (S.iid && can('config.write')) actions.push(addBtn);
 
+    S.els.statusHint = h('div');
     S.els.proxies = h('div', { class: 'card' });
     S.els.visitors = h('div', { class: 'card' });
     S.els.savebar = saveBar({
@@ -73,6 +77,7 @@ export default {
     view.append(h('div', { class: 'page' },
       pageHeader({ title: t('tunnels.title'), description: t('tunnels.description'), actions }),
       !can('config.write') && callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }),
+      S.els.statusHint,
       S.els.proxies,
       h('section', null,
         h('div', { class: 'section-head' },
@@ -96,6 +101,7 @@ export default {
 
   unmount() {
     window.removeEventListener('beforeunload', beforeUnload);
+    clearTimeout(statusTimer);
     S.els = {};
   },
 
@@ -129,6 +135,24 @@ async function load() {
     S.snapshot = snapshotOf();
   }
   render();
+  loadStatus();
+}
+
+const randomPort = (p) => hasRemotePort(p.type) && !p.remotePort;
+
+/** Adresses attribuées par frps, lues sur l'API de frpc. frpc vient peut-être de
+ *  (re)démarrer : un proxy pas encore enregistré est redemandé une fois. */
+async function loadStatus(retry = true) {
+  clearTimeout(statusTimer);
+  const iid = S.iid;
+  try {
+    const d = await apiOk(`/api/instance/${encodeURIComponent(iid)}/proxies`);
+    if (iid !== S.iid || !S.els.proxies) return;
+    S.status = d;
+  } catch { S.status = null; }
+  render();
+  const pending = S.status?.reachable && S.proxies.some((p) => randomPort(p) && !S.status.proxies?.[p.name]?.remote_addr);
+  if (retry && pending) statusTimer = setTimeout(() => loadStatus(false), 2500);
 }
 
 function discard() {
@@ -140,6 +164,7 @@ function discard() {
 
 function render() {
   if (!S.els.proxies) return;
+  renderStatusHint();
   renderProxies();
   renderVisitors();
   S.els.savebar.hidden = !isDirty();
@@ -164,9 +189,23 @@ function renderProxies() {
   host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, S.proxies.map(proxyRow)));
 }
 
+/** Port attribué par le serveur : comment le connaître quand l'API de frpc manque. */
+function renderStatusHint() {
+  const host = S.els.statusHint;
+  const st = S.status;
+  let hint = null;
+  if (st && S.proxies.some(randomPort)) {
+    if (!st.admin) hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin') });
+    else if (!st.reachable) hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable') });
+  }
+  host.replaceChildren(...(hint ? [hint] : []));
+  host.hidden = !hint;
+}
+
 function publicEndpoint(p) {
   if (hasRemotePort(p.type)) {
-    return p.remotePort ? `${S.serverAddr || t('tunnels.server')}:${p.remotePort}` : t('tunnels.randomPort');
+    if (p.remotePort) return `${S.serverAddr || t('tunnels.server')}:${p.remotePort}`;
+    return S.status?.proxies?.[p.name]?.remote_addr || t('tunnels.randomPort');
   }
   if (hasDomains(p.type)) return p.domains || t('tunnels.noDomain');
   return t('tunnels.privateOnly');
@@ -184,6 +223,9 @@ function proxyRow(p) {
   if (p.proxyProtocol) flags.push(badge(t('tunnels.flags.proxyProtocol', { v: p.proxyProtocol }), ''));
   if (p.encryption) flags.push(badge(t('tunnels.flags.encrypted'), ''));
   if (p.compression) flags.push(badge(t('tunnels.flags.compressed'), ''));
+  const live = S.status?.proxies?.[p.name];
+  if (randomPort(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
+  if (live?.err) flags.push(badge(t('tunnels.flags.error'), 'danger', { title: live.err }));
 
   const state = stateOf(p, 'proxies');
   const open = () => editProxy(p);
@@ -193,7 +235,7 @@ function proxyRow(p) {
   },
   h('div', { class: 'row-name' }, h('span', null, p.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, p.type.toUpperCase())),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
-    hasSecret(p.type) || (hasRemotePort(p.type) && !p.remotePort) || (hasDomains(p.type) && !p.domains)),
+    hasSecret(p.type) || (randomPort(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains)),
   h('div', { class: 'row-flags' }, flags),
   h('div', { class: 'row-actions' },
     button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),

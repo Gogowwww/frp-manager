@@ -12,6 +12,20 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Port assigned by the server**: a port opened without a number
+  (`remotePort` missing or 0), whose port frps picks, now shows in Ports the
+  public address actually assigned, with an "Assigned" badge. The panel reads
+  it from frpc's local dashboard (`[webServer]`); when it is off, a message
+  explains how to turn it on. A port in error on the frpc side (port already
+  taken…) gets an "Error" badge with frpc's message.
+
+### Fixed
+
+- A port opened with `remotePort = 0` was shown as "server:0" instead of
+  "port assigned by the server".
+
 ## [0.0.60] - 2026-10-19
 
 A deleted frps or frpc service can be reinstalled from the dashboard.
