@@ -12,6 +12,23 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
+The port assigned by the server shows in Ports in one click.
+
+Pre-release.
+
+### Added
+
+- **Show the port assigned by the server**: for a port left without a
+  number, a "Show the assigned port" button on the Ports page turns on frpc's
+  local dashboard and restarts frpc; the row then shows the port frps picked,
+  with the "Assigned" badge. This dashboard only listens on `127.0.0.1`
+  (unreachable from the network), on a free port from 7400, with a random
+  password, in the frpc configuration only root can read. Nothing is turned
+  on without that click. Not for a frpc in a container, which the panel
+  cannot reach locally.
+
 ## [0.1.1] - 2026-10-19
 
 The panel picks the public port of a new port by itself.
@@ -356,7 +373,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60

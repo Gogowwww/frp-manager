@@ -12,6 +12,23 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.2.0] - 2026-10-19
+
+Le port attribué par le serveur s'affiche en un clic dans Ports.
+
+Pré-release.
+
+### Ajouté
+
+- **Afficher le port attribué par le serveur** : pour un port laissé sans
+  numéro, un bouton « Afficher le port attribué » de la page Ports active le
+  tableau de bord local de frpc et redémarre frpc ; la ligne montre ensuite
+  le port choisi par frps, avec le badge « Attribué ». Ce tableau de bord
+  n'écoute que sur `127.0.0.1` (injoignable depuis le réseau), sur un port
+  libre à partir de 7400, avec un mot de passe tiré au hasard, dans la config
+  frpc lisible par root seul. Rien ne s'active sans ce clic. Pas pour un frpc
+  en conteneur, que le panel ne joint pas en local.
+
 ## [0.1.1] - 2026-10-19
 
 Le panel tire lui-même le port public d'un nouveau port.
@@ -372,7 +389,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0
 [0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60

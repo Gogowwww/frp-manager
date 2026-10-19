@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // ── Noms de services, conteneurs, instances ─────────────────────────────────
@@ -366,6 +368,34 @@ func TestFrpcProxyStatus(t *testing.T) {
 		if p, admin, err := frpcProxyStatus(c); admin || err != nil || p != nil {
 			t.Errorf("%q : %v %v %v", c, p, admin, err)
 		}
+	}
+}
+
+func TestEnableFrpcAdmin(t *testing.T) {
+	base := "serverAddr = \"vps.example.com\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\ntype = \"tcp\"\nlocalPort = 22\n"
+	for _, c := range []string{base, "serverAddr = \"vps.example.com\"", ""} {
+		out, changed, err := enableFrpcAdmin(c, 7401)
+		if err != nil || !changed {
+			t.Fatal(c, err)
+		}
+		var conf map[string]any
+		if err := toml.Unmarshal([]byte(out), &conf); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		ws := mapv(conf, "webServer")
+		if ws["addr"] != "127.0.0.1" || tomlInt(ws["port"]) != 7401 || len(str(ws, "password", "")) != 32 {
+			t.Fatalf("%v", ws)
+		}
+		// Clés à la racine, pas dans le dernier [[proxies]]
+		if c == base && len(listv(conf, "proxies")) != 1 {
+			t.Fatalf("%s", out)
+		}
+		if again, changed, _ := enableFrpcAdmin(out, 7402); changed || again != out {
+			t.Fatal("ajouté deux fois")
+		}
+	}
+	if _, _, err := enableFrpcAdmin("[webServer]\naddr = \"127.0.0.1\"\n", 7400); err == nil {
+		t.Fatal("webServer sans port accepté")
 	}
 }
 

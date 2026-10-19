@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
@@ -225,6 +226,42 @@ func init() {
 			res["error"] = short(err.Error(), 160)
 		}
 		c.JSON(res)
+	}))
+
+	// Active, à la demande, l'API d'administration de frpc (127.0.0.1, mot de
+	// passe tiré au hasard) pour lire les ports attribués par frps ; prise en
+	// compte au prochain redémarrage de frpc.
+	route("POST /api/instance/{iid}/proxies/admin", "api_instance_admin", perm(P("config.write"), func(c *Ctx) {
+		detectFrp(false)
+		inst := getInstance(c.Param("iid"))
+		if inst == nil || inst.Type != "frpc" {
+			c.Fail(http.StatusNotFound, c.M("Instance inconnue", "Unknown instance"))
+			return
+		}
+		if inst.Source == "docker" {
+			c.Fail(http.StatusBadRequest, c.M("Pas pour un conteneur : le panel ne joint pas son 127.0.0.1",
+				"Not for a container: the panel cannot reach its 127.0.0.1"))
+			return
+		}
+		b, err := os.ReadFile(inst.Config)
+		if err != nil {
+			c.Fail(http.StatusInternalServerError, err.Error())
+			return
+		}
+		content, changed, err := enableFrpcAdmin(string(b), freeAdminPort(inst.Config))
+		if err != nil {
+			c.Fail(http.StatusBadRequest, c.M("Config illisible : ", "Unreadable config: ")+err.Error())
+			return
+		}
+		if !changed {
+			c.JSON(J{"ok": true, "changed": false})
+			return
+		}
+		done, msg, status := c.Lang.writeInstanceConfig(inst, content)
+		if done {
+			invalidateCache(true)
+		}
+		c.JSON(J{"ok": done, "changed": done, "msg": msg}, status)
 	}))
 
 	route("POST /api/config/{iid}", "api_config_save", perm(P("config.write"), func(c *Ctx) {
@@ -854,6 +891,63 @@ func frpcProxyStatus(content string) (map[string]J, bool, error) {
 		}
 	}
 	return out, true, nil
+}
+
+// enableFrpcAdmin ajoute à une config frpc un [webServer] local (clés à points,
+// avant la première table pour rester au niveau racine). Rien à faire si un
+// port est déjà configuré ; refus si [webServer] existe sans port.
+func enableFrpcAdmin(content string, port int) (string, bool, error) {
+	var conf map[string]any
+	if err := toml.Unmarshal([]byte(content), &conf); err != nil {
+		return "", false, err
+	}
+	if _, ok := conf["webServer"]; ok {
+		if tomlInt(mapv(conf, "webServer")["port"]) != 0 {
+			return content, false, nil
+		}
+		return "", false, errors.New("webServer sans port")
+	}
+	block := fmt.Sprintf("# Tableau de bord local de frpc : FRP-Manager y lit les ports attribués par le serveur\n"+
+		"webServer.addr = \"127.0.0.1\"\nwebServer.port = %d\nwebServer.user = \"frp-manager\"\nwebServer.password = %q\n\n",
+		port, tokenHex(16))
+	lines := strings.SplitAfter(content, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+			return strings.Join(lines[:i], "") + block + strings.Join(lines[i:], ""), true, nil
+		}
+	}
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	if content != "" && !strings.HasSuffix(content, "\n\n") {
+		content += "\n"
+	}
+	return content + strings.TrimSuffix(block, "\n"), true, nil
+}
+
+// freeAdminPort : port libre sur 127.0.0.1 à partir de 7400 (port par défaut
+// de frpc), hors ceux des autres configs frpc, même arrêtées.
+func freeAdminPort(self string) int {
+	taken := map[int]bool{}
+	for _, inst := range instancesSnapshot() {
+		if inst.Type != "frpc" || inst.Config == "" || inst.Config == self {
+			continue
+		}
+		var conf map[string]any
+		if b, err := os.ReadFile(inst.Config); err == nil && toml.Unmarshal(b, &conf) == nil {
+			taken[tomlInt(mapv(conf, "webServer")["port"])] = true
+		}
+	}
+	for p := 7400; p < 7500; p++ {
+		if taken[p] {
+			continue
+		}
+		if ln, err := net.Listen("tcp", netJoin("127.0.0.1", p)); err == nil {
+			ln.Close()
+			return p
+		}
+	}
+	return 7400
 }
 
 // ── Réinstallation d'un service supprimé ────────────────────────────────────

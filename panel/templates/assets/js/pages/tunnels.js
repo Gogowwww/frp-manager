@@ -20,6 +20,7 @@ const S = {
   iid: '',
   baseText: '',
   serverAddr: '',
+  docker: false,
   proxies: [],
   visitors: [],
   snapshot: '',
@@ -123,6 +124,7 @@ async function load() {
   try {
     const d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
     S.baseText = d.content || '';
+    S.docker = !!d.docker;
     const cfg = parseToml(S.baseText);
     S.serverAddr = cfg.values.serverAddr || '';
     S.proxies = cfg.proxies.map(proxyFromBlock);
@@ -194,16 +196,43 @@ function renderProxies() {
 function renderStatusHint() {
   const host = S.els.statusHint;
   const st = S.status;
+  // Activer l'API ou redémarrer frpc : config enregistrée, frpc sur cette machine
+  const fixable = !S.docker && !isDirty() && can('config.write') && can('instances.control');
   let hint = null;
   if (st && S.proxies.some(serverPicked)) {
     if (!st.admin) {
-      hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin'),
-        actions: can('config.write') ? [button(t('tunnels.pickPorts'), { size: 'sm', iconName: 'refresh', onClick: pickPorts })] : [] });
+      const actions = [];
+      if (fixable) actions.push(button(t('tunnels.showAssigned'), { size: 'sm', iconName: 'eye', onClick: (e) => showAssigned(e.currentTarget) }));
+      if (can('config.write')) actions.push(button(t('tunnels.pickPorts'), { size: 'sm', iconName: 'refresh', onClick: pickPorts }));
+      hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin'), actions });
+    } else if (!st.reachable) {
+      hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable'),
+        actions: fixable ? [button(t('tunnels.restartFrpc'), { size: 'sm', onClick: (e) => { e.currentTarget.disabled = true; restartFrpc().then(load); } })] : [] });
     }
-    else if (!st.reachable) hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable') });
   }
   host.replaceChildren(...(hint ? [hint] : []));
   host.hidden = !hint;
+}
+
+/** Active le tableau de bord local de frpc (127.0.0.1, mot de passe aléatoire),
+ *  qui donne le port attribué par frps, puis redémarre frpc pour l'ouvrir. */
+async function showAssigned(btn) {
+  btn.disabled = true;
+  try {
+    const d = await post(`/api/instance/${encodeURIComponent(S.iid)}/proxies/admin`);
+    if (!d.ok) throw new Error(d.msg || t('errors.generic'));
+    await restartFrpc();
+  } catch (e) {
+    toastError(e);
+  }
+  await load();
+}
+
+async function restartFrpc() {
+  toast(t('tunnels.restarting', { name: displayName(S.iid) }), 'info');
+  post(`/api/service/${encodeURIComponent(S.iid)}/restart`).catch(() => {});
+  const up = await waitRunning(S.iid);
+  toast(up ? t('tunnels.restarted', { name: displayName(S.iid) }) : t('tunnels.restartUnknown'), up ? 'success' : 'info');
 }
 
 /** Donne un port tiré au hasard aux ports sans numéro (à enregistrer). */
@@ -484,12 +513,7 @@ async function save(restart) {
     toast(t('tunnels.saved'), 'success');
 
     // Redémarrage (la réponse peut ne jamais arriver si le panel passe par ce tunnel)
-    if (restart) {
-      toast(t('tunnels.restarting', { name: displayName(S.iid) }), 'info');
-      post(`/api/service/${encodeURIComponent(S.iid)}/restart`).catch(() => {});
-      const up = await waitRunning(S.iid);
-      toast(up ? t('tunnels.restarted', { name: displayName(S.iid) }) : t('tunnels.restartUnknown'), up ? 'success' : 'info');
-    }
+    if (restart) await restartFrpc();
   } catch (e) {
     toastError(e);
   }
