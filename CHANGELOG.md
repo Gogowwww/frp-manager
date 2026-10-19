@@ -12,6 +12,12 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.0.60] - 2026-10-19
+
+A deleted frps or frpc service can be reinstalled from the dashboard.
+
+Pre-release.
+
 ### Added
 
 - **Reinstall a deleted frps or frpc service**: when the dashboard no longer
@@ -314,7 +320,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...HEAD
+[0.0.60]: https://github.com/Gogowwww/frp-manager/compare/v0.0.59...v0.0.60
 [0.0.59]: https://github.com/Gogowwww/frp-manager/compare/v0.0.58...v0.0.59
 [0.0.58]: https://github.com/Gogowwww/frp-manager/compare/v0.0.57...v0.0.58
 [0.0.57]: https://github.com/Gogowwww/frp-manager/compare/v0.0.56...v0.0.57
