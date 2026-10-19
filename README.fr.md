@@ -36,7 +36,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr
 
 ## Fonctionnalités
 
-- **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms.
+- **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms ; un service frps/frpc supprimé se réinstalle en un clic.
 - **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression. Les réglages que l'éditeur ne gère pas sont conservés tels quels.
 - **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.

@@ -10,6 +10,7 @@ import {
   switchControl, switchRow, openDialog, callout, emptyState, pageHeader,
 } from '../ui.js';
 import { navigate } from '../router.js';
+import { renderLog } from './updates.js';
 
 let unsubscribe = null;
 let lastSignature = '';
@@ -29,8 +30,10 @@ export default {
       }),
     });
 
+    // Un bouton par service frps/frpc absent (supprimé depuis le tableau de bord)
+    const reinstallSlot = h('div', { style: { display: 'contents' } });
     view.append(h('div', { class: 'page' },
-      pageHeader({ title: t('dashboard.title'), description: t('dashboard.description'), actions: [detectBtn] }),
+      pageHeader({ title: t('dashboard.title'), description: t('dashboard.description'), actions: [reinstallSlot, detectBtn] }),
       alerts,
       grid));
 
@@ -40,6 +43,7 @@ export default {
       lastSignature = signature;
       renderAlerts(alerts);
       renderGrid(grid);
+      renderReinstall(reinstallSlot);
     };
     lastSignature = '';
     unsubscribe = store.subscribe(render);
@@ -90,6 +94,18 @@ function renderGrid(grid) {
     return;
   }
   grid.replaceChildren(...ids.map(serviceCard));
+}
+
+function renderReinstall(host) {
+  const missing = store.ready && !store.inDocker && can('updates.install')
+    ? ['frps', 'frpc'].filter((type) => !instanceIds().some((iid) => {
+      const inst = store.instances[iid];
+      return inst.type === type && !isDocker(inst);
+    }))
+    : [];
+  host.replaceChildren(...missing.map((type) => button(t('dashboard.reinstall', { type }), {
+    iconName: 'plus', title: t('dashboard.reinstallHint', { type }), onClick: () => reinstall(type),
+  })));
 }
 
 function serviceCard(iid) {
@@ -281,6 +297,40 @@ async function deleteInstance(iid) {
     }
   } catch (e) { toastError(e); }
   await detect().catch(() => {});
+}
+
+/** Recrée le service frps ou frpc supprimé (programme retéléchargé s'il manque). */
+async function reinstall(type) {
+  const ok = await confirmDialog({
+    title: t('dashboard.reinstallTitle', { type }),
+    message: t('dashboard.reinstallText', { type }),
+    confirmLabel: t('dashboard.reinstall', { type }),
+  });
+  if (!ok) return;
+  try {
+    const d = await post(`/api/instance/reinstall/${type}`);
+    if (!d.ok) { toastResult(d); return; }
+  } catch (e) { toastError(e); return; }
+
+  const term = h('pre', { class: 'term', 'data-empty': t('updates.logEmpty'), 'aria-live': 'polite' });
+  openDialog({
+    title: t('dashboard.reinstallingTitle', { type }),
+    build: ({ close }) => ({ body: [term], foot: [button(t('common.close'), { onClick: () => close(undefined) })] }),
+  });
+  // Le suivi continue si la fenêtre est fermée : la fin est annoncée par un toast
+  const tick = async () => {
+    try {
+      const r = await api('/api/update/log');
+      renderLog(term, r.lines || []);
+      if (!r.running) {
+        toast(t(r.success ? 'dashboard.reinstalled' : 'updates.installFailed', { type }), r.success ? 'success' : 'error');
+        await detect().catch(() => {});
+        return;
+      }
+    } catch { /* on réessaie */ }
+    setTimeout(tick, 1100);
+  };
+  tick();
 }
 
 async function rename(iid) {

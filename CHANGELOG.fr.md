@@ -12,6 +12,22 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Réinstaller un service frps ou frpc supprimé** : quand le tableau de bord
+  n'a plus de service frps (ou frpc), un bouton « Réinstaller frps » recrée
+  `frps.service` comme à l'installation, sur `/etc/frp/frps.toml` : la
+  configuration conservée à la suppression, sinon une configuration par
+  défaut. Le programme est retéléchargé (et vérifié) s'il manque. Le service
+  est créé arrêté, à démarrer depuis sa carte ; le journal s'affiche dans une
+  fenêtre.
+
+### Corrigé
+
+- Le suivi d'une installation de frp pouvait s'arrêter avant la fin (sur une
+  ligne « [OK] » intermédiaire) : le serveur indique maintenant lui-même quand
+  la tâche est terminée et si elle a réussi.
+
 ## [0.0.59] - 2026-10-12
 
 Connexion par passkey, et la documentation dans le wiki GitHub.

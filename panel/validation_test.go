@@ -208,6 +208,130 @@ func TestMaliciousArchivesRejected(t *testing.T) {
 	}
 }
 
+// Réinstaller frpc : seul son binaire est remplacé, seuls ses services sont
+// arrêtés puis relancés, et la version notée de frp ne change pas.
+func TestReinstallOnlyOneBinary(t *testing.T) {
+	setup(t)
+	saved := frpBinDir
+	defer func() { frpBinDir = saved }()
+	frpBinDir = t.TempDir()
+	os.WriteFile(filepath.Join(frpBinDir, "frps"), []byte("ancien frps"), 0o755)
+	saveState(map[string]any{"installed_version": "0.70.0"})
+	var calls []string
+	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
+		switch {
+		case len(args) > 1 && args[1] == "list-units":
+			return true, "frps.service loaded active running frps\nfrpc-maison.service loaded active running frpc\n", ""
+		case len(args) > 2 && args[1] == "show":
+			return true, "{ path=/usr/local/bin/" + strings.Split(strings.TrimSuffix(args[2], ".service"), "-")[0] + " ; }", ""
+		}
+		calls = append(calls, strings.Join(args, " "))
+		return true, "", ""
+	}
+	dir := t.TempDir()
+	arc := makeTar(t, filepath.Join(dir, "frp.tar.gz"), []tarMember{
+		{"frp_0.70.0_linux_amd64/frps", elf, false},
+		{"frp_0.70.0_linux_amd64/frpc", elf, false},
+	})
+	if !installFromArchive(FR, arc, "0.70.0", []string{"frpc"}, func(string) {}) {
+		t.Fatal("échec")
+	}
+	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frps")); string(b) != "ancien frps" {
+		t.Fatal("frps remplacé")
+	}
+	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frpc")); !bytes.Equal(b, elf) {
+		t.Fatal("frpc non installé")
+	}
+	if !reflect.DeepEqual(calls, []string{"systemctl stop frpc-maison", "systemctl start frpc-maison"}) {
+		t.Fatalf("%v", calls)
+	}
+	if v := loadState()["installed_version"]; v != "0.70.0" {
+		t.Fatalf("version notée : %v", v)
+	}
+	if v, tag := reinstallVersion("0.70.0"); v != "0.70.0" || tag != "v0.70.0" {
+		t.Fatal(v, tag)
+	}
+	for _, v := range []string{"", "manual", "0.70.0; rm -rf /"} {
+		if got, _ := reinstallVersion(v); got != "" {
+			t.Errorf("%q → %q", v, got)
+		}
+	}
+}
+
+// Service supprimé puis réinstallé : unité et config par défaut recréées, rien
+// n'est démarré ; une config conservée n'est pas réécrite.
+func TestReinstallService(t *testing.T) {
+	e := setup(t)
+	saved := []string{unitDir, frpConfDir, frpLogDir, frpBinDir}
+	savedSearch, savedInstall := binarySearchPaths, installMissingBinary
+	defer func() {
+		unitDir, frpConfDir, frpLogDir, frpBinDir = saved[0], saved[1], saved[2], saved[3]
+		binarySearchPaths, installMissingBinary = savedSearch, savedInstall
+	}()
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	unitDir = filepath.Join(dir, "systemd") + string(filepath.Separator)
+	os.MkdirAll(unitDir, 0o755)
+	frpConfDir, frpLogDir, frpBinDir = filepath.Join(dir, "etc-frp"), filepath.Join(dir, "log"), filepath.Join(dir, "bin")
+	binarySearchPaths = []string{frpBinDir}
+	downloads := 0
+	installMissingBinary = func(Lang, string, string) bool { downloads++; return true }
+	var calls []string
+	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
+		calls = append(calls, strings.Join(args, " "))
+		return true, "", ""
+	}
+	frpsConf := filepath.Join(frpConfDir, "frps.toml")
+	cfgUpdate(Cfg{"dismissed_configs": []any{frpsConf}})
+
+	if !reinstallService(FR, "frpc", "0.70.0") {
+		t.Fatal(updateLog.snapshot())
+	}
+	unit, _ := os.ReadFile(unitDir + "frpc.service")
+	exec := "ExecStart=" + filepath.Join(frpBinDir, "frpc") + " -c " + filepath.Join(frpConfDir, "frpc.toml") + "\n"
+	if !strings.Contains(string(unit), exec) || !strings.Contains(string(unit), "Description=frp client (frpc)") {
+		t.Fatalf("unité :\n%s", unit)
+	}
+	if b, _ := os.ReadFile(filepath.Join(frpConfDir, "frpc.toml")); string(b) != defaultFrpcConfig {
+		t.Fatalf("config : %q", b)
+	}
+	if downloads != 1 {
+		t.Fatalf("%d téléchargements", downloads)
+	}
+	for _, call := range calls {
+		if strings.Contains(call, " start") || strings.Contains(call, " enable") {
+			t.Fatalf("service démarré : %v", calls)
+		}
+	}
+	if !reflect.DeepEqual(calls[len(calls)-1:], []string{"systemctl daemon-reload"}) {
+		t.Fatalf("%v", calls)
+	}
+
+	// frps : programme présent, config conservée et rendue à la détection
+	os.MkdirAll(frpBinDir, 0o755)
+	os.WriteFile(filepath.Join(frpBinDir, "frps"), elf, 0o755)
+	os.WriteFile(frpsConf, []byte("bindPort = 7100\n"), 0o600)
+	if !isExecutable(filepath.Join(frpBinDir, "frps")) {
+		binarySearchPaths = nil // Windows : pas de bit exécutable, le programme passe pour absent
+	}
+	if !reinstallService(FR, "frps", "0.70.0") {
+		t.Fatal(updateLog.snapshot())
+	}
+	if b, _ := os.ReadFile(frpsConf); string(b) != "bindPort = 7100\n" {
+		t.Fatalf("config conservée réécrite : %q", b)
+	}
+	if len(stringList(cfg()["dismissed_configs"])) != 0 {
+		t.Fatal("config toujours écartée")
+	}
+
+	// La route : programme inconnu refusé, service existant pas écrasé
+	e.setPassword(testPassword, "admin", false)
+	c := e.client()
+	expectCode(t, c.login("admin", testPassword), 200)
+	expectCode(t, c.post("/api/instance/reinstall/sshd", nil), 400)
+	expectCode(t, c.post("/api/instance/reinstall/frpc", nil), 409)
+}
+
 func TestDecompressionBombRejected(t *testing.T) {
 	saved := archiveMaxUnpacked
 	defer func() { archiveMaxUnpacked = saved }()

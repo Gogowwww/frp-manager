@@ -69,7 +69,7 @@ function logClass(line) {
   return '';
 }
 
-function renderLog(term, lines) {
+export function renderLog(term, lines) {
   term.replaceChildren(...lines.map((l) => h('span', { class: `log-line ${logClass(l)}`.trim() }, `${l}\n`)));
   term.scrollTop = term.scrollHeight;
 }
@@ -139,7 +139,7 @@ function frpCard() {
   });
 }
 
-/** Suit le journal d'installation frp jusqu'à [OK] / [ERROR]. */
+/** Suit le journal d'installation frp jusqu'à la fin de la tâche (côté serveur). */
 function pollFrpLog(onDone) {
   frpLog.wrap.hidden = false;
   return new Promise((resolve) => {
@@ -149,9 +149,8 @@ function pollFrpLog(onDone) {
         const d = await api('/api/update/log');
         const lines = d.lines || [];
         renderLog(frpLog.term, lines);
-        const last = lines[lines.length - 1] || '';
-        if (last.includes('[OK]') || last.includes('[ERROR]')) {
-          toast(last.includes('[OK]') ? t('updates.installDone') : t('updates.installFailed'), last.includes('[OK]') ? 'success' : 'error');
+        if (!d.running) {
+          toast(d.success ? t('updates.installDone') : t('updates.installFailed'), d.success ? 'success' : 'error');
           refreshStatus().catch(() => {});
           if (onDone) onDone();
           resolve();

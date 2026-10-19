@@ -173,6 +173,7 @@ func init() {
 	}))
 
 	route("DELETE /api/instance/{iid}", "api_instance_delete", perm(P("instances.delete"), deleteInstance))
+	route("POST /api/instance/reinstall/{bin}", "api_instance_reinstall", perm(P("updates.install"), reinstallInstance))
 
 	route("GET /api/config/{iid}", "api_config_get", perm(P("config.read"), func(c *Ctx) {
 		detectFrp(false)
@@ -542,7 +543,7 @@ func frpInstalledVersion() any {
 
 // Seules les unités créées par l'admin sont supprimées ; celles d'un paquet
 // (/usr/lib, /lib) seraient réinstallées à la prochaine mise à jour.
-const unitDir = "/etc/systemd/system/"
+var unitDir = "/etc/systemd/system/"
 
 var configSuffixes = []string{".toml", ".ini", ".yaml", ".yml"}
 
@@ -783,6 +784,133 @@ func deleteInstance(c *Ctx) {
 	invalidateCache(true)
 	list := strings.Join(done, ", ")
 	c.JSON(J{"ok": true, "msg": c.M("Supprimé : "+list, "Deleted: "+list)})
+}
+
+// ── Réinstallation d'un service supprimé ────────────────────────────────────
+// Recrée frps.service ou frpc.service comme install.sh, sur /etc/frp/<bin>.toml :
+// la config conservée à la suppression, sinon celle par défaut. Le programme
+// est retéléchargé s'il manque. Le service est créé arrêté et non activé.
+
+const frpUnitTemplate = `[Unit]
+Description=frp %s (%s)
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+ExecStart=%s -c %s
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+`
+
+// installMissingBinary : télécharge et installe le programme bin, dans la
+// version de frp installée (la dernière si elle est inconnue).
+var installMissingBinary = func(l Lang, bin, installed string) bool {
+	version, tag := reinstallVersion(installed)
+	if version == "" {
+		version, tag, _ = fetchLatestVersion(l)
+		if version == "" {
+			updateLog.add(l.M("[ERROR] Toutes les sources inaccessibles.", "[ERROR] All sources unreachable."))
+			return false
+		}
+	}
+	updateLog.add(fmt.Sprintf("[INFO] Version: %s", tag))
+	return downloadAndInstall(l, version, tag, []string{bin})
+}
+
+func reinstallInstance(c *Ctx) {
+	bin := c.Param("bin")
+	if bin != "frps" && bin != "frpc" {
+		c.Fail(http.StatusBadRequest, c.M("Programme inconnu (frps ou frpc)", "Unknown program (frps or frpc)"))
+		return
+	}
+	if inDocker {
+		c.Fail(http.StatusBadRequest, c.M("Sous Docker, les services frp sont des conteneurs.", "Under Docker, frp services are containers."))
+		return
+	}
+	if serviceExists(bin) {
+		c.Fail(http.StatusConflict, c.M("Le service "+bin+".service existe déjà.", "The "+bin+".service service already exists."))
+		return
+	}
+	if !updateMu.TryLock() {
+		c.JSON(J{"ok": false, "msg": c.M("Mise à jour déjà en cours", "An update is already running")})
+		return
+	}
+	updateLog.reset()
+	l := c.Lang
+	installed := pyStr(loadState()["installed_version"])
+	go func() {
+		defer updateMu.Unlock()
+		updateLog.finish(reinstallService(l, bin, installed))
+	}()
+	c.JSON(J{"ok": true})
+}
+
+// serviceExists : une unité bin.service est-elle connue de systemd ?
+func serviceExists(bin string) bool {
+	if fileExists(unitDir + bin + ".service") {
+		return true
+	}
+	_, out, _ := runCmd([]string{"systemctl", "list-unit-files", bin + ".service", "--no-pager", "--plain", "--no-legend"})
+	return strings.HasPrefix(strings.TrimSpace(out), bin+".service")
+}
+
+func reinstallService(l Lang, bin, installed string) bool {
+	logf := updateLog.add
+	unit := bin + ".service"
+	program := findBinary(bin)
+	if program == "" {
+		logf(l.M("[INFO] Programme "+bin+" introuvable : téléchargement.", "[INFO] "+bin+" program not found: downloading it."))
+		if !installMissingBinary(l, bin, installed) {
+			return false
+		}
+		program = filepath.Join(frpBinDir, bin)
+	}
+	logf(l.M("[INFO] Programme : "+program, "[INFO] Program: "+program))
+	conf := filepath.Join(frpConfDir, bin+".toml")
+	if fileExists(conf) {
+		logf(l.M("[INFO] Configuration conservée : "+conf, "[INFO] Kept configuration: "+conf))
+	} else {
+		os.MkdirAll(frpConfDir, 0o755)
+		if err := os.WriteFile(conf, []byte(defaultConfigs[bin]), 0o600); err != nil {
+			logf("[ERROR] " + err.Error())
+			return false
+		}
+		logf(l.M("[INFO] Configuration par défaut créée : "+conf, "[INFO] Default configuration created: "+conf))
+	}
+	os.MkdirAll(frpLogDir, 0o755)
+	role := map[string]string{"frps": "server", "frpc": "client"}[bin]
+	if err := os.WriteFile(unitDir+unit, []byte(fmt.Sprintf(frpUnitTemplate, role, bin, program, conf)), 0o644); err != nil {
+		logf("[ERROR] " + err.Error())
+		return false
+	}
+	runCmd([]string{"systemctl", "daemon-reload"})
+	logf(l.M("[INFO] Service créé : "+unitDir+unit, "[INFO] Service created: "+unitDir+unit))
+	undismissConfig(conf)
+	invalidateCache(true)
+	logf(l.M("[OK] "+unit+" réinstallé, arrêté : démarrez-le depuis sa carte.", "[OK] "+unit+" reinstalled, stopped: start it from its card."))
+	return true
+}
+
+// undismissConfig : la config d'un service recréé revient dans la détection.
+func undismissConfig(conf string) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+	kept := []any{}
+	changed := false
+	for _, d := range stringList(cfg()["dismissed_configs"]) {
+		if d == conf {
+			changed = true
+			continue
+		}
+		kept = append(kept, d)
+	}
+	if changed {
+		cfgUpdateLocked(Cfg{"dismissed_configs": kept})
+	}
 }
 
 // ── Écriture des configs : validation et confinement ────────────────────────

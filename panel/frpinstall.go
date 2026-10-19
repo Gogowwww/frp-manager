@@ -419,7 +419,9 @@ func downloadArchive(l Lang, version, tag string, logf func(string)) (string, st
 	return "", filename
 }
 
-func stopRunningFrpServices() []string {
+// stopRunningFrpServices arrête les services actifs qui lancent l'un des
+// programmes bins → services stoppés (à redémarrer).
+func stopRunningFrpServices(bins []string) []string {
 	_, out, _ := runCmd([]string{"systemctl", "list-units", "--type=service", "--state=active", "--no-pager", "--plain", "--no-legend"})
 	var running []string
 	for _, line := range strings.Split(out, "\n") {
@@ -432,8 +434,11 @@ func stopRunningFrpServices() []string {
 			continue
 		}
 		_, prop, _ := runCmd([]string{"systemctl", "show", unit, "--property=ExecStart", "--value"})
-		if strings.Contains(prop, "/frps") || strings.Contains(prop, "/frpc") {
-			running = append(running, strings.TrimSuffix(unit, ".service"))
+		for _, b := range bins {
+			if strings.Contains(prop, "/"+b) {
+				running = append(running, strings.TrimSuffix(unit, ".service"))
+				break
+			}
 		}
 	}
 	for _, svc := range running {
@@ -566,9 +571,15 @@ func installFile(src, dst string, mode os.FileMode) error {
 	return os.Rename(tmp, dst)
 }
 
-func installFromArchive(l Lang, archive, version string, logf func(string)) bool {
+// installFromArchive installe les programmes only de l'archive (tous si nil) :
+// seuls les services qui les lancent sont arrêtés puis redémarrés.
+func installFromArchive(l Lang, archive, version string, only []string, logf func(string)) bool {
+	bins := frpBinaries
+	if only != nil {
+		bins = only
+	}
 	logf(l.M("[INFO] Arrêt des services frp …", "[INFO] Stopping frp services…"))
-	running := stopRunningFrpServices()
+	running := stopRunningFrpServices(bins)
 	if len(running) > 0 {
 		list := strings.Join(running, ", ")
 		logf(l.M("[INFO] Stoppés : "+list, "[INFO] Stopped: "+list))
@@ -600,9 +611,13 @@ func installFromArchive(l Lang, archive, version string, logf func(string)) bool
 		return false
 	}
 	var installed []string
-	for _, b := range frpBinaries {
+	for _, b := range bins {
 		src := extracted[b]
 		if src == "" {
+			if only != nil {
+				logf(l.M("[ERROR] "+b+" absent de l'archive.", "[ERROR] "+b+" missing from the archive."))
+				return false
+			}
 			continue
 		}
 		dst := filepath.Join(frpBinDir, b)
@@ -621,17 +636,24 @@ func installFromArchive(l Lang, archive, version string, logf func(string)) bool
 	os.MkdirAll(frpLogDir, 0o755)
 	// On ne crée PAS de configs par défaut : l'utilisateur les gère lui-même
 	st := loadState()
-	st["installed_version"] = version
+	// Un seul programme réinstallé ne dit rien de la version de l'autre
+	if only == nil || !truthy(st["installed_version"]) {
+		st["installed_version"] = version
+	}
 	st["last_update_check"] = time.Now().Format("2006-01-02T15:04:05.000000")
 	st["last_update_result"] = "Installed " + version
 	if err := saveState(st); err != nil {
 		logf("[WARN] " + err.Error())
 	}
 	invalidateCache(true)
-	logf(l.M("[OK] frp "+version+" installé.", "[OK] frp "+version+" installed."))
-	webhookEmit("update.frp_installed", [2]string{"frp " + version + " installé", "frp " + version + " installed"},
-		[2]string{"frp " + version + " a été installé depuis le panel.", "frp " + version + " was installed from the panel."},
-		version, J{"version": version})
+	name := "frp"
+	if only != nil {
+		name = strings.Join(installed, ", ")
+	}
+	logf(l.M("[OK] "+name+" "+version+" installé.", "[OK] "+name+" "+version+" installed."))
+	webhookEmit("update.frp_installed", [2]string{name + " " + version + " installé", name + " " + version + " installed"},
+		[2]string{name + " " + version + " a été installé depuis le panel.", name + " " + version + " was installed from the panel."},
+		version, J{"version": version, "binaries": installed})
 	return true
 }
 
@@ -654,7 +676,7 @@ func installFrpCLI() int {
 		return 1
 	}
 	defer os.Remove(tmp)
-	if installFromArchive(l, tmp, version, logf) {
+	if installFromArchive(l, tmp, version, nil, logf) {
 		return 0
 	}
 	return 1

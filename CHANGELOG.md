@@ -12,6 +12,21 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Reinstall a deleted frps or frpc service**: when the dashboard no longer
+  has a frps (or frpc) service, a "Reinstall frps" button creates
+  `frps.service` again as the installer does, on `/etc/frp/frps.toml`: the
+  configuration kept when it was deleted, or else a default one. The program
+  is downloaded (and verified) if it is missing. The service is created
+  stopped, to be started from its card; the log is shown in a dialog.
+
+### Fixed
+
+- Following a frp installation could stop before the end (on an intermediate
+  “[OK]” line): the server now reports when the task is over and whether it
+  succeeded.
+
 ## [0.0.59] - 2026-10-12
 
 Sign in with a passkey, and the documentation in the GitHub wiki.

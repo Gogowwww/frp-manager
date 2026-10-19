@@ -208,11 +208,21 @@ func panelIsPrerelease(l Lang, fresh bool) bool {
 // ── Journaux des tâches de fond ─────────────────────────────────────────────
 
 type taskLog struct {
-	mu    sync.Mutex
-	lines []string
+	mu      sync.Mutex
+	lines   []string
+	running bool // tâche en cours (reset → finish)
+	success bool // issue de la dernière tâche terminée
 }
 
-func (t *taskLog) reset() { t.mu.Lock(); t.lines = nil; t.mu.Unlock() }
+func (t *taskLog) reset() { t.mu.Lock(); t.lines, t.running, t.success = nil, true, false; t.mu.Unlock() }
+
+func (t *taskLog) finish(ok bool) { t.mu.Lock(); t.running, t.success = false, ok; t.mu.Unlock() }
+
+func (t *taskLog) state() (running, success bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.running, t.success
+}
 
 func (t *taskLog) add(msg string) {
 	t.mu.Lock()
@@ -528,16 +538,11 @@ func init() {
 			version, tag, source := fetchLatestVersion(l)
 			if version == "" {
 				updateLog.add(l.M("[ERROR] Toutes les sources inaccessibles. Utilisez l'upload manuel.", "[ERROR] All sources unreachable. Use the manual upload."))
+				updateLog.finish(false)
 				return
 			}
 			updateLog.add(fmt.Sprintf("[INFO] Version: %s (%s)", tag, source))
-			tmp, _ := downloadArchive(l, version, tag, updateLog.add)
-			if tmp == "" {
-				updateLog.add(l.M("[ERROR] Tous les miroirs ont échoué. Utilisez l'upload manuel.", "[ERROR] All mirrors failed. Use the manual upload."))
-				return
-			}
-			defer os.Remove(tmp)
-			installFromArchive(l, tmp, version, updateLog.add)
+			updateLog.finish(downloadAndInstall(l, version, tag, nil))
 		}()
 		c.JSON(J{"ok": true})
 	}))
@@ -576,12 +581,35 @@ func init() {
 		go func() {
 			defer updateMu.Unlock()
 			defer os.Remove(tmp.Name())
-			installFromArchive(l, tmp.Name(), version, updateLog.add)
+			updateLog.finish(installFromArchive(l, tmp.Name(), version, nil, updateLog.add))
 		}()
 		c.JSON(J{"ok": true})
 	}))
 
 	route("GET /api/update/log", "api_update_log", perm(P("updates.view"), func(c *Ctx) {
-		c.JSON(J{"ok": true, "lines": updateLog.snapshot()})
+		running, success := updateLog.state()
+		c.JSON(J{"ok": true, "lines": updateLog.snapshot(), "running": running, "success": success})
 	}))
+}
+
+// downloadAndInstall : archive de la release tag téléchargée, vérifiée puis
+// installée (programmes only, tous si nil), journal dans updateLog.
+func downloadAndInstall(l Lang, version, tag string, only []string) bool {
+	tmp, _ := downloadArchive(l, version, tag, updateLog.add)
+	if tmp == "" {
+		updateLog.add(l.M("[ERROR] Tous les miroirs ont échoué. Utilisez l'upload manuel.", "[ERROR] All mirrors failed. Use the manual upload."))
+		return false
+	}
+	defer os.Remove(tmp)
+	return installFromArchive(l, tmp, version, only, updateLog.add)
+}
+
+// reinstallVersion : (version, tag) de la version installée, vides si elle est
+// inconnue ou ne vient pas d'une release (archive envoyée à la main).
+func reinstallVersion(installed string) (string, string) {
+	tag := "v" + strings.TrimPrefix(strings.TrimSpace(installed), "v")
+	if !frpTagRe.MatchString(tag) {
+		return "", ""
+	}
+	return strings.TrimPrefix(tag, "v"), tag
 }
