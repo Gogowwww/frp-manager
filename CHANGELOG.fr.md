@@ -16,7 +16,8 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 Le port attribué par le serveur s'affiche dans Ports.
 
-Pré-release.
+Pré-release, puis release définitive le même jour. Première version en
+versionnage sémantique ; elle reprend aussi la pré-release 0.0.60.
 
 ### Ajouté
 
@@ -36,7 +37,7 @@ Pré-release.
 
 Un service frps ou frpc supprimé se réinstalle depuis le tableau de bord.
 
-Pré-release.
+Pré-release, reprise dans la release 0.1.0.
 
 ### Ajouté
 

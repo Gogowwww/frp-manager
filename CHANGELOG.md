@@ -16,7 +16,8 @@ number. Versions older than 0.0.51 are described in the
 
 The port assigned by the server shows in Ports.
 
-Pre-release.
+Pre-release, then final release, on the same day. First version with
+semantic versioning; it also includes the 0.0.60 pre-release.
 
 ### Added
 
@@ -36,7 +37,7 @@ Pre-release.
 
 A deleted frps or frpc service can be reinstalled from the dashboard.
 
-Pre-release.
+Pre-release, included in the 0.1.0 release.
 
 ### Added
 
