@@ -214,7 +214,11 @@ type taskLog struct {
 	success bool // issue de la dernière tâche terminée
 }
 
-func (t *taskLog) reset() { t.mu.Lock(); t.lines, t.running, t.success = nil, true, false; t.mu.Unlock() }
+func (t *taskLog) reset() {
+	t.mu.Lock()
+	t.lines, t.running, t.success = nil, true, false
+	t.mu.Unlock()
+}
 
 func (t *taskLog) finish(ok bool) { t.mu.Lock(); t.running, t.success = false, ok; t.mu.Unlock() }
 
