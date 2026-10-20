@@ -12,6 +12,20 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
+"Show the assigned port" explains what it changes before acting.
+
+Pre-release.
+
+### Changed
+
+- **"Show the assigned port" warns before acting**: a dialog explains what
+  the panel adds to `frpc.toml` (local dashboard on `127.0.0.1`,
+  `frp-manager` user, random password), that frpc will restart and how to
+  remove it, before doing it. The security policy and the README describe it
+  too.
+
 ## [0.2.0] - 2026-10-19
 
 The port assigned by the server shows in Ports in one click.
@@ -373,7 +387,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0

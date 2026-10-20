@@ -12,6 +12,20 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.2.1] - 2026-10-20
+
+« Afficher le port attribué » explique ce qu'il change avant d'agir.
+
+Pré-release.
+
+### Modifié
+
+- **« Afficher le port attribué » prévient avant d'agir** : une fenêtre
+  explique ce que le panel ajoute à `frpc.toml` (tableau de bord local sur
+  `127.0.0.1`, utilisateur `frp-manager`, mot de passe tiré au hasard), que
+  frpc va redémarrer et comment le retirer, avant de le faire. La politique de
+  sécurité et le README le décrivent aussi.
+
 ## [0.2.0] - 2026-10-19
 
 Le port attribué par le serveur s'affiche en un clic dans Ports.
@@ -389,7 +403,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Gogowwww/frp-manager/compare/v0.0.60...v0.1.0

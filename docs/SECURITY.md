@@ -65,6 +65,15 @@ soon as possible. The report is credited in the release notes if you wish.
   access at that level too.
 - frp tokens are stored in plain text in the TOML files, as frp requires; the
   configuration editor shows them to administrators.
+- **Port assigned by the server**: frpc only gives it through its local
+  dashboard (its web API). The "Show the assigned port" button on the Ports
+  page turns it on in `frpc.toml`, after a confirmation: it listens on
+  `127.0.0.1` only, on a free port from 7400, with the `frp-manager` user and
+  a random password, in plain text in the file like the token. Anyone with
+  local access to the machine and this password can drive frpc through this
+  API (reload, read or change its configuration). Nothing is turned on
+  without that click; to avoid it, give the port a number. To remove it:
+  Settings → frpc configuration, "Local dashboard".
 - **Permissions marked "sensitive" amount to root on the machine**: editing an
   frp configuration (frpc plugins can expose local files), the firewall, frp
   installation, the panel update, settings, accounts. Only grant them to people

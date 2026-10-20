@@ -217,6 +217,24 @@ function renderStatusHint() {
 /** Active le tableau de bord local de frpc (127.0.0.1, mot de passe aléatoire),
  *  qui donne le port attribué par frps, puis redémarre frpc pour l'ouvrir. */
 async function showAssigned(btn) {
+  const ok = await openDialog({
+    title: t('tunnels.admin.title'),
+    build: ({ close }) => ({
+      body: [
+        h('p', null, t('tunnels.admin.intro')),
+        h('ul', { class: 'admin-steps' },
+          h('li', null, t('tunnels.admin.listen')),
+          h('li', null, t('tunnels.admin.password')),
+          h('li', null, t('tunnels.admin.restart'))),
+        h('p', { class: 'field-hint' }, t('tunnels.admin.undo')),
+      ],
+      foot: [
+        button(t('common.cancel'), { onClick: () => close(false) }),
+        button(t('tunnels.admin.confirm'), { variant: 'primary', onClick: () => close(true), autofocus: true }),
+      ],
+    }),
+  }).result;
+  if (!ok) return;
   btn.disabled = true;
   try {
     const d = await post(`/api/instance/${encodeURIComponent(S.iid)}/proxies/admin`);

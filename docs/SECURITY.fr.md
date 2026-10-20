@@ -68,6 +68,15 @@ souhaitez.
   proxy : filtrez aussi l'accès à ce niveau.
 - Les tokens frp sont stockés en clair dans les fichiers TOML, comme frp
   l'exige ; l'éditeur de configuration les affiche aux administrateurs.
+- **Port attribué par le serveur** : frpc ne le donne que par son tableau de
+  bord local (son API web). Le bouton « Afficher le port attribué » de la page
+  Ports l'active, après confirmation, dans `frpc.toml` : écoute sur
+  `127.0.0.1` seulement, port libre à partir de 7400, utilisateur
+  `frp-manager` et mot de passe tiré au hasard, en clair dans le fichier comme
+  le token. Qui a un accès local à la machine et ce mot de passe peut piloter
+  frpc par cette API (recharger, lire ou modifier sa config). Rien n'est
+  activé sans ce clic ; pour l'éviter, donnez un numéro au port. Pour le
+  retirer : Réglages → Configuration de frpc, « Tableau de bord local ».
 - **Les permissions marquées « sensible » reviennent à donner root sur la
   machine** : modifier une configuration frp (les plugins frpc peuvent exposer
   des fichiers locaux), le pare-feu, installer frp, mettre à jour le panel, les
