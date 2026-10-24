@@ -13,6 +13,13 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Chiffres publics du dépôt** : `tools/ghstats` et un workflow quotidien
+  relèvent les téléchargements de chaque release, les étoiles et les forks sur
+  la branche `stats` (`stats.json`, `history.json`), à partir de la seule API
+  publique de GitHub.
+
 ### Modifié
 
 - **Nouvelle adresse du projet** : le site, la démo en ligne et la

@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Public figures of the repository**: `tools/ghstats` and a daily workflow
+  record the downloads of each release, the stars and the forks on the `stats`
+  branch (`stats.json`, `history.json`), from GitHub's public API only.
+
 ### Changed
 
 - **New project address**: the website, the live demo and the documentation

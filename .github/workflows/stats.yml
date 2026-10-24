@@ -1,0 +1,66 @@
+# GitHub Actions : chiffres publics du dépôt (téléchargements de chaque release,
+# étoiles, forks), une fois par jour, sur la branche « stats » :
+# stats.json (état du jour) et history.json (une ligne par jour).
+# GitHub Actions: public figures of the repository (downloads of each release,
+# stars, forks), once a day, on the "stats" branch: stats.json (today's state)
+# and history.json (one line per day).
+#
+# Lecture : https://raw.githubusercontent.com/Gogowwww/frp-manager/stats/stats.json
+# Read: https://raw.githubusercontent.com/Gogowwww/frp-manager/stats/stats.json
+#
+# Seules les données publiques de l'API GitHub sont lues (tools/ghstats). Les
+# téléchargements mesurent l'adoption par version, pas les panels actifs.
+# Only public GitHub API data is read (tools/ghstats). Downloads measure
+# adoption per version, not active panels.
+
+name: Chiffres du dépôt
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  stats:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # branche stats
+    concurrency:
+      group: stats
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26" # dernier correctif 1.26.x / latest 1.26.x patch
+          check-latest: true
+      - name: Relever les chiffres
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          URL="https://github.com/$GH_REPO.git"
+          # Branche stats existante : on repart de son historique
+          if git -c "http.https://github.com/.extraheader=$AUTH" ls-remote --exit-code --heads "$URL" stats >/dev/null 2>&1; then
+            git -c "http.https://github.com/.extraheader=$AUTH" clone --quiet --depth 1 --branch stats "$URL" data
+          else
+            mkdir data && git -C data init -q -b stats
+          fi
+          (cd src && go run ./tools/ghstats -repo "$GH_REPO" -out ../data/stats.json -history ../data/history.json)
+          cd data
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Chiffres inchangés"
+            exit 0
+          fi
+          git -c user.name="FRP Manager (chiffres)" -c user.email="stats@frp-manager.invalid" \
+            commit -q -m "Chiffres du $(date -u +%F)"
+          git -c "http.https://github.com/.extraheader=$AUTH" push -q "$URL" stats
+          echo "Publié sur la branche stats"
