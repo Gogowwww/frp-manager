@@ -52,8 +52,10 @@ ruff check .        # Python bridge (packaging/python-bridge)
 
 - One pull request = one topic. Describe the problem it solves and how you
   tested it (install script, Docker, or both).
-- Keep the style of the existing code: comments in French with proper
-  accents, explicit names, no new dependency without a reason.
+- Keep the style of the existing code: explicit names, no new dependency
+  without a reason. A new or changed comment is written in French (with proper
+  accents), then in English right below it; so is a commit message: title
+  "français / English", body in French then in English.
 - Add a test when you touch authentication, input validation or system
   commands.
 - System commands are always argument lists (`exec.Command`, never `sh -c`

@@ -47,4 +47,8 @@ La CI lance les tests du panel sous Linux (`docker buildx build --target test .`
   (`promote.yml`) est lancée par l'utilisateur.
 - La branche `blocklists` est orpheline et ne vit que sur GitHub : ne jamais la
   fusionner dans main.
-- Commentaires et messages de commit en français, avec les accents.
+- Messages de commit en français (avec les accents) puis en anglais : titre
+  « Ports : plus de port tiré au hasard / Ports: no more random port », corps
+  en français, ligne vide, le même corps en anglais.
+- Commentaires nouveaux ou modifiés : en français, puis leur traduction
+  anglaise juste en dessous. Les commentaires existants restent tels quels.

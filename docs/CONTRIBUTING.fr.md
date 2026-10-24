@@ -53,8 +53,10 @@ ruff check .        # passerelle Python (packaging/python-bridge)
 
 - Une pull request = un sujet. Décrivez le problème résolu et comment vous
   l'avez testé (installation par script, Docker, ou les deux).
-- Gardez le style du code existant : commentaires en français avec les
-  accents, noms explicites, pas de dépendance nouvelle sans raison.
+- Gardez le style du code existant : noms explicites, pas de dépendance
+  nouvelle sans raison. Un commentaire nouveau ou modifié s'écrit en français
+  (avec les accents), puis en anglais juste en dessous ; un message de commit
+  aussi : titre « français / English », corps en français puis en anglais.
 - Ajoutez un test quand vous touchez à l'authentification, à la validation
   des entrées ou aux commandes système.
 - Toute commande système se passe en liste d'arguments (`exec.Command`,
