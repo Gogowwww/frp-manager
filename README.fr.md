@@ -7,6 +7,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 ![Plateforme](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
 [![Site](https://img.shields.io/badge/site-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr/fr/)
+[![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
 [English](README.md) · **Français**
 

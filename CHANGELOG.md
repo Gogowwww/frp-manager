@@ -21,6 +21,9 @@ older than 0.0.51 are described in the
   (`script`, `apt` or `docker`) to the project website, and nothing else: no
   identifier, no address. Settings shows the exact content sent. It helps to
   know which versions are still in use.
+- **Plumber scan**: the GitHub workflows and repository settings are checked
+  by [Plumber](https://getplumber.io) on every pull request and every update
+  of the public main; its score shows as a badge in the README.
 
 ### Changed
 

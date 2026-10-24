@@ -7,6 +7,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
 [![Website](https://img.shields.io/badge/website-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr)
+[![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
 **English** · [Français](README.fr.md)
 

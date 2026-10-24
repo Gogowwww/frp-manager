@@ -66,8 +66,10 @@ python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
 ## Versions and releases
 
 Development happens on the project's Forgejo, where all continuous
-integration runs; GitHub is only used to publish (no GitHub Actions
-workflow).
+integration runs; GitHub is only used to publish. Its only GitHub Actions
+workflow is the [Plumber](https://getplumber.io) scan
+(`.github/workflows/plumber.yml`): Plumber only reads `.github/workflows` and
+only publishes the README score from GitHub.
 
 - **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
   `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a

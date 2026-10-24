@@ -22,6 +22,9 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   (`script`, `apt` ou `docker`), et rien d'autre : ni identifiant, ni
   adresse. Réglages montre le contenu exact envoyé. Cela aide à savoir quelles
   versions sont encore utilisées.
+- **Scan Plumber** : les workflows GitHub et les réglages du dépôt sont
+  vérifiés par [Plumber](https://getplumber.io) à chaque pull request et à
+  chaque avance du main public ; son score s'affiche en badge dans le README.
 
 ### Modifié
 
