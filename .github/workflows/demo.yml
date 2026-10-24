@@ -1,51 +1,60 @@
-# Forgejo Actions : site de FRP Manager (https://frp-manager.gogow.fr) —
+# GitHub Actions : site de FRP Manager (https://frp-manager.gogow.fr) —
 # page d'accueil, documentation et démo en ligne (interface réelle, données fictives).
+# GitHub Actions: FRP Manager website (https://frp-manager.gogow.fr) — home
+# page, documentation and online demo (real interface, fake data).
 #
 # Le générateur du site vit dans le dépôt privé administrator/frp-manager-demo
-# (dossier website/, module Go à part), pas dans ce dépôt public : il lit la
-# documentation (README, docs/, CHANGELOG) et l'interface (panel/templates) d'ici.
-#
-# À chaque push sur main qui touche l'interface ou la documentation, ce workflow
-# clone les deux dépôts, construit le site (go run . build, dans website/) et
-# publie l'application à la racine de frp-manager-demo : site/ et un module Go
-# autonome qui le sert (bibliothèque standard uniquement), à côté de website/.
-# Le cloudpod Go de Webstrator clone ce dépôt et le lance (« go run main.go » :
-# tout le serveur tient dans main.go ; website/, module à part, est ignoré).
+# du Forgejo (dossier website/, module Go à part) ; le cloudpod Go de
+# Webstrator y clone le site publié. À chaque push sur main qui touche
+# l'interface ou la documentation, ce workflow construit le site et le publie
+# à la racine de frp-manager-demo (site/ et un module Go autonome qui le sert).
+# The site generator lives in the private repository
+# administrator/frp-manager-demo on Forgejo (website/ folder, separate Go
+# module); the Webstrator Go cloudpod clones the published site from there. On
+# every push to main that touches the interface or the documentation, this
+# workflow builds the site and publishes it at the root of frp-manager-demo
+# (site/ and a standalone Go module that serves it).
 #
 # Après un changement du site lui-même (frp-manager-demo/website), lancer ce
 # workflow à la main : Actions → « Site et démo » → Run workflow.
+# After a change to the site itself (frp-manager-demo/website), run this
+# workflow by hand: Actions → "Site et démo" → Run workflow.
 #
-# Prérequis : secret de dépôt DEMO_REPO_TOKEN, jeton Forgejo avec le droit
-# d'écriture sur frp-manager-demo (le jeton automatique ne vaut que pour ce dépôt-ci).
+# Prérequis : secret DEMO_REPO_TOKEN, jeton Forgejo avec le droit d'écriture
+# sur frp-manager-demo.
+# Requirements: secret DEMO_REPO_TOKEN, Forgejo token with write access to
+# frp-manager-demo.
 
 name: Site et démo
 
 on:
   push:
     branches: [main]
-    paths: ['panel/templates/**', 'docs/**', '*.md', '.forgejo/workflows/demo.yml']
+    paths: ['panel/templates/**', 'docs/**', '*.md', '.github/workflows/demo.yml']
   workflow_dispatch:
 
+permissions: {}
+
 env:
+  FORGEJO_URL: https://forgejo.gogow.fr
   DEMO_REPO: administrator/frp-manager-demo
 
 jobs:
   publish:
-    runs-on: docker
-    container:
-      image: golang:1.26-alpine
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - name: Récupérer le code
-        # Historique complet : les dates « lastmod » du sitemap viennent de git log
-        run: |
-          apk add --no-cache --quiet git
-          rm -rf src
-          git -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            clone --quiet --branch "${{ github.ref_name }}" \
-            "${{ github.server_url }}/${{ github.repository }}.git" src
-          git -C src -c "http.extraHeader=Authorization: token ${{ secrets.GITHUB_TOKEN }}" fetch --quiet --tags
-          git -C src log -1 --format='Commit %h : %s'
-
+      # Historique complet : les dates « lastmod » du sitemap viennent de git log
+      # Full history: the sitemap "lastmod" dates come from git log
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
       - name: Construire et publier le site
         env:
           DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
@@ -55,8 +64,7 @@ jobs:
           DEMO_REPO_TOKEN=$(printf '%s' "$DEMO_REPO_TOKEN" | tr -d '[:space:]')
           [ -n "$DEMO_REPO_TOKEN" ] || { echo "Secret DEMO_REPO_TOKEN manquant"; exit 1; }
           AUTH="Authorization: token $DEMO_REPO_TOKEN"
-          URL="${{ github.server_url }}/$DEMO_REPO.git"
-          rm -rf out
+          URL="$FORGEJO_URL/$DEMO_REPO.git"
           # Historique sans le contenu des anciennes versions (--filter) : dates du
           # sitemap pour les pages du site, sans retélécharger chaque site publié
           git -c "http.extraHeader=$AUTH" clone --quiet --filter=blob:none "$URL" out \
@@ -65,7 +73,7 @@ jobs:
           git -C out log -1 --format='Site : %h %s' -- website
 
           # Numéro affiché : dernière version publiée
-          VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          VERSION=$(git -C src tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           SHA=$(git -C src rev-parse --short HEAD)
           export FRP_MANAGER_REPO="$PWD/src"
           cd out/website

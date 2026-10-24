@@ -1,0 +1,148 @@
+# GitHub Actions : publication d'une PRÉ-RELEASE à partir d'un tag.
+# GitHub Actions: publication of a PRE-RELEASE from a tag.
+#
+#   git tag -a v0.4.1 -m "…" && git push origin v0.4.1
+#
+# Pré-release : pré-release GitHub (un panel installé en pré-release suit les
+# pré-releases) ; image :X.Y.Z et :dev (:latest ne bouge pas) pour amd64, arm64
+# et armv7 ; paquets .deb joints à la release et publiés dans le canal
+# « testing » du dépôt APT (hébergé par le Forgejo). promote.yml la rend
+# ensuite définitive telle quelle, sans reconstruire.
+# Pre-release: GitHub pre-release (a panel installed as pre-release follows
+# pre-releases); image :X.Y.Z and :dev (:latest does not move) for amd64, arm64
+# and armv7; .deb packages attached to the release and published in the
+# "testing" channel of the APT repository (hosted by Forgejo). promote.yml then
+# makes it final as is, without rebuilding.
+#
+# Fichiers joints : frp-manager.zip, sa somme frp-manager.zip.sha256 (vérifiée
+# par la mise à jour du panel), et les .deb.
+# Attached files: frp-manager.zip, its sum frp-manager.zip.sha256 (checked by
+# the panel update), and the .deb files.
+#
+# Prérequis : secret FORGEJO_PACKAGES_TOKEN (jeton Forgejo, portée write:package) ;
+# le package ghcr.io doit autoriser ce dépôt en écriture (Package settings →
+# Manage Actions access).
+# Requirements: secret FORGEJO_PACKAGES_TOKEN (Forgejo token, write:package
+# scope); the ghcr.io package must allow this repository to write (Package
+# settings → Manage Actions access).
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
+  FORGEJO_URL: https://forgejo.gogow.fr
+  APT_OWNER: administrator
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # release et fichiers joints
+      packages: write # image ghcr.io
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Notes (titre, résumé, sections, en français puis en anglais) tirées des
+      # deux CHANGELOG : une section absente bloque la release avant toute construction.
+      # Notes taken from both CHANGELOGs: a missing section blocks the release
+      # before anything is built.
+      - name: Préparer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="${{ github.ref_name }}"
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+            || { echo "Tag invalide : $TAG (attendu vX.Y.Z)"; exit 1; }
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Une release $TAG existe déjà"; exit 1
+          fi
+          go run ./tools/releasenotes "$TAG"
+          go run ./tools/releasenotes -json "$TAG" > notes.json
+          {
+            echo "TAG=$TAG"
+            echo "VERSION=${TAG#v}"
+          } >> "$GITHUB_ENV"
+
+      - name: Tests
+        run: docker buildx build --target test --progress plain .
+
+      - name: Programme (trois architectures)
+        run: |
+          set -eu
+          docker buildx build --target binaries --build-arg PANEL_VERSION="$VERSION" \
+            --output type=local,dest=dist/bin .
+          ls -l dist/bin
+
+      - name: Archive frp-manager.zip et paquets .deb
+        run: |
+          set -eu
+          mkdir -p dist/frp-manager/bin
+          cp dist/bin/frp-manager-linux-* dist/frp-manager/bin/
+          chmod 755 dist/frp-manager/bin/*
+          # Ni docs/ (captures du README, 1 Mo) ni versions françaises : la mise
+          # à jour n'utilise que le binaire, la documentation est sur le site
+          # No docs/ (README screenshots, 1 MB) and no French versions: the
+          # update only uses the binary, the documentation is on the website
+          cp panel/install.sh CHANGELOG.md README.md LICENSE docker-compose.yml dist/frp-manager/
+          # Passage d'un panel Python (≤ 0.0.57) au programme Go : sa mise à jour
+          # copie app.py puis relance le service, qui installe alors ce programme
+          sed "s/__VERSION__/$VERSION/" packaging/python-bridge/app.py > dist/frp-manager/app.py
+          grep -q "VERSION = \"$VERSION\"" dist/frp-manager/app.py
+          (cd dist && zip -qr frp-manager.zip frp-manager && sha256sum frp-manager.zip > frp-manager.zip.sha256)
+          sh packaging/deb/build-deb.sh "$VERSION" dist/bin dist/deb
+          ls -l dist/frp-manager.zip dist/frp-manager.zip.sha256 dist/deb/
+
+      # Construite pour toutes les architectures AVANT de publier quoi que ce
+      # soit ; le push plus bas repart du cache.
+      # Built for all architectures BEFORE publishing anything; the push below
+      # starts again from the cache.
+      - name: Image Docker
+        run: |
+          docker buildx build --platform "$PLATFORMS" --pull \
+            --build-arg PANEL_VERSION="$VERSION" .
+
+      # ── Publication : tout est construit, on pousse ────────────────────────
+      - name: Pousser l'image
+        run: |
+          set -eu
+          docker buildx build --platform "$PLATFORMS" \
+            --build-arg PANEL_VERSION="$VERSION" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.description=Web panel to manage frp (frps and frpc): ports, firewall, logs, updates" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:dev" --push .
+
+      - name: Créer la pré-release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          jq -r .body notes.json > notes.md
+          gh release create "$TAG" --verify-tag --prerelease --latest=false \
+            --title "$(jq -r .name notes.json)" --notes-file notes.md \
+            dist/frp-manager.zip dist/frp-manager.zip.sha256 dist/deb/*.deb
+
+      - name: Dépôt APT (testing)
+        env:
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+        run: sh packaging/deb/publish-apt.sh testing dist/deb/*.deb

@@ -1,0 +1,60 @@
+# GitHub Actions : chaque push sur main construit un instantané
+# ghcr.io/gogowwww/frp-manager:dev-<sha>.
+# GitHub Actions: every push to main builds a snapshot
+# ghcr.io/gogowwww/frp-manager:dev-<sha>.
+#
+# Ni :dev (= dernière pré-release) ni :latest (= dernière release) : ceux-là
+# sont posés par release.yml et promote.yml.
+# Neither :dev (= latest pre-release) nor :latest (= latest release): those are
+# set by release.yml and promote.yml.
+#
+# Prérequis : le package ghcr.io doit autoriser ce dépôt (Package settings →
+# Manage Actions access → Write).
+# Requirements: the ghcr.io package must allow this repository (Package settings
+# → Manage Actions access → Write).
+
+name: Image dev
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tests Go d'abord : une image n'est poussée que si tout passe
+      # Go tests first: an image is only pushed if everything passes
+      - name: Tests
+        run: docker buildx build --target test --progress plain .
+      - name: Construire et pousser l'image
+        run: |
+          set -eu
+          VERSION="dev-$(git rev-parse --short=7 HEAD)"
+          docker buildx build --platform "$PLATFORMS" --pull \
+            --build-arg PANEL_VERSION="$VERSION" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.description=Web panel to manage frp (frps and frpc): ports, firewall, logs, updates" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            -t "$IMAGE:$VERSION" --push .
+          echo "OK : $IMAGE:$VERSION ($PLATFORMS)"

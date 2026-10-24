@@ -65,31 +65,28 @@ python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
 
 ## Versions and releases
 
-Development happens on the project's Forgejo, where all continuous
-integration runs; GitHub is only used to publish. Its only GitHub Actions
-workflow is the [Plumber](https://getplumber.io) scan
-(`.github/workflows/plumber.yml`): Plumber only reads `.github/workflows` and
-only publishes the README score from GitHub.
+All continuous integration, releases and publishing run on GitHub Actions
+(`.github/workflows/`), including the [Plumber](https://getplumber.io) scan,
+which only reads `.github/workflows` and only publishes the README score from
+GitHub. The Forgejo only hosts the apt repository and the private repository
+of the website; the `FORGEJO_PACKAGES_TOKEN` and `DEMO_REPO_TOKEN` secrets give
+GitHub access to them.
 
 - **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
   `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a
   new feature (`0.2.0`), the last one for fixes only (`0.1.1`), the first one
   for a change that breaks the configuration, the API or the installation
   (`1.0.0`).
-- **Pre-release**: an annotated `vX.Y.Z` tag on the Forgejo main (after the
+- **Pre-release**: an annotated `vX.Y.Z` tag on main (after the
   dated section of both CHANGELOGs) runs `release.yml`: program, `:X.Y.Z`
   image, packages in the `testing` apt distribution, GitHub pre-release. Its
   notes (French then English) come from both CHANGELOGs through
   `tools/releasenotes`: the dated section starts with a one-sentence summary,
   which becomes the title and introduction (`go run ./tools/releasenotes vX.Y.Z`
   to proofread them before tagging).
-- **Final release**: `promote.yml` (Actions → "Promouvoir une release", tag
-  `vX.Y.Z`) makes the same pre-release final, without rebuilding it: what was
-  tried is exactly what gets published (`:latest` image, `stable` apt
-  distribution, public main moved forward).
-- **Between releases**: `github.yml` (Actions → "Publier sur GitHub")
-  publishes the Forgejo main to the public main (documentation, translations,
-  CHANGELOG…), fast-forward only and only once the commit's CI has passed.
+- **Final release**: `promote.yml` (Actions → "Promote", tag `vX.Y.Z`) makes
+  the same pre-release final, without rebuilding it: what was tried is exactly
+  what gets published (`:latest` image, `stable` apt distribution).
 - **GitHub protections** (Settings → Rules): `main` and `blocklists` cannot
   be deleted or force-pushed, and `v*` tags cannot be deleted or moved. To
   redo a tag, turn off the "Tags de version" ruleset first, then turn it back

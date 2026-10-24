@@ -1,0 +1,98 @@
+# GitHub Actions : promotion d'une pré-release en release définitive.
+# GitHub Actions: promotion of a pre-release to a final release.
+#
+# Toute version sort d'abord en pré-release (release.yml) ; celle-ci rend
+# définitive la pré-release validée, sans la reconstruire.
+# Every version first ships as a pre-release (release.yml); this one makes the
+# validated pre-release final, without rebuilding it.
+#
+# Lancement : Actions → « Promote » → Run workflow (tag : v0.4.1).
+# Run: Actions → "Promote" → Run workflow (tag: v0.4.1).
+#
+# Effets, dans cet ordre : image :X.Y.Z re-taguée en :latest (même image, toutes
+# architectures, pas de rebuild) ; release GitHub passée de pré-release à release
+# normale, marquée « latest » (visible par le bouton « Mettre à jour » des panels
+# installés) ; paquets .deb de la release copiés dans la distribution « stable »
+# du dépôt APT.
+# Effects, in this order: image :X.Y.Z re-tagged as :latest (same image, all
+# architectures, no rebuild); GitHub release turned from pre-release into a
+# normal release, marked "latest" (seen by the "Update" button of installed
+# panels); .deb packages of the release copied into the "stable" distribution
+# of the APT repository.
+#
+# Prérequis : pré-release créée par release.yml, secret FORGEJO_PACKAGES_TOKEN.
+# Requirements: pre-release created by release.yml, secret FORGEJO_PACKAGES_TOKEN.
+
+name: Promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag à promouvoir (ex. v0.4.1)"
+        required: true
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/gogowwww/frp-manager
+  FORGEJO_URL: https://forgejo.gogow.fr
+  APT_OWNER: administrator
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # release
+      packages: write # image :latest
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Vérifier
+        run: |
+          set -eu
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "Seul un tag vX.Y.Z peut être promu (reçu : $TAG)"; exit 1; }
+          PRE=$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease) \
+            || { echo "Aucune release $TAG : lancer d'abord release.yml (push du tag)"; exit 1; }
+          [ "$PRE" = true ] || { echo "$TAG est déjà une release définitive"; exit 1; }
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Image :latest
+        run: |
+          set -eu
+          # Copie de la liste multi-architecture (amd64, arm64, armv7) côté registre ;
+          # un docker pull + tag ne recopierait que l'architecture du runner.
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.description=Web panel to manage frp (frps and frpc): ports, firewall, logs, updates" \
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0" \
+            -t "$IMAGE:latest" "$IMAGE:$VERSION"
+
+      - name: Release définitive
+        run: |
+          gh release edit "$TAG" --prerelease=false --latest
+          gh release view "$TAG" --json url --jq '"Release publiée : " + .url'
+
+      - name: Dépôt APT (stable)
+        env:
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+        run: |
+          set -eu
+          # Les .deb de la pré-release, tels quels (pas de rebuild)
+          mkdir -p deb
+          gh release download "$TAG" --pattern '*.deb' --dir deb || true
+          ls deb/*.deb >/dev/null 2>&1 || { echo "Aucun paquet .deb dans la release $TAG (version Python ?)"; exit 0; }
+          sh packaging/deb/publish-apt.sh stable deb/*.deb

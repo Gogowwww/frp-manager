@@ -13,6 +13,14 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **All CI on GitHub Actions**: tests, `dev` image, pre-release, promotion,
+  community lists and website now run from `.github/workflows/` instead of
+  the Forgejo (`.forgejo/workflows/` is removed, as is the "Publier sur
+  GitHub" workflow). The apt repository and the private website repository stay
+  on the Forgejo, so the address of installed machines does not change.
+
 ## [0.4.0] - 2026-10-24
 
 The panel can send anonymous statistics, if its administrator turns them on.
