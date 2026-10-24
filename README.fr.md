@@ -6,7 +6,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 [![Release](https://img.shields.io/github/v/release/Gogowwww/frp-manager)](https://github.com/Gogowwww/frp-manager/releases)
 ![Plateforme](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
-[![Site](https://img.shields.io/badge/site-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr/fr/)
+[![Site](https://img.shields.io/badge/site-frp--manager.org-0e9f6e)](https://frp-manager.org/fr/)
 [![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
 [English](README.md) · **Français**
@@ -33,7 +33,7 @@ unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 
 Ou avec apt, après avoir ajouté le dépôt de FRP Manager une fois : `sudo apt install frp-manager`, puis `apt upgrade` pour les mises à jour ; voir [Installation avec apt](docs/installation.fr.md#installation-avec-apt).
 
-Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.gogow.fr/demo/) fait tourner la vraie interface avec des données fictives.
+Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo/) fait tourner la vraie interface avec des données fictives.
 
 ## Fonctionnalités
 
@@ -91,7 +91,7 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECUR
 
 ## Documentation
 
-- [Site du projet](https://frp-manager.gogow.fr/fr/) : présentation, démo en ligne et toute la documentation
+- [Site du projet](https://frp-manager.org/fr/) : présentation, démo en ligne et toute la documentation
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
 - [Politique de sécurité](docs/SECURITY.md) (en anglais)
 - [Journal des modifications](CHANGELOG.fr.md)

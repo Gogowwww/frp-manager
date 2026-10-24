@@ -35,7 +35,7 @@ FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 
 Documentation is written in this repository: `README.md`, `docs/` and the
 CHANGELOGs, in English and French. It is published as is on the
-[project website](https://frp-manager.gogow.fr/docs/), which is never edited
+[project website](https://frp-manager.org/docs/), which is never edited
 directly. The website and the live demo are built separately, from this
 repository.
 

@@ -33,7 +33,7 @@ La CI lance les tests du panel sous Linux (`docker buildx build --target test .`
   `CHANGELOG.md` et `## [Non publié]` de `CHANGELOG.fr.md`, dans le même
   commit.
 - README, `docs/`, CHANGELOG et `panel/templates/` alimentent le site
-  frp-manager.gogow.fr (`demo.yml`) : un push qui les touche le republie.
+  frp-manager.org (`demo.yml`) : un push qui les touche le republie.
 - Ne pas écrire de numéro de version dans les sources : `buildVersion`
   (`panel/updates.go`) reste vide et est gravé à la compilation.
 

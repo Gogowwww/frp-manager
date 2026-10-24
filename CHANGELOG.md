@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **New project address**: the website, the live demo and the documentation
+  move to [frp-manager.org](https://frp-manager.org). The old address keeps
+  working, including the anonymous statistics endpoint used by installed panels.
+
 ## [0.4.1] - 2026-10-25
 
 The whole continuous integration now runs on GitHub Actions.

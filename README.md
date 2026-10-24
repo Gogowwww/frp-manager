@@ -6,7 +6,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 [![Release](https://img.shields.io/github/v/release/Gogowwww/frp-manager)](https://github.com/Gogowwww/frp-manager/releases)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 [![Docker](https://img.shields.io/badge/image-ghcr.io-2496ED?logo=docker&logoColor=white)](https://github.com/users/Gogowwww/packages/container/package/frp-manager)
-[![Website](https://img.shields.io/badge/website-frp--manager.gogow.fr-0e9f6e)](https://frp-manager.gogow.fr)
+[![Website](https://img.shields.io/badge/website-frp--manager.org-0e9f6e)](https://frp-manager.org)
 [![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
 **English** · [Français](README.fr.md)
@@ -33,7 +33,7 @@ unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 
 Or with apt, once FRP Manager's repository is added: `sudo apt install frp-manager`, then `apt upgrade` for updates; see [Install with apt](docs/installation.md#install-with-apt).
 
-Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs the real interface with sample data.
+Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the real interface with sample data.
 
 ## Features
 
@@ -91,7 +91,7 @@ Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 
 ## Documentation
 
-- [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
+- [Website](https://frp-manager.org): overview, live demo and the full documentation
 - [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images and their privileges, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Security policy](docs/SECURITY.md)
 - [Changelog](CHANGELOG.md)

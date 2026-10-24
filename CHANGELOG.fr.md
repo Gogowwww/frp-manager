@@ -13,6 +13,13 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Nouvelle adresse du projet** : le site, la démo en ligne et la
+  documentation passent sur [frp-manager.org](https://frp-manager.org).
+  L'ancienne adresse continue de répondre, y compris pour les statistiques
+  anonymes des panels déjà installés.
+
 ## [0.4.1] - 2026-10-25
 
 Toute l'intégration continue tourne maintenant sur GitHub Actions.
