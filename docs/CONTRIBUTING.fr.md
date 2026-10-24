@@ -69,8 +69,10 @@ ruff check .        # passerelle Python (packaging/python-bridge)
 ## Versions et releases
 
 Le développement se fait sur le Forgejo du projet, où tourne toute
-l'intégration continue ; GitHub ne sert qu'à publier (aucun workflow GitHub
-Actions).
+l'intégration continue ; GitHub ne sert qu'à publier. Son seul workflow GitHub
+Actions est le scan [Plumber](https://getplumber.io)
+(`.github/workflows/plumber.yml`) : Plumber ne lit que `.github/workflows` et
+ne publie le score du README que depuis GitHub.
 
 - **Numéros** : jusqu'à la 0.0.60, les versions se suivent (`0.0.59`,
   `0.0.60`). Ensuite, versionnage sémantique à partir de `0.1.0` : le chiffre

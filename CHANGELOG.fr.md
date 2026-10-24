@@ -12,6 +12,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Scan Plumber** : les workflows GitHub et les réglages du dépôt sont
+  vérifiés par [Plumber](https://getplumber.io) à chaque pull request et à
+  chaque avance du main public ; son score s'affiche en badge dans le README.
+
 ## [0.1.0] - 2026-10-19
 
 Le port attribué par le serveur s'affiche dans Ports.

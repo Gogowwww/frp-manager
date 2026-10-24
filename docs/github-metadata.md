@@ -28,8 +28,10 @@ frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker golang s
   sinon le lien de signalement de SECURITY.md ne fonctionne pas.
 - **Settings → General → Social preview** : téléverser une image 1280×640
   (par exemple une capture de `docs/img/`, recadrée).
-- **Settings → Actions** : désactivé. Toute la CI tourne sur Forgejo ; GitHub
-  ne reçoit que les publications (`release.yml`, `promote.yml`, `github.yml`).
+- **Settings → Actions** : activé, pour le seul scan Plumber
+  (`.github/workflows/plumber.yml`, badge du README). Le reste de la CI tourne
+  sur Forgejo ; GitHub ne reçoit que les publications (`release.yml`,
+  `promote.yml`, `github.yml`).
 
 ## Texte de la release v0.0.51
 

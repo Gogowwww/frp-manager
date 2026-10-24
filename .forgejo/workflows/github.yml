@@ -3,7 +3,8 @@
 # Le main public n'avance d'ordinaire qu'à la promotion d'une release
 # (promote.yml). Ce workflow le publie entre deux releases, à la demande :
 # documentation, traductions, CHANGELOG… Toute la CI tourne sur Forgejo ;
-# GitHub ne sert qu'à publier (aucun workflow GitHub Actions).
+# GitHub ne sert qu'à publier (seul workflow GitHub Actions : le scan Plumber,
+# .github/workflows/plumber.yml).
 #
 # Lancement : Actions → « Publier sur GitHub » → Run workflow, ou via l'API
 # Forgejo (POST …/actions/workflows/github.yml/dispatches, ref main).
