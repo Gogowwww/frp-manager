@@ -88,6 +88,10 @@ workflow).
 - **Between releases**: `github.yml` (Actions → "Publier sur GitHub")
   publishes the Forgejo main to the public main (documentation, translations,
   CHANGELOG…), fast-forward only and only once the commit's CI has passed.
+- **GitHub protections** (Settings → Rules): `main` and `blocklists` cannot
+  be deleted or force-pushed, and `v*` tags cannot be deleted or moved. To
+  redo a tag, turn off the "Tags de version" ruleset first, then turn it back
+  on.
 
 ## Translating the panel
 

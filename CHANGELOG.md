@@ -15,6 +15,10 @@ older than 0.0.51 are described in the
 
 ### Changed
 
+- **Protected GitHub repository**: `main` and `blocklists` can no longer be
+  deleted or force-pushed, and `v*` tags can no longer be deleted or moved.
+  Private vulnerability reporting, which SECURITY.md points to, is now turned
+  on. CONTRIBUTING describes these rules.
 - **Lighter `frp-manager.zip`** (about 1 MB less): the archive of each release
   now holds only the program, `install.sh`, `app.py`, `docker-compose.yml`, `LICENSE`
   and the English `README.md` and `CHANGELOG.md`. The `docs/` folder (README

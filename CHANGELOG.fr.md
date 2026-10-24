@@ -15,6 +15,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Modifié
 
+- **Dépôt GitHub protégé** : `main` et `blocklists` ne peuvent plus être
+  supprimées ni recevoir de push forcé, et les tags `v*` ne peuvent plus être
+  supprimés ni déplacés. Le signalement privé des failles, vers lequel renvoie
+  SECURITY.md, est maintenant activé. CONTRIBUTING décrit ces règles.
 - **`frp-manager.zip` plus léger** (environ 1 Mo de moins) : l'archive de
   chaque release ne contient plus que le programme, `install.sh`, `app.py`,
   `docker-compose.yml`, `LICENSE` et les `README.md` et `CHANGELOG.md`
