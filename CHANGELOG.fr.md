@@ -13,6 +13,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.4.1] - 2026-10-25
+
+Toute l'intégration continue tourne maintenant sur GitHub Actions.
+
+Pré-release.
+
 ### Modifié
 
 - **Toute la CI sur GitHub Actions** : tests, image `dev`, pré-release,
@@ -479,7 +485,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
