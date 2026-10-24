@@ -1,0 +1,630 @@
+{
+  "generated_at": "2026-10-24T23:28:54Z",
+  "repo": "Gogowwww/frp-manager",
+  "stars": 5,
+  "forks": 2,
+  "watchers": 0,
+  "open_issues": 0,
+  "total_downloads": 161,
+  "releases": [
+    {
+      "tag": "v0.4.1",
+      "prerelease": true,
+      "published": "2026-10-24T22:19:56Z",
+      "downloads": 0,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.4.0",
+      "prerelease": false,
+      "published": "2026-10-24T20:35:35Z",
+      "downloads": 3,
+      "by_kind": {
+        "deb": 3,
+        "sha256": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.3.0",
+      "prerelease": true,
+      "published": "2026-10-24T11:43:00Z",
+      "downloads": 3,
+      "by_kind": {
+        "deb": 1,
+        "sha256": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.2.1",
+      "prerelease": true,
+      "published": "2026-10-20T15:02:05Z",
+      "downloads": 0,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.2.0",
+      "prerelease": true,
+      "published": "2026-10-19T21:03:46Z",
+      "downloads": 3,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 1,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.1.1",
+      "prerelease": true,
+      "published": "2026-10-19T20:24:35Z",
+      "downloads": 2,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.1.0",
+      "prerelease": false,
+      "published": "2026-10-19T16:05:08Z",
+      "downloads": 5,
+      "by_kind": {
+        "deb": 3,
+        "sha256": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.60",
+      "prerelease": true,
+      "published": "2026-10-19T15:32:56Z",
+      "downloads": 2,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.59",
+      "prerelease": false,
+      "published": "2026-10-12T15:03:19Z",
+      "downloads": 19,
+      "by_kind": {
+        "deb": 6,
+        "sha256": 4,
+        "zip": 9
+      }
+    },
+    {
+      "tag": "v0.0.58",
+      "prerelease": false,
+      "published": "2026-10-12T08:54:35Z",
+      "downloads": 11,
+      "by_kind": {
+        "deb": 6,
+        "sha256": 3,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.57",
+      "prerelease": true,
+      "published": "2026-10-12T04:57:30Z",
+      "downloads": 3,
+      "by_kind": {
+        "sha256": 2,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.56",
+      "prerelease": true,
+      "published": "2026-10-11T20:28:11Z",
+      "downloads": 3,
+      "by_kind": {
+        "sha256": 2,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.55",
+      "prerelease": false,
+      "published": "2026-09-30T09:13:23Z",
+      "downloads": 8,
+      "by_kind": {
+        "sha256": 1,
+        "zip": 7
+      }
+    },
+    {
+      "tag": "v0.0.54",
+      "prerelease": true,
+      "published": "2026-09-29T12:07:32Z",
+      "downloads": 3,
+      "by_kind": {
+        "sha256": 2,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.53",
+      "prerelease": false,
+      "published": "2026-09-28T18:06:53Z",
+      "downloads": 8,
+      "by_kind": {
+        "sha256": 4,
+        "zip": 4
+      }
+    },
+    {
+      "tag": "v0.0.52",
+      "prerelease": false,
+      "published": "2026-09-28T17:55:43Z",
+      "downloads": 5,
+      "by_kind": {
+        "sha256": 3,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.51",
+      "prerelease": false,
+      "published": "2026-09-28T13:42:03Z",
+      "downloads": 5,
+      "by_kind": {
+        "sha256": 3,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.50",
+      "prerelease": false,
+      "published": "2026-09-26T17:39:35Z",
+      "downloads": 4,
+      "by_kind": {
+        "zip": 4
+      }
+    },
+    {
+      "tag": "v0.0.49",
+      "prerelease": true,
+      "published": "2026-09-26T13:11:41Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.48",
+      "prerelease": false,
+      "published": "2026-09-26T13:04:05Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.47",
+      "prerelease": true,
+      "published": "2026-09-26T12:56:42Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.46",
+      "prerelease": true,
+      "published": "2026-09-26T09:41:39Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.45",
+      "prerelease": true,
+      "published": "2026-09-26T09:19:07Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.44",
+      "prerelease": true,
+      "published": "2026-09-26T09:11:32Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.43",
+      "prerelease": false,
+      "published": "2026-09-25T21:05:20Z",
+      "downloads": 3,
+      "by_kind": {
+        "zip": 3
+      }
+    },
+    {
+      "tag": "v0.0.42",
+      "prerelease": true,
+      "published": "2026-09-25T20:53:55Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.41",
+      "prerelease": true,
+      "published": "2026-09-25T20:37:41Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.40",
+      "prerelease": true,
+      "published": "2026-09-25T20:24:53Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.39",
+      "prerelease": false,
+      "published": "2026-09-24T21:09:39Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.38",
+      "prerelease": true,
+      "published": "2026-09-24T20:51:12Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.37",
+      "prerelease": true,
+      "published": "2026-09-24T20:37:04Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.36",
+      "prerelease": true,
+      "published": "2026-09-24T20:08:29Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.35",
+      "prerelease": true,
+      "published": "2026-09-24T19:48:12Z",
+      "downloads": 0,
+      "by_kind": {
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.34",
+      "prerelease": true,
+      "published": "2026-09-24T19:19:03Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.33",
+      "prerelease": false,
+      "published": "2026-09-24T18:55:59Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.32",
+      "prerelease": true,
+      "published": "2026-09-24T18:24:14Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.31",
+      "prerelease": true,
+      "published": "2026-09-24T18:16:21Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.30",
+      "prerelease": false,
+      "published": "2026-09-23T16:23:04Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.29",
+      "prerelease": true,
+      "published": "2026-09-23T16:19:44Z",
+      "downloads": 0,
+      "by_kind": {
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.28",
+      "prerelease": true,
+      "published": "2026-09-23T16:01:37Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.27",
+      "prerelease": true,
+      "published": "2026-09-23T15:51:56Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.26",
+      "prerelease": true,
+      "published": "2026-09-23T15:38:52Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.25",
+      "prerelease": true,
+      "published": "2026-09-23T15:26:01Z",
+      "downloads": 0,
+      "by_kind": {
+        "other": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.24",
+      "prerelease": true,
+      "published": "2026-09-23T15:16:49Z",
+      "downloads": 0,
+      "by_kind": {
+        "other": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.23",
+      "prerelease": false,
+      "published": "2026-07-14T09:24:35Z",
+      "downloads": 6,
+      "by_kind": {
+        "other": 2,
+        "zip": 4
+      }
+    },
+    {
+      "tag": "v0.0.22",
+      "prerelease": false,
+      "published": "2026-07-14T08:43:10Z",
+      "downloads": 0,
+      "by_kind": {
+        "other": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.21",
+      "prerelease": false,
+      "published": "2026-07-14T08:00:44Z",
+      "downloads": 2,
+      "by_kind": {
+        "other": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.0.20",
+      "prerelease": false,
+      "published": "2026-07-14T07:26:58Z",
+      "downloads": 0,
+      "by_kind": {
+        "other": 0,
+        "zip": 0
+      }
+    },
+    {
+      "tag": "v0.0.19",
+      "prerelease": false,
+      "published": "2026-06-29T13:23:46Z",
+      "downloads": 6,
+      "by_kind": {
+        "zip": 6
+      }
+    },
+    {
+      "tag": "v0.0.18",
+      "prerelease": false,
+      "published": "2026-06-27T20:57:12Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.17",
+      "prerelease": false,
+      "published": "2026-05-12T14:18:09Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.16",
+      "prerelease": false,
+      "published": "2026-05-12T14:14:01Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.15",
+      "prerelease": false,
+      "published": "2026-05-12T14:10:48Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.14",
+      "prerelease": false,
+      "published": "2026-05-12T14:05:58Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.13",
+      "prerelease": false,
+      "published": "2026-05-12T14:00:11Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.12",
+      "prerelease": false,
+      "published": "2026-05-01T07:07:09Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.11",
+      "prerelease": false,
+      "published": "2026-04-20T06:48:58Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.10",
+      "prerelease": false,
+      "published": "2026-04-20T06:35:06Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.9",
+      "prerelease": false,
+      "published": "2026-04-20T06:11:00Z",
+      "downloads": 0,
+      "by_kind": {}
+    },
+    {
+      "tag": "v0.0.8",
+      "prerelease": false,
+      "published": "2026-04-19T19:10:49Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.7",
+      "prerelease": false,
+      "published": "2026-04-19T19:01:39Z",
+      "downloads": 3,
+      "by_kind": {
+        "zip": 3
+      }
+    },
+    {
+      "tag": "v0.0.6",
+      "prerelease": false,
+      "published": "2026-04-19T18:52:59Z",
+      "downloads": 3,
+      "by_kind": {
+        "zip": 3
+      }
+    },
+    {
+      "tag": "v0.0.5",
+      "prerelease": false,
+      "published": "2026-04-19T18:36:04Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.4",
+      "prerelease": false,
+      "published": "2026-04-19T18:24:18Z",
+      "downloads": 10,
+      "by_kind": {
+        "zip": 10
+      }
+    },
+    {
+      "tag": "v0.0.3",
+      "prerelease": false,
+      "published": "2026-04-19T08:02:18Z",
+      "downloads": 3,
+      "by_kind": {
+        "other": 1,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.0.2",
+      "prerelease": false,
+      "published": "2026-04-19T07:49:47Z",
+      "downloads": 2,
+      "by_kind": {
+        "zip": 2
+      }
+    },
+    {
+      "tag": "0.0.1",
+      "prerelease": false,
+      "published": "2026-04-18T16:06:52Z",
+      "downloads": 1,
+      "by_kind": {
+        "zip": 1
+      }
+    }
+  ]
+}
