@@ -31,6 +31,31 @@ frp frps frpc self-hosted homelab reverse-proxy tunneling web-ui docker golang s
 - **Settings → Actions** : désactivé. Toute la CI tourne sur Forgejo ; GitHub
   ne reçoit que les publications (`release.yml`, `promote.yml`, `github.yml`).
 
+## Protection du main (Settings → Rules → Rulesets)
+
+Le main public n'avance qu'en avance rapide depuis Forgejo (`promote.yml`,
+`github.yml`) : interdire le force-push et la suppression ne gêne aucune
+publication. Pas de pull request obligatoire, ces workflows poussent
+directement sur le main. Aucun contournement, administrateur compris.
+
+À lancer avec un compte administrateur du dépôt :
+
+```bash
+gh api -X POST repos/Gogowwww/frp-manager/rulesets --input - <<'EOF'
+{
+  "name": "main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}},
+  "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}],
+  "bypass_actors": []
+}
+EOF
+```
+
+Vérification : `gh api repos/Gogowwww/frp-manager/rules/branches/main` doit
+lister `deletion` et `non_fast_forward`.
+
 ## Texte de la release v0.0.51
 
 Titre : `v0.0.51 — Sécurité : configuration initiale, argon2id, CSRF, téléchargements vérifiés`
