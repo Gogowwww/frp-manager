@@ -131,9 +131,11 @@ jobs:
           cp dist/bin/frp-manager-linux-* dist/frp-manager/bin/
           chmod 755 dist/frp-manager/bin/*
           cd src
-          cp -r panel/install.sh docs CHANGELOG.md CHANGELOG.fr.md README.md README.fr.md LICENSE \
-             docker-compose.yml ../dist/frp-manager/
-          cp docs/SECURITY.md docs/SECURITY.fr.md ../dist/frp-manager/
+          # Ni docs/ (captures du README, 1 Mo) ni versions françaises : la mise
+          # à jour n'utilise que le binaire, la documentation est sur le site
+          # No docs/ (README screenshots, 1 MB) and no French versions: the
+          # update only uses the binary, the documentation is on the website
+          cp panel/install.sh CHANGELOG.md README.md LICENSE docker-compose.yml ../dist/frp-manager/
           # Passage d'un panel Python (≤ 0.0.57) au programme Go : sa mise à jour
           # copie app.py puis relance le service, qui installe alors ce programme
           sed "s/__VERSION__/$VERSION/" packaging/python-bridge/app.py > ../dist/frp-manager/app.py

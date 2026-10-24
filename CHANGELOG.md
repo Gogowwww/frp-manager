@@ -13,6 +13,14 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Lighter `frp-manager.zip`** (about 1 MB less): the archive of each release
+  now holds only the program, `install.sh`, `app.py`, `docker-compose.yml`, `LICENSE`
+  and the English `README.md` and `CHANGELOG.md`. The `docs/` folder (README
+  screenshots) and the French versions are left out: updates only use the
+  program, and the documentation is on the website.
+
 ### Removed
 
 - **Fewer documentation files**: the Docker page (privileges and risks) is

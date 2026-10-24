@@ -13,6 +13,15 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **`frp-manager.zip` plus léger** (environ 1 Mo de moins) : l'archive de
+  chaque release ne contient plus que le programme, `install.sh`, `app.py`,
+  `docker-compose.yml`, `LICENSE` et les `README.md` et `CHANGELOG.md`
+  anglais. Le dossier `docs/` (captures du README) et les versions
+  françaises n'y sont plus : la mise à jour n'utilise que le programme, et la
+  documentation est sur le site.
+
 ### Retiré
 
 - **Moins de fichiers de documentation** : la page Docker (privilèges et
