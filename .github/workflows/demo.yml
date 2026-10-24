@@ -38,6 +38,7 @@ permissions: {}
 env:
   FORGEJO_URL: https://forgejo.gogow.fr
   DEMO_REPO: administrator/frp-manager-demo
+  SITE_URL: https://frp-manager.org
 
 jobs:
   publish:
@@ -82,9 +83,9 @@ jobs:
           export FRP_MANAGER_REPO="$PWD/src"
           cd out/website
           go test -count=1 .
-          go run . build --out ../../dist-site --version "${VERSION:-dev}" --bundle ..
+          go run . build --out ../../dist-site --version "${VERSION:-dev}" --site-url "$SITE_URL" --bundle ..
           # Audit SEO : un titre en double, un lien cassé ou un JSON-LD invalide bloque la publication
-          go run . seo ../../dist-site
+          go run . seo --site-url "$SITE_URL" ../../dist-site
           cd ..
 
           git add -A
@@ -114,6 +115,12 @@ jobs:
           [ -f out/site/index.html ] || { echo "out/site/index.html absent : site non construit"; exit 1; }
           rm -rf pages
           cp -r out/site pages
+          # L'espace privé (/prive/ : cahier des charges, statistiques) est protégé par
+          # mot de passe par le serveur Go, pas par Pages : jamais publié ici
+          # The private area (/prive/: specification, statistics) is password-protected
+          # by the Go server, not by Pages: never published here
+          rm -rf pages/prive
+          ! find pages -ipath '*prive*' | grep -q . || { echo "espace privé encore présent"; exit 1; }
           printf '%s\n' "$SITE_DOMAIN" > pages/CNAME
           touch pages/.nojekyll
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
