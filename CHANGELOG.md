@@ -12,6 +12,12 @@ number. Versions older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Plumber scan**: the GitHub workflows and repository settings are checked
+  by [Plumber](https://getplumber.io) on every pull request and every update
+  of the public main; its score shows as a badge in the README.
+
 ## [0.1.0] - 2026-10-19
 
 The port assigned by the server shows in Ports.
