@@ -13,13 +13,20 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
+The public port of a new port is picked by the frps server again.
+
+Pre-release.
+
 ### Removed
 
 - **Public port picked by the panel** (0.1.1): a new port no longer gets a
   random public port, and the "Random" button of the editor and the "Pick a
   random port" button of the Ports page are gone. Left empty, the public port
   is picked by the frps server; "Show the assigned port" is still there to
-  see it. Typing a number by hand is still possible.
+  see it. Typing a number by hand is still possible, and ports already
+  saved keep theirs.
 
 ## [0.2.1] - 2026-10-20
 
@@ -396,7 +403,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1

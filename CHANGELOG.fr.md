@@ -13,13 +13,20 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.3.0] - 2026-10-24
+
+Le port public d'un nouveau port est de nouveau choisi par le serveur frps.
+
+Pré-release.
+
 ### Retiré
 
 - **Port public tiré par le panel** (0.1.1) : un nouveau port n'a plus de
   port public tiré au hasard, et les boutons « Aléatoire » de l'éditeur et
   « Tirer un port au hasard » de la page Ports disparaissent. Laissé vide, le
   port public est choisi par le serveur frps ; « Afficher le port attribué »
-  reste là pour le voir. Un numéro saisi à la main reste possible.
+  reste là pour le voir. Un numéro saisi à la main reste possible, et les
+  ports déjà enregistrés gardent le leur.
 
 ## [0.2.1] - 2026-10-20
 
@@ -412,7 +419,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Gogowwww/frp-manager/compare/v0.1.0...v0.1.1
