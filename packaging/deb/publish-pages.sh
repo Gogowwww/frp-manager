@@ -7,14 +7,14 @@
 #   sh packaging/deb/publish-pages.sh <distribution> fichier.deb…
 #
 # Variables : APT_GPG_KEY (clé privée GPG armorée, sans phrase de passe),
-# APT_DEPLOY_KEY (clé SSH de déploiement, écriture sur le dépôt APT_REPO),
-# APT_REPO (par défaut Gogowwww/frp-manager-apt), APT_DOMAIN (par défaut
+# APT_DEPLOY_KEY (clé SSH de déploiement, écriture sur le dépôt APT_PAGES_REPO),
+# APT_PAGES_REPO (par défaut Gogowwww/frp-manager-apt), APT_DOMAIN (par défaut
 # apt.frp-manager.org, écrit dans le fichier CNAME). Essai local sans GitHub :
 # PAGES_LOCAL=<dossier> (le dépôt est construit dans ce dossier, sans clone ni
 # push), avec APT_GPG_KEY.
 # Variables: APT_GPG_KEY (armored private GPG key, no passphrase),
-# APT_DEPLOY_KEY (SSH deploy key, write access to the APT_REPO repository),
-# APT_REPO (default Gogowwww/frp-manager-apt), APT_DOMAIN (default
+# APT_DEPLOY_KEY (SSH deploy key, write access to the APT_PAGES_REPO repository),
+# APT_PAGES_REPO (default Gogowwww/frp-manager-apt), APT_DOMAIN (default
 # apt.frp-manager.org, written to the CNAME file). Local trial without GitHub:
 # PAGES_LOCAL=<folder> (the repository is built in that folder, no clone and no
 # push), with APT_GPG_KEY.
@@ -38,7 +38,7 @@ DIST="$1"
 shift
 : "${APT_GPG_KEY:?APT_GPG_KEY manquant}"
 ARCHS="amd64 arm64 armhf"
-APT_REPO="${APT_REPO:-Gogowwww/frp-manager-apt}"
+APT_PAGES_REPO="${APT_PAGES_REPO:-Gogowwww/frp-manager-apt}"
 
 command -v apt-ftparchive >/dev/null 2>&1 || sudo apt-get install -y -qq apt-utils >/dev/null
 
@@ -58,7 +58,7 @@ if [ -n "${PAGES_LOCAL:-}" ]; then
     mkdir -p "$REPO"
 else
     : "${APT_DEPLOY_KEY:?APT_DEPLOY_KEY manquant}"
-    URL="git@github.com:$APT_REPO.git"
+    URL="git@github.com:$APT_PAGES_REPO.git"
     umask 077
     printf '%s\n' "$APT_DEPLOY_KEY" > "$WORK/deploy"
     GIT_SSH_COMMAND="ssh -i $WORK/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$WORK/known_hosts"
@@ -125,4 +125,4 @@ git add -A
 git -c user.name="FRP Manager (apt)" -c user.email="apt@frp-manager.invalid" \
     commit -q -m "Dépôt APT : $DIST ($(date -u +%Y-%m-%dT%H:%MZ))"
 git push -q --force "$URL" gh-pages
-echo "APT $DIST : publié sur $APT_REPO, gh-pages ($(ls "pool/$DIST" | wc -l) paquets)"
+echo "APT $DIST : publié sur $APT_PAGES_REPO, gh-pages ($(ls "pool/$DIST" | wc -l) paquets)"
