@@ -115,7 +115,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ["debian:12", "ubuntu:24.04"]
+        # Images épinglées par empreinte (contrôle de Plumber) / Images pinned by digest (Plumber check)
+        image:
+          - debian:12@sha256:854dd8ab51d62866dbd8f5431d15ce77b12983a2a4a1e1fe43a2395dc7ef9f61
+          - ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     container:
       image: ${{ matrix.image }}
     steps:
