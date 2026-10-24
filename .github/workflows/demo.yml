@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: src/go.mod
+          go-version: "1.26" # dernier correctif 1.26.x / latest 1.26.x patch
       - name: Construire et publier le site
         env:
           DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
