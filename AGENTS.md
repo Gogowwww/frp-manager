@@ -10,7 +10,7 @@ pour les anciennes installations, pas le panel.
 
 ## Vérifications
 
-Depuis la racine, comme la CI (`.forgejo/workflows/ci.yml`) :
+Depuis la racine, comme la CI (`.github/workflows/ci.yml`) :
 
 ```sh
 gofmt -l .        # doit ne rien afficher, sinon la CI échoue
@@ -44,7 +44,7 @@ La CI lance les tests du panel sous Linux (`docker buildx build --target test .`
   un bouton, une route ou un comportement visible nouveau = numéro du milieu.
 - Pré-release : section datée dans les deux CHANGELOG, dont la première phrase
   devient le titre (relire avec `go run ./tools/releasenotes vX.Y.Z`), puis tag
-  annoté `vX.Y.Z` poussé sur `origin` (Forgejo). La release définitive
+  annoté `vX.Y.Z` poussé sur GitHub. La release définitive
   (`promote.yml`) est lancée par l'utilisateur.
 - La branche `blocklists` est orpheline et ne vit que sur GitHub : ne jamais la
   fusionner dans main.

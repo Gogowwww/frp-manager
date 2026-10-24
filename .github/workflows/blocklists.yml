@@ -1,0 +1,53 @@
+# GitHub Actions : listes communautaires du pare-feu, ajoutées sans relecture.
+# GitHub Actions: community firewall lists, added without review.
+#
+# Toutes les 10 minutes, lit les issues ouvertes « Nouvelle liste … » /
+# « Mise à jour de la liste … » (préparées par le panel), les vérifie, ajoute
+# les listes acceptées au catalogue (branche « blocklists ») et ferme chaque
+# issue avec un commentaire. Le travail est fait par le programme Go
+# tools/blocklists de ce dépôt (mêmes règles que le panel).
+# Every 10 minutes, reads the open "New list …" / "List update …" issues
+# (prepared by the panel), checks them, adds the accepted lists to the catalog
+# ("blocklists" branch) and closes each issue with a comment. The work is done
+# by the Go program tools/blocklists of this repository (same rules as the
+# panel).
+
+name: Listes communautaires
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # push sur la branche blocklists
+      issues: write # commenter et fermer les issues
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: blocklists
+          path: catalog
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
+      - name: Ajouter les listes publiées
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          export GIT_AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git -C catalog config user.name "FRP Manager (listes)"
+          git -C catalog config user.email "Gogowwww@users.noreply.github.com"
+          cd src
+          go run ./tools/blocklists -dir ../catalog sync

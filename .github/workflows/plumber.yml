@@ -2,10 +2,8 @@
 # réglages du dépôt public (protection du main…), à chaque pull request et à
 # chaque avance du main public.
 #
-# Seule exception à « toute la CI tourne sur Forgejo » : Plumber ne lit que
-# .github/workflows et ne publie son score (badge du README) que depuis une CI
-# GitHub ou GitLab, par OIDC (id-token). Les workflows .forgejo/ ne sont pas
-# analysés.
+# Plumber ne lit que .github/workflows et ne publie son score (badge du README)
+# que depuis une CI GitHub ou GitLab, par OIDC (id-token).
 #
 # score-push : le score et le nom du dépôt sont publiés sur
 # score.getplumber.io (public, comme le dépôt), depuis le main seulement.

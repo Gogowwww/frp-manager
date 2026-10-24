@@ -13,6 +13,15 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Toute la CI sur GitHub Actions** : tests, image `dev`, pré-release,
+  promotion, listes communautaires et site tournent maintenant depuis
+  `.github/workflows/` au lieu du Forgejo (`.forgejo/workflows/` est supprimé,
+  ainsi que le workflow « Publier sur GitHub »). Le dépôt apt et le dépôt privé
+  du site restent sur le Forgejo : l'adresse des machines installées ne change
+  pas.
+
 ## [0.4.0] - 2026-10-24
 
 Le panel peut envoyer des statistiques anonymes, si son administrateur les active.

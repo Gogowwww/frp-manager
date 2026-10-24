@@ -1,0 +1,150 @@
+# GitHub Actions : intégration continue du panel Go, à chaque push sur main et
+# sur les pull requests : tests Go (go vet, go test, gofmt), programme des trois
+# architectures, archive frp-manager.zip et paquets .deb, outils et scripts.
+# GitHub Actions: continuous integration of the Go panel, on every push to main
+# and on pull requests: Go tests (go vet, go test, gofmt), program for the
+# three architectures, frp-manager.zip archive and .deb packages, tools and
+# scripts.
+#
+# Sur main seulement : les paquets partent dans le canal « dev » du dépôt APT
+# (hébergé par le Forgejo, pour que l'adresse des machines déjà installées ne
+# change pas), puis s'installent par apt dans des conteneurs Debian 12 et
+# Ubuntu 24.04 neufs.
+# On main only: the packages go to the "dev" channel of the APT repository
+# (hosted by Forgejo, so that the address of already installed machines does
+# not change), then are installed with apt in fresh Debian 12 and Ubuntu 24.04
+# containers.
+#
+# Prérequis : secret FORGEJO_PACKAGES_TOKEN (jeton Forgejo, portée write:package).
+# Requirements: secret FORGEJO_PACKAGES_TOKEN (Forgejo token, write:package scope).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+env:
+  FORGEJO_URL: https://forgejo.gogow.fr
+  APT_OWNER: administrator
+  APT_REPO: https://forgejo.gogow.fr/api/packages/administrator/debian
+
+jobs:
+  go:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      # Actions épinglées par SHA (contrôle de Plumber) / Actions pinned by SHA (Plumber check)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: go vet, go test, gofmt
+        run: docker buildx build --target test --progress plain .
+      - name: Programme (trois architectures) et paquets .deb
+        run: |
+          set -eu
+          SHORT=$(git rev-parse --short=7 HEAD)
+          BASE=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)
+          PANEL_VERSION="dev-$SHORT"
+          DEB_VERSION="${BASE:-0.0.0}+dev.${{ github.run_number }}.g$SHORT"
+          docker buildx build --target binaries --build-arg PANEL_VERSION="$PANEL_VERSION" \
+            --output type=local,dest=ci/bin .
+          ls -l ci/bin
+          sh -n packaging/deb/postinst && sh -n packaging/deb/prerm && sh -n packaging/deb/postrm
+          mkdir -p ci/frp-manager/bin
+          cp ci/bin/frp-manager-linux-* ci/frp-manager/bin/
+          cp panel/install.sh ci/frp-manager/
+          sed "s/__VERSION__/$PANEL_VERSION/" packaging/python-bridge/app.py > ci/frp-manager/app.py
+          (cd ci && zip -qr frp-manager.zip frp-manager && ls -l frp-manager.zip)
+          sh packaging/deb/build-deb.sh "$DEB_VERSION" ci/bin ci/deb
+          for f in ci/deb/*.deb; do
+            dpkg-deb --field "$f" Package Version Architecture | tr '\n' ' '; echo
+          done
+      - name: Dépôt APT, canal dev
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+        run: sh packaging/deb/publish-apt.sh dev ci/deb/*.deb
+
+  # Le reste du dépôt (le panel est testé par le job go, dans l'image) : outils
+  # (robot des listes, notes de release), code partagé, vulnérabilités connues
+  # des dépendances, syntaxe des scripts shell et de la passerelle Python.
+  # The rest of the repository (the panel is tested by the go job, in the image):
+  # tools (lists bot, release notes), shared code, known vulnerabilities of
+  # dependencies, syntax of the shell scripts and of the Python bridge.
+  outils:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Vérifications
+        run: |
+          set -eu
+          git config --global user.name ci
+          git config --global user.email ci@frp-manager.invalid
+          test -z "$(gofmt -l .)" || { echo "gofmt :"; gofmt -l .; exit 1; }
+          go vet ./...
+          go test -count=1 ./internal/... ./tools/...
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          bash -n panel/install.sh
+          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh; do
+            sh -n "$f"
+          done
+          python3 -m py_compile packaging/python-bridge/app.py
+
+  # Installation par apt, comme sur une vraie machine : clé, source, paquet,
+  # panel qui répond, puis désinstallation complète.
+  # Installation with apt, like on a real machine: key, source, package, panel
+  # answering, then complete uninstall.
+  apt:
+    needs: go
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "ubuntu:24.04"]
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: apt install frp-manager (canal dev)
+        run: |
+          set -eu
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq curl ca-certificates iproute2 procps >/dev/null
+          install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL "$APT_REPO/repository.key" -o /etc/apt/keyrings/frp-manager.asc
+          echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $APT_REPO dev main" > /etc/apt/sources.list.d/frp-manager.list
+          apt-get update -qq
+          apt-cache policy frp-manager
+          apt-get install -y frp-manager
+          frp-manager --version
+          test -f /etc/frp/frps.toml && grep bindPort /etc/frp/frps.toml
+          test -f /etc/systemd/system/frps.service
+          # Pas de systemd dans le conteneur : le panel est lancé à la main
+          frp-manager > /tmp/panel.log 2>&1 &
+          code=000
+          for i in $(seq 1 30); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8765/setup || true)
+            [ "$code" = 200 ] && break
+            sleep 1
+          done
+          cat /tmp/panel.log
+          [ "$code" = 200 ] || { echo "le panel ne répond pas (HTTP $code)"; exit 1; }
+          echo "panel : https://127.0.0.1:8765/setup → HTTP 200"
+          pkill frp-manager || true
+          apt-get purge -y frp-manager
+          [ ! -e /usr/bin/frp-manager ] && [ ! -e /etc/frp-manager ] && echo "désinstallation complète"
