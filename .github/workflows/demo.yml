@@ -43,7 +43,10 @@ jobs:
   publish:
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write # branche gh-pages (GitHub Pages)
+    concurrency:
+      group: site-pages
+      cancel-in-progress: false
     steps:
       # Historique complet : les dates « lastmod » du sitemap viennent de git log
       # Full history: the sitemap "lastmod" dates come from git log
@@ -93,3 +96,32 @@ jobs:
             commit --quiet -m "Site ${VERSION:-dev} (frp-manager $SHA)"
           git -c "http.extraHeader=$AUTH" push --quiet "$URL" HEAD:main
           echo "Publié : $DEMO_REPO ($(git rev-parse --short HEAD))"
+
+      # Le même site (dossier site/ du dépôt de démo) est aussi publié sur
+      # GitHub Pages, branche gh-pages, sous le domaine du CNAME. La branche est
+      # réécrite en un seul commit à chaque publication. Les statistiques
+      # anonymes (/api/ping) ne passent pas par là : Pages est statique.
+      # The same site (site/ folder of the demo repository) is also published on
+      # GitHub Pages, gh-pages branch, under the CNAME domain. The branch is
+      # rewritten as a single commit on each publication. The anonymous
+      # statistics (/api/ping) do not go through there: Pages is static.
+      - name: Publier sur GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_DOMAIN: frp-manager.org
+        run: |
+          set -eu
+          [ -f out/site/index.html ] || { echo "out/site/index.html absent : site non construit"; exit 1; }
+          rm -rf pages
+          cp -r out/site pages
+          printf '%s\n' "$SITE_DOMAIN" > pages/CNAME
+          touch pages/.nojekyll
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          cd pages
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name="FRP Manager (site)" -c user.email="site@frp-manager.invalid" \
+            commit -q -m "Site : ${GITHUB_SHA::7}"
+          git -c "http.https://github.com/.extraheader=$AUTH" push -q --force \
+            "https://github.com/${{ github.repository }}.git" gh-pages
+          echo "Publié sur gh-pages (domaine $SITE_DOMAIN)"

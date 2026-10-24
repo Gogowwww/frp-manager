@@ -18,7 +18,8 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 - **Nouvelle adresse du projet** : le site, la démo en ligne et la
   documentation passent sur [frp-manager.org](https://frp-manager.org).
   L'ancienne adresse continue de répondre, y compris pour les statistiques
-  anonymes des panels déjà installés.
+  anonymes des panels déjà installés. Le site est aussi publié sur GitHub
+  Pages (`demo.yml`, branche `gh-pages`).
 
 ## [0.4.1] - 2026-10-25
 
