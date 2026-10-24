@@ -7,7 +7,7 @@
 
 <!-- Tick what applies. / Cochez ce qui s'applique. -->
 
-- [ ] `go test ./panel`, `go vet ./panel` and `ruff check .` pass / passent
+- [ ] `go test ./panel` and `go vet ./panel` pass / passent
 - [ ] Tested with the install script / Testé avec le script d'installation (`install.sh`)
 - [ ] Tested with Docker / Testé sous Docker
 - [ ] Tested in the interface, light and dark theme, mobile if the layout changes / Testé dans l'interface, thèmes clair et sombre, mobile si l'affichage change

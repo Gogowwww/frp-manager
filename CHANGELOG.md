@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Removed
+
+- **`pyproject.toml`**: the ruff configuration for the Python bridge, which
+  the CI never ran. The bridge is still checked with
+  `python3 -m py_compile`, like in the CI.
+
 ## [0.3.0] - 2026-10-24
 
 The public port of a new port is picked by the frps server again.

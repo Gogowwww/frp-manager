@@ -47,7 +47,7 @@ separately, from this repository.
 
 ```bash
 go vet ./... && go test ./... && gofmt -l .
-ruff check .        # Python bridge (packaging/python-bridge)
+python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
 ```
 
 - One pull request = one topic. Describe the problem it solves and how you

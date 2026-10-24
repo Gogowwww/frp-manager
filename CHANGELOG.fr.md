@@ -13,6 +13,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Retiré
+
+- **`pyproject.toml`** : la configuration de ruff pour la passerelle Python,
+  que la CI ne lançait pas. La passerelle reste vérifiée avec
+  `python3 -m py_compile`, comme dans la CI.
+
 ## [0.3.0] - 2026-10-24
 
 Le port public d'un nouveau port est de nouveau choisi par le serveur frps.

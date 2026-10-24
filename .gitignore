@@ -1,7 +1,6 @@
 # ── Données sensibles frp / panel (ne JAMAIS committer) ───────────────────────
 # Configs réelles (tokens, IP, domaines)
 *.toml
-!pyproject.toml
 *.ini
 frp-manager.json
 *.local.*

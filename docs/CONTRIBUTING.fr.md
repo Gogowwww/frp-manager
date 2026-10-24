@@ -48,7 +48,7 @@ ni le site ni le wiki directement. Le site et la démo en ligne sont construits
 
 ```bash
 go vet ./... && go test ./... && gofmt -l .
-ruff check .        # passerelle Python (packaging/python-bridge)
+python3 -m py_compile packaging/python-bridge/app.py   # passerelle Python
 ```
 
 - Une pull request = un sujet. Décrivez le problème résolu et comment vous
