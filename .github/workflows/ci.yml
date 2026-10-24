@@ -46,6 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # les tags : version du paquet dev (git describe) / tags: dev package version (git describe)
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: go vet, go test, gofmt
         run: docker buildx build --target test --progress plain .
