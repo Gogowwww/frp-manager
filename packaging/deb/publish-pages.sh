@@ -20,14 +20,14 @@
 # push), with APT_GPG_KEY.
 #
 # Disposition : pool/<distribution>/*.deb, dists/<distribution>/ (Release,
-# InRelease, Release.gpg, Packages par architecture), repository.key, CNAME,
-# index.html et 404.html (page d'accueil). La
+# InRelease, Release.gpg, Packages par architecture), repository.key, CNAME et
+# index.html (redirection vers frp-manager.org). La
 # branche est réécrite en un seul commit à chaque publication (l'historique des
 # binaires ne s'accumule pas). Le canal « dev » ne garde que les 5 versions les
 # plus récentes par architecture.
 # Layout: pool/<distribution>/*.deb, dists/<distribution>/ (Release, InRelease,
-# Release.gpg, Packages per architecture), repository.key, CNAME, index.html and
-# 404.html (home page). The branch is
+# Release.gpg, Packages per architecture), repository.key, CNAME and index.html
+# (redirect to frp-manager.org). The branch is
 # rewritten as a single commit on each publication (the binaries history does
 # not pile up). The "dev" channel only keeps the 5 most recent versions per
 # architecture.
@@ -113,81 +113,29 @@ gpg --batch --yes --local-user "$KEYID" --armor --detach-sign -o "dists/$DIST/Re
 gpg --batch --yes --armor --export "$KEYID" > repository.key
 touch .nojekyll
 
-# Page d'accueil : comment ajouter le dépôt, avec l'empreinte de la clé. Seulement
-# une fois le canal stable publié : ses commandes l'utilisent, une page qui ne
-# marche pas est pire que pas de page.
-# Home page: how to add the repository, with the key fingerprint. Only once the
-# stable channel is published: its commands use it, a page that does not work is
-# worse than no page.
-rm -f index.html 404.html
-if [ -f dists/stable/Release ]; then
-FPR=$(gpg --list-keys --with-colons --fingerprint "$KEYID" | awk -F: '/^fpr/ {print $10; exit}' | sed 's/\(....\)/\1 /g; s/ $//')
-DOMAIN="${APT_DOMAIN:-apt.frp-manager.org}"
-cat > index.html <<HTML
+# Racine : redirection vers le site du projet (Pages ne sait pas faire de 301).
+# Les chemins du dépôt (dists, pool, repository.key) ne sont pas touchés ; pas de
+# 404.html : un fichier absent doit rester une vraie 404 pour apt.
+# Root: redirect to the project website (Pages cannot do a 301). The repository
+# paths (dists, pool, repository.key) are untouched; no 404.html: a missing file
+# must stay a real 404 for apt.
+rm -f 404.html
+cat > index.html <<'HTML'
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>FRP Manager apt repository</title>
-<meta name="description" content="Signed apt repository of FRP Manager, the web panel for frp (frps and frpc).">
-<link rel="canonical" href="https://$DOMAIN/">
-<style>
-:root{--bg:#fff;--fg:#14202b;--mut:#5b6b79;--card:#f3f6f8;--acc:#0e9f6e;--line:#d9e1e7}
-@media (prefers-color-scheme:dark){:root{--bg:#0e1319;--fg:#e6edf3;--mut:#93a1ae;--card:#161d25;--line:#26313c}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:46rem;margin:0 auto;padding:2.5rem 1.25rem 4rem}
-h1{font-size:1.8rem;margin:0 0 .25rem}
-h2{font-size:1.15rem;margin:2rem 0 .5rem}
-p{margin:.5rem 0}
-.mut{color:var(--mut)}
-pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.9rem 1rem;overflow-x:auto;font:.9rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
-a{color:var(--acc)}
-table{border-collapse:collapse;width:100%;font-size:.95rem}
-td,th{border-bottom:1px solid var(--line);padding:.45rem .5rem;text-align:left;vertical-align:top}
-.fpr{word-break:break-word}
-hr{border:0;border-top:1px solid var(--line);margin:2.5rem 0}
-</style>
+<title>FRP Manager</title>
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0; url=https://frp-manager.org/">
+<link rel="canonical" href="https://frp-manager.org/">
 </head>
 <body>
-<main>
-<h1>FRP Manager apt repository</h1>
-<p class="mut">Signed packages for Debian and Ubuntu (amd64, arm64, armhf). <a href="https://frp-manager.org">frp-manager.org</a> · <a href="https://github.com/Gogowwww/frp-manager">GitHub</a></p>
-
-<h2>Install</h2>
-<pre>sudo install -d -m 0755 /etc/apt/keyrings
-sudo curl -fsSL https://$DOMAIN/repository.key -o /etc/apt/keyrings/frp-manager.asc
-echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://$DOMAIN stable main" \
-  | sudo tee /etc/apt/sources.list.d/frp-manager.list
-sudo apt update &amp;&amp; sudo apt install frp-manager</pre>
-<p>Updates then arrive with <code>sudo apt update &amp;&amp; sudo apt upgrade</code>.</p>
-
-<h2>Channels</h2>
-<table>
-<tr><th>Distribution</th><th>Content</th></tr>
-<tr><td><code>stable</code></td><td>Final releases. This is the one to use.</td></tr>
-<tr><td><code>testing</code></td><td>Pre-releases, before they become final.</td></tr>
-<tr><td><code>dev</code></td><td>Snapshots of the main branch, for testing only.</td></tr>
-</table>
-
-<h2>Check the key</h2>
-<p>Packages are signed. Compare the fingerprint of the downloaded key with this one:</p>
-<pre class="fpr">$FPR</pre>
-<pre>gpg --show-keys --with-fingerprint /etc/apt/keyrings/frp-manager.asc</pre>
-
-<hr>
-<h2>Dépôt apt de FRP Manager</h2>
-<p>Paquets signés pour Debian et Ubuntu (amd64, arm64, armhf). Les commandes ci-dessus sont les mêmes : ajoutez la clé et la source, puis <code>sudo apt install frp-manager</code>. La distribution <code>stable</code> reçoit les versions définitives, <code>testing</code> les pré-releases et <code>dev</code> des instantanés de test. Comparez l'empreinte de la clé téléchargée avec celle ci-dessus avant de lui faire confiance.</p>
-<p class="mut">Ce dépôt est généré automatiquement depuis <a href="https://github.com/Gogowwww/frp-manager">Gogowwww/frp-manager</a> : ne le modifiez pas à la main.</p>
-</main>
+<p>Redirecting to <a href="https://frp-manager.org/">frp-manager.org</a>…</p>
 </body>
 </html>
 HTML
-cp index.html 404.html
-fi
 printf '%s\n' "${APT_DOMAIN:-apt.frp-manager.org}" > CNAME
 
 if [ -n "${PAGES_LOCAL:-}" ]; then
