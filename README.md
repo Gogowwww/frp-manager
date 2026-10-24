@@ -84,7 +84,7 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 - **System hardening**: no shell commands built from user input, allow-listed service and container names, configs confined to frp's directories, safe archive extraction.
 - **Supply chain**: frp archives and panel updates checked against their published SHA-256; third-party mirrors (ghproxy, ghfast, gh-proxy) can be disabled and are never used without a checksum.
 
-> **Docker warning**: the container uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket. **That is root-equivalent access to the host**: anyone who controls the panel controls the machine. Read [docs/docker.md](docs/docker.md) before deploying it.
+> **Docker warning**: the container uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket. **That is root-equivalent access to the host**: anyone who controls the panel controls the machine. Read [the Docker section of the installation guide](docs/installation.md#docker-and-portainer) before deploying it.
 
 Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 
@@ -92,8 +92,7 @@ Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 
 - [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
 - [Wiki](https://github.com/Gogowwww/frp-manager/wiki): the same documentation, on GitHub
-- [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
-- [Docker: privileges and risks](docs/docker.md)
+- [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images and their privileges, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Security policy](docs/SECURITY.md)
 - [Changelog](CHANGELOG.md)
 

@@ -15,6 +15,10 @@ older than 0.0.51 are described in the
 
 ### Removed
 
+- **Fewer documentation files**: the Docker page (privileges and risks) is
+  now the "Docker and Portainer" section of the installation guide, the code
+  of conduct is down to a short summary of the Contributor Covenant, and the
+  go-mmproxy history section and the internal GitHub settings note are gone.
 - **`pyproject.toml`**: the ruff configuration for the Python bridge, which
   the CI never ran. The bridge is still checked with
   `python3 -m py_compile`, like in the CI.

@@ -39,7 +39,6 @@ type page struct {
 var pages = []page{
 	{"README.md", "README.fr.md", "Home", "Accueil"},
 	{"docs/installation.md", "docs/installation.fr.md", "Installation and configuration", "Installation et configuration"},
-	{"docs/docker.md", "docs/docker.fr.md", "Docker: privileges and risks", "Docker : privilèges et risques"},
 	{"docs/SECURITY.md", "docs/SECURITY.fr.md", "Security policy", "Politique de sécurité"},
 	{"docs/CONTRIBUTING.md", "docs/CONTRIBUTING.fr.md", "Contributing", "Contribuer"},
 	{"docs/CODE_OF_CONDUCT.md", "docs/CODE_OF_CONDUCT.fr.md", "Code of conduct", "Code de conduite"},

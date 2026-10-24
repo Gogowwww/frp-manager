@@ -14,7 +14,6 @@
 - [Mot de passe perdu](#mot-de-passe-perdu)
 - [Structure des fichiers](#structure-des-fichiers)
 - [Désinstallation](#désinstallation)
-- [Historique : retrait de go-mmproxy](#historique--retrait-de-go-mmproxy)
 
 ## Prérequis
 
@@ -109,9 +108,101 @@ Les images sont publiées pour `amd64`, `arm64` (Raspberry Pi 4/5, serveurs ARM)
 et `armv7` à partir de la version 0.0.54 ; Docker choisit automatiquement la
 bonne. Les versions antérieures n'existent qu'en `amd64`.
 
-Le conteneur pilote frp sur l'hôte avec `pid: host` et `nsenter`, ce qui lui
-donne un accès équivalent à root sur l'hôte : lisez
-[docker.fr.md](docker.fr.md) avant de le déployer.
+### Ce que fait le conteneur
+
+Le panel tourne dans le conteneur mais pilote frp **sur l'hôte** : services
+systemd `frps`/`frpc`, journaux, binaires dans `/usr/local/bin`, règles
+nftables du pare-feu. Il n'embarque pas systemd ; il exécute les commandes
+dans l'hôte avec `nsenter` :
+
+```
+nsenter -t 1 -m -u -i -n -p -- systemctl restart frpc
+```
+
+`-t 1` vise le processus 1 **de l'hôte**, visible grâce à `pid: host` ; les
+options `-m -u -i -n -p` font entrer la commande dans ses espaces de noms
+(montages, nom d'hôte, IPC, réseau, processus). La commande s'exécute alors
+sur le système de fichiers et avec les services de l'hôte, avec les
+capacités du conteneur.
+
+### Implications : accès équivalent à root sur l'hôte
+
+Avec la configuration fournie (`pid: host`, `privileged: true`,
+`network_mode: host`, socket Docker monté), **le conteneur n'isole rien** :
+
+- `privileged: true` accorde toutes les capacités Linux, l'accès aux
+  périphériques et désactive les profils seccomp et AppArmor par défaut ;
+- `pid: host` + `nsenter -t 1` permettent de lancer n'importe quelle commande
+  comme root dans l'hôte ;
+- le socket Docker (`/var/run/docker.sock`) permet à lui seul de créer un
+  conteneur qui monte `/` de l'hôte : c'est aussi un accès root.
+
+Conséquences pratiques :
+
+1. Toute personne connectée au panel contrôle la machine hôte. C'est déjà le
+   cas en installation classique (le service tourne en root) : Docker ne
+   réduit pas ce risque.
+2. Une faille du panel exploitable à distance donnerait un accès root à
+   l'hôte. D'où la configuration initiale obligatoire, l'écoute sur
+   `127.0.0.1` par défaut et les protections décrites dans
+   [SECURITY.fr.md](SECURITY.fr.md).
+3. N'exposez pas le panel sur Internet sans reverse proxy, VPN ou filtrage
+   par IP : voir
+   [Accéder au panel depuis un autre poste](#accéder-au-panel-depuis-un-autre-poste).
+
+### Réduire les privilèges : état des lieux
+
+La demande est légitime : remplacer `privileged: true` par
+`cap_drop: [ALL]` plus quelques capacités, `read_only: true` et
+`no-new-privileges`. **Cette réduction n'est pas encore validée** : elle n'a
+pas pu être testée sur un hôte Docker réel, et la configuration fournie reste
+donc `privileged: true`. Voici l'analyse, pour qui voudrait l'essayer.
+
+Ce dont le panel a besoin, fonctionnalité par fonctionnalité :
+
+| Fonctionnalité | Mécanisme | Capacités probablement nécessaires |
+|---|---|---|
+| Entrer dans les espaces de noms de l'hôte | `nsenter -t 1` (setns) | `SYS_ADMIN`, `SYS_PTRACE`, `SYS_CHROOT` |
+| Services frp, journaux | `systemctl`, `journalctl` via nsenter | aucune de plus (socket systemd, root) |
+| Pare-feu | `nft` via nsenter | `NET_ADMIN` |
+| Écriture des binaires, configs, unités | fichiers de l'hôte | `DAC_OVERRIDE`, `CHOWN`, `FOWNER` |
+| Bouton « Installer nftables » | gestionnaire de paquets de l'hôte | `SETUID`, `SETGID`, `CHOWN`, `FOWNER`, `DAC_OVERRIDE`, `KILL`… |
+
+Limites de l'exercice :
+
+- **`SYS_ADMIN` suffit déjà à sortir du conteneur** (c'est la capacité qui
+  permet `setns` vers l'hôte). Le gain réel d'un `cap_drop` est donc faible
+  tant que le panel doit piloter l'hôte : il bloque surtout des attaques
+  opportunistes, pas un attaquant qui contrôle le panel.
+- Le profil seccomp par défaut de Docker n'autorise `setns` qu'avec
+  `SYS_ADMIN` ; AppArmor (`docker-default`) peut aussi bloquer certaines
+  opérations. Il faudra peut-être `security_opt: [apparmor:unconfined]`.
+- `read_only: true` demande un `tmpfs` pour `/tmp` (téléchargements et
+  extractions temporaires) ; les dossiers écrits sont déjà des volumes.
+- Le socket Docker reste un accès root : retirez-le si vous n'avez pas de
+  conteneurs frp à piloter.
+
+Configuration candidate, **non vérifiée**, à tester sur une machine de test :
+
+```yaml
+    # à la place de privileged: true
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SYS_PTRACE, SYS_CHROOT, NET_ADMIN, DAC_OVERRIDE, CHOWN, FOWNER, SETUID, SETGID, KILL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+```
+
+Points à vérifier après l'essai : démarrage/arrêt d'un service frp depuis le
+panel, journaux en direct, installation de frp (Réglages → Mises à jour),
+application d'une règle de pare-feu, suppression d'une instance. Si vous
+validez une configuration réduite qui fonctionne, une pull request est la
+bienvenue.
+
+**Alternative plus sûre** : l'installation classique (`install.sh`) sans
+Docker, avec le panel sur `127.0.0.1` et un accès par tunnel SSH ou VPN.
 
 ## Depuis une version Python (0.0.57 et avant)
 
@@ -353,12 +444,3 @@ Avec le paquet `.deb` : `sudo apt purge frp-manager`.
 
 Les configurations frp (`/etc/frp/`) et les binaires (`/usr/local/bin/`) sont
 conservés.
-
-## Historique : retrait de go-mmproxy
-
-La version 0.0.26 a retiré l'option « IP réelle » (go-mmproxy). Si vous
-l'utilisiez, le panel remet automatiquement les tunnels concernés sur leur
-vrai service au premier démarrage, redémarre frpc, puis supprime les relais,
-les règles de routage et le binaire `go-mmproxy`. Pour transmettre l'IP des
-visiteurs, utilisez l'option **PROXY protocol** avec un service qui la prend en
-charge (nginx, HAProxy…).

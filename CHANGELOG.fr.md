@@ -15,6 +15,11 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Retiré
 
+- **Moins de fichiers de documentation** : la page Docker (privilèges et
+  risques) devient la section « Docker et Portainer » du guide d'installation,
+  le code de conduite se résume au Contributor Covenant en quelques lignes, et
+  la section d'historique go-mmproxy ainsi que la note interne sur les
+  réglages GitHub disparaissent.
 - **`pyproject.toml`** : la configuration de ruff pour la passerelle Python,
   que la CI ne lançait pas. La passerelle reste vérifiée avec
   `python3 -m py_compile`, comme dans la CI.

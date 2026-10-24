@@ -13,7 +13,7 @@ func TestTarget(t *testing.T) {
 		"README.md": {
 			"docs/installation.md#install-with-apt": "Installation-and-configuration#install-with-apt",
 			"README.fr.md":                          "Accueil",
-			"docs/docker.fr.md":                     "Docker-privil%C3%A8ges-et-risques",
+			"docs/SECURITY.fr.md":                   "Politique-de-s%C3%A9curit%C3%A9",
 			"docs/img/dashboard-en.png":             "https://raw.githubusercontent.com/o/r/main/docs/img/dashboard-en.png",
 			"LICENSE":                               "https://github.com/o/r/blob/main/LICENSE",
 			"https://example.org/a":                 "https://example.org/a",
@@ -37,11 +37,11 @@ func TestTarget(t *testing.T) {
 func TestConvert(t *testing.T) {
 	w := newWiki("o/r")
 	in := "# Installation\n\n**English** · [Français](installation.fr.md)\n\n" +
-		"See [Docker](docker.md#risks) and [![badge](https://img/x.svg)](../LICENSE).\n\n" +
+		"See [Security](SECURITY.md#risks) and [![badge](https://img/x.svg)](../LICENSE).\n\n" +
 		"```bash\necho '[a](b.md)'\n```\n\n[ref]: SECURITY.md\n"
 	got := w.convert("docs/installation.md", in, false)
 	want := "**English** · [Français](Installation-et-configuration)\n\n" +
-		"See [Docker](Docker-privileges-and-risks#risks) and [![badge](https://img/x.svg)](https://github.com/o/r/blob/main/LICENSE).\n\n" +
+		"See [Security](Security-policy#risks) and [![badge](https://img/x.svg)](https://github.com/o/r/blob/main/LICENSE).\n\n" +
 		"```bash\necho '[a](b.md)'\n```\n\n[ref]: Security-policy\n"
 	if got != want {
 		t.Fatalf("obtenu :\n%s\nattendu :\n%s", got, want)
