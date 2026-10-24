@@ -37,7 +37,7 @@ Not ready to install? The [live demo](https://frp-manager.gogow.fr/demo/) runs t
 ## Features
 
 - **Dashboard**: automatic detection of frps/frpc systemd services, binaries, configs and Docker containers; start, stop, restart, start on boot; live status over WebSocket; nicknames; a deleted frps/frpc service can be reinstalled in one click.
-- **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options. Settings the editor does not handle are kept as they are. A new port gets a random public port; left without a number, the port assigned by the server can be shown, after a confirmation, through frpc's local dashboard (see [SECURITY](docs/SECURITY.md)).
+- **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options. Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](docs/SECURITY.md)).
 - **Firewall (frps)**: allow-only or block rules by address, network or whole provider (AS number), applied in the kernel with nftables before Docker's NAT; blocked connections in real time; optional community lists.
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
 - **Logs**: systemd journal, log file or Docker container, streamed live (WebSocket, SSE fallback), with a filter.

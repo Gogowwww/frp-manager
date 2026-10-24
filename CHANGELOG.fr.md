@@ -4,13 +4,22 @@
 
 Toutes les évolutions notables de FRP Manager sont notées ici.
 
-Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et les
-numéros de version se suivent (`0.0.50`, `0.0.51`…) : chaque version sort
+Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/) et,
+depuis 0.1.0, les numéros suivent le
+[versionnage sémantique](https://semver.org/lang/fr/) : chaque version sort
 d'abord en pré-release, puis devient la release définitive avec le même
 numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 [notes de release GitHub](https://github.com/Gogowwww/frp-manager/releases).
 
 ## [Non publié]
+
+### Retiré
+
+- **Port public tiré par le panel** (0.1.1) : un nouveau port n'a plus de
+  port public tiré au hasard, et les boutons « Aléatoire » de l'éditeur et
+  « Tirer un port au hasard » de la page Ports disparaissent. Laissé vide, le
+  port public est choisi par le serveur frps ; « Afficher le port attribué »
+  reste là pour le voir. Un numéro saisi à la main reste possible.
 
 ## [0.2.1] - 2026-10-20
 

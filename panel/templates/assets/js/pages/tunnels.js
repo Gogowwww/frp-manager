@@ -12,7 +12,7 @@ import {
 } from '../ui.js';
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
-  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret, randomPort,
+  PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -203,7 +203,6 @@ function renderStatusHint() {
     if (!st.admin) {
       const actions = [];
       if (fixable) actions.push(button(t('tunnels.showAssigned'), { size: 'sm', iconName: 'eye', onClick: (e) => showAssigned(e.currentTarget) }));
-      if (can('config.write')) actions.push(button(t('tunnels.pickPorts'), { size: 'sm', iconName: 'refresh', onClick: pickPorts }));
       hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin'), actions });
     } else if (!st.reachable) {
       hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable'),
@@ -251,12 +250,6 @@ async function restartFrpc() {
   post(`/api/service/${encodeURIComponent(S.iid)}/restart`).catch(() => {});
   const up = await waitRunning(S.iid);
   toast(up ? t('tunnels.restarted', { name: displayName(S.iid) }) : t('tunnels.restartUnknown'), up ? 'success' : 'info');
-}
-
-/** Donne un port tiré au hasard aux ports sans numéro (à enregistrer). */
-function pickPorts() {
-  S.proxies = S.proxies.map((p) => (serverPicked(p) ? { ...p, remotePort: randomPort() } : p));
-  render();
 }
 
 function publicEndpoint(p) {
@@ -348,7 +341,7 @@ const PORT_RE = /^\d{1,5}$/;
 const validPort = (v) => PORT_RE.test(v) && +v >= 1 && +v <= 65535;
 
 function editProxy(existing) {
-  const draft = existing ? { ...existing, extras: existing.extras } : { ...newProxy(), remotePort: randomPort() };
+  const draft = existing ? { ...existing, extras: existing.extras } : newProxy();
 
   openDialog({
     title: existing ? t('tunnels.editTitle', { name: existing.name }) : t('tunnels.newTitle'),
@@ -365,11 +358,7 @@ function editProxy(existing) {
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
 
-      const remoteGroup = h('div', { class: 'input-group' }, remotePort, button(t('config.randomPort'), {
-        iconName: 'refresh', title: t('config.randomPortHint'),
-        onClick: () => { remotePort.value = randomPort(); remotePort.dispatchEvent(new Event('input', { bubbles: true })); },
-      }));
-      const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remoteGroup });
+      const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
 

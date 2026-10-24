@@ -2,7 +2,8 @@
 # Python au programme Go (packaging/python-bridge). Le panel et le site sont en
 # Go (go test ./...).
 
-# Linter des scripts (lancé par la CI) : erreurs réelles d'abord, pas le style.
+# Linter des scripts (à lancer à la main : ruff check ; la CI ne fait que
+# py_compile) : erreurs réelles d'abord, pas le style.
 [tool.ruff]
 target-version = "py38"
 line-length = 120
