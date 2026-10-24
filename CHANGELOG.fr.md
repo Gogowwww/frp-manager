@@ -13,6 +13,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.4.0] - 2026-10-24
+
+Le panel peut envoyer des statistiques anonymes, si son administrateur les active.
+
+Pré-release.
+
 ### Ajouté
 
 - **Statistiques anonymes, sur accord** : une case dans la configuration
@@ -464,7 +470,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Gogowwww/frp-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Gogowwww/frp-manager/compare/v0.1.1...v0.2.0
