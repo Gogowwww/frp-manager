@@ -312,6 +312,7 @@ Everything is set from the **Settings** page. The underlying file is
 | `ssl_enabled` | HTTPS with a self-signed certificate | `true` |
 | `cookie_secure` | *Secure* cookie even without HTTPS on the panel side (TLS reverse proxy) | `false` |
 | `download_mirrors` | Third-party mirrors as a fallback to github.com to download frp | `true` |
+| `anonymous_stats` | Anonymous statistics sent once a day (see below) | `false` |
 | `nicknames` | Instance nicknames (managed by the interface) | `{}` |
 
 `bind_host`, `bind_port` and `ssl_enabled` apply the next time `frp-manager`
@@ -335,6 +336,26 @@ The panel therefore only accepts an archive from a mirror if its SHA-256
 matches the one published with the frp release, and says so in the install
 log. If github.com is reachable for you, disable the mirrors
 (**Settings → Network access**).
+
+### Anonymous statistics
+
+Off by default. If you turn it on (box in the initial setup, or
+**Settings → Panel access → Anonymous statistics**), the panel sends once a
+day, to `https://frp-manager.gogow.fr/api/ping`, exactly this and nothing
+else (shown in Settings before you turn it on):
+
+```json
+{"version": "0.4.0", "arch": "arm64", "install": "apt"}
+```
+
+- `version`: panel version; `arch`: `amd64`, `arm64` or `arm`; `install`:
+  `script`, `apt` or `docker`.
+- No identifier, no name, no address, no frp configuration. The website only
+  keeps daily counters per version, architecture and install method; it does
+  not store IP addresses (only used in memory, hashed, for 24 h, to limit
+  abuse).
+- It helps to know which versions are still in use, so as to plan
+  compatibility and updates. Turning it off stops the sending right away.
 
 ## Webhook notifications
 

@@ -13,6 +13,15 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Anonymous statistics, opt-in**: a box in the initial setup and a switch in
+  Settings → Panel access, both off by default. When turned on, the panel
+  sends once a day its version, architecture and install method
+  (`script`, `apt` or `docker`) to the project website, and nothing else: no
+  identifier, no address. Settings shows the exact content sent. It helps to
+  know which versions are still in use.
+
 ### Changed
 
 - **Protected GitHub repository**: `main` and `blocklists` can no longer be

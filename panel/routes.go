@@ -398,6 +398,9 @@ func init() {
 		}
 		safe["is_owner"] = c.currentUser()["id"] == ownerID
 		safe["has_password"] = !needsSetup()
+		// Contenu exact des statistiques anonymes, montré avant de les activer
+		// Exact content of the anonymous statistics, shown before turning them on
+		safe["anonymous_stats_payload"] = statsPayload()
 		c.JSON(J{"ok": true, "config": safe})
 	}))
 
@@ -455,6 +458,9 @@ func init() {
 		if v, ok := data["download_mirrors"]; ok {
 			patch["download_mirrors"] = truthy(v)
 		}
+		if v, ok := data["anonymous_stats"]; ok {
+			patch["anonymous_stats"] = truthy(v)
+		}
 		newPw := truthy(data["new_password"])
 		if newPw {
 			pw := pyStr(data["new_password"])
@@ -470,6 +476,11 @@ func init() {
 		}
 		if newPw {
 			c.startSession(ownerID) // cette session reste ouverte, les autres sont déconnectées
+		}
+		if truthy(patch["anonymous_stats"]) {
+			// Premier signal tout de suite, sans attendre la boucle horaire
+			// First ping right away, without waiting for the hourly loop
+			go sendStats()
 		}
 		c.JSON(J{"ok": true, "msg": c.M("Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.",
 			"Saved. Restart frp-manager to apply bind_host/port.")})

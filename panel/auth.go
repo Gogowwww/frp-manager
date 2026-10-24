@@ -712,8 +712,14 @@ func init() {
 			c.Fail(http.StatusConflict, c.M("Le panel est déjà configuré.", "The panel is already set up."))
 			return
 		}
-		_, err := cfgUpdate(Cfg{"username": user, "password_hash": hashPassword(pw)})
+		// Statistiques anonymes : case de la configuration initiale, décochée par défaut
+		// Anonymous statistics: initial setup checkbox, unchecked by default
+		stats := truthy(data["anonymous_stats"])
+		_, err := cfgUpdate(Cfg{"username": user, "password_hash": hashPassword(pw), "anonymous_stats": stats})
 		setupMu.Unlock()
+		if err == nil && stats {
+			go sendStats()
+		}
 		if err != nil {
 			c.Fail(http.StatusInternalServerError, err.Error())
 			return

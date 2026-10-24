@@ -292,7 +292,7 @@ const access = {
       host.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
       return;
     }
-    host.append(listenCard(cfg), downloadsCard(cfg));
+    host.append(listenCard(cfg), downloadsCard(cfg), statsCard(cfg));
   },
 };
 
@@ -348,6 +348,30 @@ function downloadsCard(cfg) {
         } catch (err) { toastError(err); }
       },
     }),
+  });
+}
+
+// Statistiques anonymes : désactivées par défaut, contenu exact affiché
+// Anonymous statistics: off by default, exact content shown
+function statsCard(cfg) {
+  return card({
+    title: t('settings.network.statsTitle'),
+    body: h('div', { class: 'form-stack' },
+      switchRow({
+        label: t('settings.network.stats'),
+        description: t('settings.network.statsDesc'),
+        checked: cfg.anonymous_stats === true,
+        onChange: async (checked) => {
+          try {
+            const d = await api('/api/manager/config', { method: 'POST', body: { anonymous_stats: checked } });
+            if (d.ok) toast(t(checked ? 'settings.network.statsOn' : 'settings.network.statsOff'), 'success');
+            else toastResult(d);
+          } catch (err) { toastError(err); }
+        },
+      }),
+      h('div', { class: 'field' },
+        h('span', { class: 'field-label' }, t('settings.network.statsPayload')),
+        h('div', { class: 'code-block' }, h('code', null, JSON.stringify(cfg.anonymous_stats_payload || {}))))),
   });
 }
 

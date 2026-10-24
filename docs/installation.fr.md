@@ -321,6 +321,7 @@ Tout se règle depuis la page **Réglages**. Le fichier sous-jacent est
 | `ssl_enabled` | HTTPS avec certificat auto-signé | `true` |
 | `cookie_secure` | Cookie *Secure* même sans HTTPS côté panel (reverse proxy TLS) | `false` |
 | `download_mirrors` | Miroirs tiers en repli de github.com pour télécharger frp | `true` |
+| `anonymous_stats` | Statistiques anonymes envoyées une fois par jour (voir plus bas) | `false` |
 | `nicknames` | Surnoms des instances (gérés par l'interface) | `{}` |
 
 `bind_host`, `bind_port` et `ssl_enabled` s'appliquent au prochain redémarrage
@@ -344,6 +345,28 @@ d'approvisionnement. Le panel n'accepte donc une archive venue d'un miroir que
 si sa somme SHA-256 correspond à celle publiée avec la release de frp, et le
 signale dans le journal d'installation. Si github.com vous est accessible,
 désactivez les miroirs (**Réglages → Accès réseau**).
+
+### Statistiques anonymes
+
+Désactivées par défaut. Si vous les activez (case de la configuration
+initiale, ou **Réglages → Accès au panel → Statistiques anonymes**), le panel
+envoie une fois par jour, à `https://frp-manager.gogow.fr/api/ping`,
+exactement ceci et rien d'autre (affiché dans Réglages avant de les activer) :
+
+```json
+{"version": "0.4.0", "arch": "arm64", "install": "apt"}
+```
+
+- `version` : version du panel ; `arch` : `amd64`, `arm64` ou `arm` ;
+  `install` : `script`, `apt` ou `docker`.
+- Aucun identifiant, aucun nom, aucune adresse, aucune configuration frp. Le
+  site ne garde que des compteurs par jour, par version, architecture et
+  méthode d'installation ; il n'enregistre pas les adresses IP (utilisées
+  seulement en mémoire, sous forme d'empreinte, pendant 24 h, pour limiter les
+  abus).
+- Cela aide à savoir quelles versions sont encore utilisées, pour décider de
+  la compatibilité et des mises à jour. Les désactiver arrête l'envoi tout de
+  suite.
 
 ## Notifications par webhook
 

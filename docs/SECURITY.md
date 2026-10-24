@@ -102,6 +102,16 @@ soon as possible. The report is credited in the release notes if you wish.
 4. Disable third-party mirrors (Settings → Panel access) if github.com is
    reachable for you.
 
+## Anonymous statistics
+
+The panel sends nothing to the project unless its administrator turns on
+**anonymous statistics** (off by default; initial setup or Settings → Panel
+access). Then, once a day, it sends only its version, architecture and install
+method to `https://frp-manager.gogow.fr/api/ping`: no identifier, no address,
+no frp configuration. The website keeps daily counters only and does not store
+IP addresses. Details:
+[installation guide](installation.md#anonymous-statistics).
+
 ## Database
 
 The panel uses no SQL database: its configuration is a JSON file

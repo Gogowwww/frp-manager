@@ -65,8 +65,11 @@ func defaultManagerConfig() Cfg {
 		// télécharger frp : pratique quand GitHub est filtré, mais c'est un
 		// intermédiaire de plus dans la chaîne d'approvisionnement.
 		"download_mirrors": true,
-		"nicknames":        Cfg{},
-		"webhooks":         []any{},
+		// Statistiques anonymes (stats.go) : seulement si l'administrateur l'accepte
+		// Anonymous statistics (stats.go): only if the administrator agrees
+		"anonymous_stats": false,
+		"nicknames":       Cfg{},
+		"webhooks":        []any{},
 		// Comptes supplémentaires (le propriétaire reste username/password_hash)
 		// et connexion unique OpenID Connect
 		"users": Cfg{},

@@ -129,6 +129,7 @@ func main() {
 	go fwSyncLoop()
 	go webhookWorker()
 	go webhookMonitorLoop()
+	go statsLoop()
 	webhookEmit("panel.started", [2]string{"Panel démarré", "Panel started"},
 		[2]string{fmt.Sprintf("FRP Manager %s écoute sur %s.", panelVersion, addr), fmt.Sprintf("FRP Manager %s is listening on %s.", panelVersion, addr)},
 		"", nil)

@@ -13,6 +13,16 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Statistiques anonymes, sur accord** : une case dans la configuration
+  initiale et un interrupteur dans Réglages → Accès au panel, désactivés par
+  défaut. Une fois activées, le panel envoie au site du projet, une fois par
+  jour, sa version, son architecture et sa méthode d'installation
+  (`script`, `apt` ou `docker`), et rien d'autre : ni identifiant, ni
+  adresse. Réglages montre le contenu exact envoyé. Cela aide à savoir quelles
+  versions sont encore utilisées.
+
 ### Modifié
 
 - **Dépôt GitHub protégé** : `main` et `blocklists` ne peuvent plus être

@@ -46,6 +46,13 @@
         <label class="field-label" for="confirm" data-i18n="setup.confirm"></label>
         <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password" required>
       </div>
+      <div class="switch-row">
+        <div class="switch-text">
+          <label class="switch-label" for="anonymous-stats" data-i18n="setup.stats"></label>
+          <p class="switch-desc" data-i18n="setup.statsHint"></p>
+        </div>
+        <label class="switch"><input type="checkbox" role="switch" id="anonymous-stats" name="anonymous_stats"><span class="switch-track"></span></label>
+      </div>
       <p class="auth-error" id="setup-error" role="alert"></p>
       <button class="btn btn-primary btn-block" type="submit" id="setup-submit" data-i18n="setup.submit"></button>
     </form>
@@ -79,7 +86,7 @@
       const r = await fetch('/api/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken(), 'X-Lang': getLocale() },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, anonymous_stats: form.anonymous_stats.checked }),
       });
       const d = await r.json();
       if (d.ok || r.status === 409) { location.href = '/'; return; }
