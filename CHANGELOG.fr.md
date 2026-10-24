@@ -15,6 +15,14 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Ajouté
 
+- **Dépôt apt sur apt.frp-manager.org** (en plus de celui du Forgejo, pour
+  l'instant) : `packaging/deb/publish-pages.sh` construit un dépôt statique
+  signé (`dev`, `testing`, `stable`) dans le dépôt `Gogowwww/frp-manager-apt`,
+  servi par GitHub Pages et mis à jour par la CI, la pré-release et la
+  promotion.
+
+### Ajouté
+
 - **Chiffres publics du dépôt** : `tools/ghstats` et un workflow quotidien
   relèvent les téléchargements de chaque release, les étoiles et les forks sur
   la branche `stats` (`stats.json`, `history.json`), à partir de la seule API

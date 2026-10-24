@@ -43,6 +43,9 @@ env:
 jobs:
   release:
     runs-on: ubuntu-24.04
+    concurrency:
+      group: apt-pages
+      cancel-in-progress: false
     permissions:
       contents: write # release et fichiers joints
       packages: write # image ghcr.io
@@ -147,3 +150,11 @@ jobs:
         env:
           PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
         run: sh packaging/deb/publish-apt.sh testing dist/deb/*.deb
+
+      - name: Dépôt APT sur GitHub Pages (testing)
+        env:
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+        run: |
+          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
+          sh packaging/deb/publish-pages.sh testing dist/deb/*.deb

@@ -42,6 +42,9 @@ env:
 jobs:
   promote:
     runs-on: ubuntu-24.04
+    concurrency:
+      group: apt-pages
+      cancel-in-progress: false
     permissions:
       contents: write # release
       packages: write # image :latest
@@ -96,3 +99,13 @@ jobs:
           gh release download "$TAG" --pattern '*.deb' --dir deb || true
           ls deb/*.deb >/dev/null 2>&1 || { echo "Aucun paquet .deb dans la release $TAG (version Python ?)"; exit 0; }
           sh packaging/deb/publish-apt.sh stable deb/*.deb
+
+      - name: Dépôt APT sur GitHub Pages (stable)
+        env:
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+        run: |
+          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
+          [ -f packaging/deb/publish-pages.sh ] || { echo "Tag antérieur au dépôt Pages : ignoré"; exit 0; }
+          ls deb/*.deb >/dev/null 2>&1 || exit 0
+          sh packaging/deb/publish-pages.sh stable deb/*.deb

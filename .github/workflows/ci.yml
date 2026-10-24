@@ -35,6 +35,10 @@ env:
 jobs:
   go:
     runs-on: ubuntu-24.04
+    # Un seul publieur à la fois sur le dépôt APT / One publisher at a time on the APT repository
+    concurrency:
+      group: apt-pages
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -71,6 +75,15 @@ jobs:
           PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
         run: sh packaging/deb/publish-apt.sh dev ci/deb/*.deb
 
+      - name: Dépôt APT sur GitHub Pages (dev)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+        run: |
+          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
+          sh packaging/deb/publish-pages.sh dev ci/deb/*.deb
+
   # Le reste du dépôt (le panel est testé par le job go, dans l'image) : outils
   # (robot des listes, notes de release), code partagé, vulnérabilités connues
   # des dépendances, syntaxe des scripts shell et de la passerelle Python.
@@ -99,7 +112,7 @@ jobs:
           go test -count=1 ./internal/... ./tools/...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
           bash -n panel/install.sh
-          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh; do
+          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh packaging/deb/publish-pages.sh; do
             sh -n "$f"
           done
           python3 -m py_compile packaging/python-bridge/app.py

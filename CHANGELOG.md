@@ -15,6 +15,14 @@ older than 0.0.51 are described in the
 
 ### Added
 
+- **apt repository at apt.frp-manager.org** (in addition to the Forgejo one,
+  for now): `packaging/deb/publish-pages.sh` builds a signed static
+  repository (`dev`, `testing`, `stable`) in the `Gogowwww/frp-manager-apt`
+  repository, served by GitHub Pages and updated by the CI, the pre-release
+  and the promotion.
+
+### Added
+
 - **Public figures of the repository**: `tools/ghstats` and a daily workflow
   record the downloads of each release, the stars and the forks on the `stats`
   branch (`stats.json`, `history.json`), from GitHub's public API only.
