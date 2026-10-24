@@ -413,10 +413,10 @@ Dépôt
         js/                Application (modules ES, sans étape de build)
         locales/fr.js, en.js  Textes de l'interface
   docs/                    Documentation, politique de sécurité, guide de contribution
-                           (aussi sur le site et le wiki GitHub) ; img/ : captures
+                           (aussi sur le site) ; img/ : captures
   internal/                Code partagé (règle des adresses publiques)
   tools/                   Outils du dépôt : blocklists (listes communautaires du
-                           pare-feu), releasenotes (notes des releases), wiki
+                           pare-feu), releasenotes (notes des releases)
   packaging/               Paquet .deb, passage depuis une version Python
   Dockerfile, docker-compose.yml, go.mod
 

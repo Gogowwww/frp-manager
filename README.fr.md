@@ -91,7 +91,6 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECUR
 ## Documentation
 
 - [Site du projet](https://frp-manager.gogow.fr/fr/) : présentation, démo en ligne et toute la documentation
-- [Wiki](https://github.com/Gogowwww/frp-manager/wiki/Accueil) : la même documentation, sur GitHub
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
 - [Politique de sécurité](docs/SECURITY.md) (en anglais)
 - [Journal des modifications](CHANGELOG.fr.md)

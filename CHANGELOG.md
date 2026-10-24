@@ -23,9 +23,14 @@ older than 0.0.51 are described in the
 
 ### Removed
 
+- **GitHub wiki**: it only repeated the documentation of the website
+  (frp-manager.gogow.fr), which has search, the live demo and both
+  languages. The `tools/wiki` generator and its jobs in `github.yml` and
+  `promote.yml` are gone, and the Docker image's `documentation` label now
+  points to the website.
 - **French versions of SECURITY, CONTRIBUTING and CODE_OF_CONDUCT**: these
-  three documents are now in English only. The French README, the website and
-  the wiki link to the English version.
+  three documents are now in English only. The French README and the website link
+  to the English version.
 - **Fewer documentation files**: the Docker page (privileges and risks) is
   now the "Docker and Portainer" section of the installation guide, the code
   of conduct is down to a short summary of the Contributor Covenant, and the

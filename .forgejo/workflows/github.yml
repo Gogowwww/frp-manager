@@ -12,9 +12,6 @@
 # main public doit être un ancêtre du main Forgejo : avance rapide seulement,
 # jamais de force-push. Les tags et releases restent l'affaire de release.yml.
 #
-# Le wiki GitHub est ensuite régénéré depuis le main public (job wiki, même si
-# le main était déjà publié : relancer ce workflow resynchronise le wiki).
-#
 # Prérequis : secret GHCR_TOKEN (token GitHub classic, scope « repo »),
 # partagé avec release.yml et promote.yml.
 
@@ -69,23 +66,3 @@ jobs:
           echo "Publié sur GitHub :"
           git -C src log --oneline public/main.."$SHA"
           git -C src -c "http.https://github.com/.extraheader=$AUTH" push --quiet public "$SHA:refs/heads/main"
-
-  # Wiki GitHub régénéré depuis le main public qui vient d'être publié
-  # (tools/wiki) : il suit la documentation publiée, jamais en avance.
-  wiki:
-    needs: publish
-    runs-on: docker
-    container:
-      image: golang:1.26-alpine
-    steps:
-      - name: Wiki GitHub
-        env:
-          GH_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          set -eu
-          apk add --no-cache --quiet git
-          rm -rf pub
-          git clone --quiet --depth 1 "https://github.com/$GH_REPO.git" pub
-          git -C pub log -1 --format='main public : %h %s'
-          cd pub
-          go run ./tools/wiki -out ../wiki -push

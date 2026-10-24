@@ -47,7 +47,7 @@ ENV PANEL_DOCKER_VERSION=${PANEL_VERSION} DOCKER_MODE=true
 # les workflows posent les mêmes annotations sur l'index multi-architecture.
 LABEL org.opencontainers.image.source="https://github.com/Gogowwww/frp-manager" \
       org.opencontainers.image.url="https://frp-manager.gogow.fr" \
-      org.opencontainers.image.documentation="https://github.com/Gogowwww/frp-manager/wiki" \
+      org.opencontainers.image.documentation="https://frp-manager.gogow.fr/docs/" \
       org.opencontainers.image.title="FRP Manager" \
       org.opencontainers.image.description="Web panel to manage frp (frps and frpc): ports, firewall, logs, updates" \
       org.opencontainers.image.licenses="Apache-2.0" \

@@ -108,8 +108,11 @@ jobs:
             "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/statuses/${{ github.sha }}"
 
   # Le reste du dépôt (le panel est testé par le job go, dans l'image) : outils
-  # (robot des listes, notes de release, wiki), code partagé, vulnérabilités connues des dépendances,
+  # (robot des listes, notes de release), code partagé, vulnérabilités connues des dépendances,
   # syntaxe des scripts shell et de la passerelle Python.
+  # The rest of the repository (the panel is tested by the go job, in the image): tools
+  # (lists bot, release notes), shared code, known vulnerabilities of dependencies,
+  # syntax of the shell scripts and of the Python bridge.
   outils:
     runs-on: docker
     container:

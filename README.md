@@ -91,7 +91,6 @@ Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 ## Documentation
 
 - [Website](https://frp-manager.gogow.fr): overview, live demo and the full documentation
-- [Wiki](https://github.com/Gogowwww/frp-manager/wiki): the same documentation, on GitHub
 - [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images and their privileges, versions and pre-releases, configuration keys, reverse proxy, lost password, file structure
 - [Security policy](docs/SECURITY.md)
 - [Changelog](CHANGELOG.md)
