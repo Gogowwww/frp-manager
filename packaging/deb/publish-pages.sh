@@ -113,8 +113,14 @@ gpg --batch --yes --local-user "$KEYID" --armor --detach-sign -o "dists/$DIST/Re
 gpg --batch --yes --armor --export "$KEYID" > repository.key
 touch .nojekyll
 
-# Page d'accueil : comment ajouter le dépôt, avec l'empreinte de la clé
-# Home page: how to add the repository, with the key fingerprint
+# Page d'accueil : comment ajouter le dépôt, avec l'empreinte de la clé. Seulement
+# une fois le canal stable publié : ses commandes l'utilisent, une page qui ne
+# marche pas est pire que pas de page.
+# Home page: how to add the repository, with the key fingerprint. Only once the
+# stable channel is published: its commands use it, a page that does not work is
+# worse than no page.
+rm -f index.html 404.html
+if [ -f dists/stable/Release ]; then
 FPR=$(gpg --list-keys --with-colons --fingerprint "$KEYID" | awk -F: '/^fpr/ {print $10; exit}' | sed 's/\(....\)/\1 /g; s/ $//')
 DOMAIN="${APT_DOMAIN:-apt.frp-manager.org}"
 cat > index.html <<HTML
@@ -181,6 +187,7 @@ sudo apt update &amp;&amp; sudo apt install frp-manager</pre>
 </html>
 HTML
 cp index.html 404.html
+fi
 printf '%s\n' "${APT_DOMAIN:-apt.frp-manager.org}" > CNAME
 
 if [ -n "${PAGES_LOCAL:-}" ]; then
