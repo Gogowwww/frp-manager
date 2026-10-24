@@ -23,6 +23,9 @@ older than 0.0.51 are described in the
 
 ### Removed
 
+- **French versions of SECURITY, CONTRIBUTING and CODE_OF_CONDUCT**: these
+  three documents are now in English only. The French README, the website and
+  the wiki link to the English version.
 - **Fewer documentation files**: the Docker page (privileges and risks) is
   now the "Docker and Portainer" section of the installation guide, the code
   of conduct is down to a short summary of the Contributor Covenant, and the

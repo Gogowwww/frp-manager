@@ -24,6 +24,9 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Retiré
 
+- **Versions françaises de SECURITY, CONTRIBUTING et CODE_OF_CONDUCT** : ces
+  trois documents n'existent plus qu'en anglais. Le README français, le site
+  et le wiki renvoient vers la version anglaise.
 - **Moins de fichiers de documentation** : la page Docker (privilèges et
   risques) devient la section « Docker et Portainer » du guide d'installation,
   le code de conduite se résume au Contributor Covenant en quelques lignes, et

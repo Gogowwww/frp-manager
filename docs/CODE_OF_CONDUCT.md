@@ -1,7 +1,5 @@
 # Code of conduct
 
-**English** · [Français](CODE_OF_CONDUCT.fr.md)
-
 This project follows the
 [Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 In short: be kind and patient, especially with newcomers to frp or

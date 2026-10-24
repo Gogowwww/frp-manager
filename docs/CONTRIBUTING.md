@@ -1,7 +1,5 @@
 # Contributing to FRP Manager
 
-**English** · [Français](CONTRIBUTING.fr.md)
-
 Thank you for your interest! Bug reports, ideas, translations and pull
 requests are welcome, in English or French. By taking part, you agree to the
 [code of conduct](CODE_OF_CONDUCT.md).
@@ -108,9 +106,9 @@ language) and `en.js`.
 
 Every key added to `fr.js` must also be added to `en.js` (otherwise the
 interface silently falls back to French). The documentation exists in two
-languages: `X.md` in English, `X.fr.md` in French (README, SECURITY,
-CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG and the pages of `docs/`). Update
-both.
+languages: `X.md` in English, `X.fr.md` in French (README, CHANGELOG and the
+pages of `docs/`). Update both. SECURITY, CONTRIBUTING and CODE_OF_CONDUCT
+are in English only.
 
 ## Community blocklists
 

@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Merci pour le signalement. **Une faille de sécurité ne se signale pas ici** : voir docs/SECURITY.fr.md.
+        Merci pour le signalement. **Une faille de sécurité ne se signale pas ici** : voir docs/SECURITY.md.
         Retirez tokens, adresses IP publiques et noms de domaine de ce que vous collez.
         *Thanks for the report. Security issues go through docs/SECURITY.md, not here. English is fine.*
   - type: input

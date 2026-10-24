@@ -1,7 +1,5 @@
 # Security policy
 
-**English** · [Français](SECURITY.fr.md)
-
 FRP Manager drives network services exposed to the Internet (frps, frpc),
 firewall rules and, depending on the installation, the host system with root
 privileges. A flaw in the panel can therefore have serious consequences:

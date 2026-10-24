@@ -34,14 +34,18 @@ import (
 type page struct {
 	en, fr           string
 	enTitle, frTitle string
+	// fr vide : document en anglais seulement, que le menu français désigne
+	// sous son titre français.
+	// Empty fr: English-only document, listed in the French menu under its
+	// French title.
 }
 
 var pages = []page{
 	{"README.md", "README.fr.md", "Home", "Accueil"},
 	{"docs/installation.md", "docs/installation.fr.md", "Installation and configuration", "Installation et configuration"},
-	{"docs/SECURITY.md", "docs/SECURITY.fr.md", "Security policy", "Politique de sécurité"},
-	{"docs/CONTRIBUTING.md", "docs/CONTRIBUTING.fr.md", "Contributing", "Contribuer"},
-	{"docs/CODE_OF_CONDUCT.md", "docs/CODE_OF_CONDUCT.fr.md", "Code of conduct", "Code de conduite"},
+	{"docs/SECURITY.md", "", "Security policy", "Politique de sécurité"},
+	{"docs/CONTRIBUTING.md", "", "Contributing", "Contribuer"},
+	{"docs/CODE_OF_CONDUCT.md", "", "Code of conduct", "Code de conduite"},
 	{"CHANGELOG.md", "CHANGELOG.fr.md", "Changelog", "Journal des modifications"},
 }
 
@@ -68,7 +72,9 @@ func newWiki(repo string) *wiki {
 	w := &wiki{repo: repo, byFile: map[string]string{}}
 	for _, p := range pages {
 		w.byFile[p.en] = pageName(p.enTitle)
-		w.byFile[p.fr] = pageName(p.frTitle)
+		if p.fr != "" {
+			w.byFile[p.fr] = pageName(p.frTitle)
+		}
 	}
 	return w
 }
@@ -136,6 +142,10 @@ func build(dir, repo string) (map[string]string, error) {
 	side[1].WriteString("**Français**\n\n")
 	for i, p := range pages {
 		for j, d := range [][2]string{{p.en, p.enTitle}, {p.fr, p.frTitle}} {
+			if d[0] == "" {
+				fmt.Fprintf(&side[j], "- [%s (en anglais)](%s)\n", d[1], url.PathEscape(pageName(p.enTitle)))
+				continue
+			}
 			raw, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(d[0])))
 			if err != nil {
 				return nil, err

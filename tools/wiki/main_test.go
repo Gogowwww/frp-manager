@@ -13,7 +13,7 @@ func TestTarget(t *testing.T) {
 		"README.md": {
 			"docs/installation.md#install-with-apt": "Installation-and-configuration#install-with-apt",
 			"README.fr.md":                          "Accueil",
-			"docs/SECURITY.fr.md":                   "Politique-de-s%C3%A9curit%C3%A9",
+			"docs/CODE_OF_CONDUCT.md":               "Code-of-conduct",
 			"docs/img/dashboard-en.png":             "https://raw.githubusercontent.com/o/r/main/docs/img/dashboard-en.png",
 			"LICENSE":                               "https://github.com/o/r/blob/main/LICENSE",
 			"https://example.org/a":                 "https://example.org/a",
@@ -57,7 +57,14 @@ func TestBuildRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2*len(pages)+2 {
+	want := 2 // _Sidebar.md, _Footer.md
+	for _, p := range pages {
+		want++
+		if p.fr != "" {
+			want++
+		}
+	}
+	if len(files) != want {
 		t.Fatalf("%d fichiers", len(files))
 	}
 	for name, body := range files {

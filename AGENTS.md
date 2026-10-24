@@ -2,7 +2,7 @@
 
 Panel web en Go pour frp (`panel/`, interface embarquée depuis
 `panel/templates/`). Avant de modifier le code ou de préparer une release, lire
-[docs/CONTRIBUTING.fr.md](docs/CONTRIBUTING.fr.md) : règles de code et de
+[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) (en anglais) : règles de code et de
 sécurité, versions, traductions.
 
 `packaging/python-bridge/app.py` est le seul Python du dépôt : une passerelle
@@ -27,7 +27,8 @@ La CI lance les tests du panel sous Linux (`docker buildx build --target test .`
   `en.js` (sinon repli silencieux sur le français).
 - Tout message du serveur passe par la méthode `M(fr, en)` du type `Lang`
   (`panel/i18n.go`).
-- Documentation : `X.md` (anglais) et `X.fr.md` (français), toujours les deux.
+- Documentation : `X.md` (anglais) et `X.fr.md` (français), toujours les deux,
+  sauf SECURITY, CONTRIBUTING et CODE_OF_CONDUCT (anglais seulement).
 - Chaque changement poussé sur main va dans `## [Unreleased]` de
   `CHANGELOG.md` et `## [Non publié]` de `CHANGELOG.fr.md`, dans le même
   commit.
