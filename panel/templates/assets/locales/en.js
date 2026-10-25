@@ -201,6 +201,7 @@ export default {
       publicAccess: 'Access from the Internet',
       remotePort: 'Public port',
       remotePortHint: 'Port opened on {server}. Leave empty to let the server pick one (it changes each time frpc starts).',
+      remotePortHintBoth: 'Port opened on {server}, in TCP and UDP. Required: otherwise the server would pick a different port for each.',
       domains: 'Domains',
       domainsHint: 'Comma-separated. They must point to the frps server.',
       secret: 'Secret key',

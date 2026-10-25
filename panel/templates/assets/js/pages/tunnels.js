@@ -422,6 +422,12 @@ function editProxy(existing) {
         const kind = kindOf(tp);
         typeHint.textContent = t(`tunnels.types.${tp}`);
         remoteField.hidden = !hasRemotePort(kind);
+        // TCP + UDP : le port public ne peut pas rester vide, l'aide le dit
+        // TCP + UDP: the public port cannot stay empty, the hint says so
+        const server = S.serverAddr || t('tunnels.server');
+        remoteField.querySelector('.field-hint').textContent = tp === BOTH
+          ? t('tunnels.fields.remotePortHintBoth', { server })
+          : t('tunnels.fields.remotePortHint', { server });
         rangeHint.hidden = !hasRemotePort(kind);
         domainsField.hidden = !hasDomains(kind);
         secretField.hidden = !hasSecret(kind);
