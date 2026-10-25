@@ -1,0 +1,56 @@
+# GitHub Actions : remplit les distributions testing et stable du dépôt apt
+# (apt.frp-manager.org) à partir des releases GitHub, à la demande.
+# GitHub Actions: fills the testing and stable distributions of the apt repository
+# (apt.frp-manager.org) from the GitHub releases, on demand.
+#
+# testing : la release la plus récente, pré-release comprise ; stable : la plus
+# récente des releases définitives. Les .deb sont ceux joints aux releases, tels
+# quels (pas de reconstruction). Utile pour rattraper les versions sorties avant
+# le dépôt, ou après un incident ; release.yml et promote.yml publient ensuite
+# chaque nouvelle version.
+# testing: the most recent release, pre-release included; stable: the most recent
+# final release. The .deb files are the ones attached to the releases, as is (no
+# rebuild). Useful to catch up on versions released before the repository, or
+# after an incident; release.yml and promote.yml then publish each new version.
+
+name: Synchroniser le dépôt apt
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    concurrency:
+      group: apt-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publier testing et stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+        run: |
+          set -eu
+          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes"; exit 1; }
+          publish() {
+            dist="$1"; tag="$2"
+            [ -n "$tag" ] || { echo "Aucune release pour $dist"; return 0; }
+            rm -rf "deb-$dist"; mkdir "deb-$dist"
+            gh release download "$tag" --repo "${{ github.repository }}" --pattern '*.deb' --dir "deb-$dist" || true
+            ls "deb-$dist"/*.deb >/dev/null 2>&1 || { echo "Pas de .deb dans $tag : $dist ignoré"; return 0; }
+            echo "$dist ← $tag"
+            sh packaging/deb/publish-pages.sh "$dist" "deb-$dist"/*.deb
+          }
+          # La plus récente de toutes, puis la plus récente des définitives
+          testing=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
+          stable=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName')
+          publish testing "$testing"
+          publish stable "$stable"

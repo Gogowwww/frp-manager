@@ -13,6 +13,16 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Machines move to the new apt repository on their own**: the package
+  carries the key of `apt.frp-manager.org`, and its post-installation step
+  rewrites the source (`frp-manager.list` or `.sources`) and replaces the key
+  of machines still subscribed to the old repository. Machines already on the
+  new one are left alone.
+- **`apt-sync.yml` workflow**: fills the `testing` and `stable` distributions
+  of the new repository from the GitHub releases, on demand.
+
 ### Changed
 
 - **apt test from apt.frp-manager.org**: the CI installs the `dev` package from

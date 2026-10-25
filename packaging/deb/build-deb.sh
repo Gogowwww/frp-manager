@@ -26,6 +26,11 @@ for pair in amd64:amd64 arm64:arm64 armv7:armhf; do
     install -D -m 644 "$HERE/frp-manager.service" "$stage/lib/systemd/system/frp-manager.service"
     install -D -m 644 "$ROOT/LICENSE" "$stage/usr/share/doc/frp-manager/copyright"
     install -D -m 644 "$ROOT/README.md" "$stage/usr/share/doc/frp-manager/README.md"
+    # Clé publique du dépôt apt (apt.frp-manager.org) : le postinst la pose chez les
+    # machines encore abonnées à l'ancien dépôt
+    # Public key of the apt repository (apt.frp-manager.org): the postinst puts it on
+    # machines still subscribed to the old repository
+    install -D -m 644 "$HERE/apt-repository.asc" "$stage/usr/share/frp-manager/apt-repository.asc"
     mkdir -p "$stage/DEBIAN"
     for script in postinst prerm postrm; do
         install -m 755 "$HERE/$script" "$stage/DEBIAN/$script"

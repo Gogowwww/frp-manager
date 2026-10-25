@@ -26,6 +26,32 @@ random_port() {
     echo 7000
 }
 
+# Machines abonnées à l'ancien dépôt apt (forgejo.gogow.fr) : la source passe sur
+# apt.frp-manager.org et la clé est remplacée par celle du paquet. Rien n'est
+# touché si l'ancienne adresse n'apparaît dans aucun fichier de source.
+# Machines subscribed to the old apt repository (forgejo.gogow.fr): the source
+# moves to apt.frp-manager.org and the key is replaced by the package's. Nothing
+# is touched if the old address does not appear in any source file.
+migrate_apt() {
+    etc_apt="${FRP_MANAGER_ETC_APT:-/etc/apt}"
+    old='https://forgejo.gogow.fr/api/packages/administrator/debian'
+    new='https://apt.frp-manager.org'
+    key=/usr/share/frp-manager/apt-repository.asc
+    [ -f "$key" ] || return 0
+    for f in "$etc_apt"/sources.list.d/frp-manager.list "$etc_apt"/sources.list.d/frp-manager.sources; do
+        [ -f "$f" ] && grep -qF "$old" "$f" || continue
+        # Fichier de clé cité par la source (« signed-by=… » ou « Signed-By: … »)
+        # Key file named by the source ("signed-by=…" or "Signed-By: …")
+        signed=$(sed -n 's/.*[Ss]igned-[Bb]y[=:] *\([^] ]*\).*/\1/p' "$f" | head -n 1)
+        [ -n "$signed" ] || signed="$etc_apt/keyrings/frp-manager.asc"
+        mkdir -p "$(dirname "$signed")"
+        install -m 644 "$key" "$signed"
+        sed "s|$old|$new|g" "$f" > "$f.new" && mv "$f.new" "$f"
+        m "frp-manager : le dépôt apt est maintenant apt.frp-manager.org ($f mis à jour, clé remplacée)." \
+          "frp-manager: the apt repository is now apt.frp-manager.org ($f updated, key replaced)."
+    done
+}
+
 unit() {
     cat <<EOF
 [Unit]
@@ -46,6 +72,8 @@ EOF
 
 if [ "$1" = configure ]; then
     mkdir -p /etc/frp /var/log/frp /var/lib/frp-manager /etc/frp-manager
+
+    migrate_apt
 
     # Une installation par install.sh garde son propre service dans
     # /etc/systemd/system, qui passerait avant celui du paquet : on le met de côté.

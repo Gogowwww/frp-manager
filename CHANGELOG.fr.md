@@ -13,6 +13,16 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Les machines passent seules sur le nouveau dépôt apt** : le paquet embarque
+  la clé de `apt.frp-manager.org`, et son étape de post-installation réécrit la
+  source (`frp-manager.list` ou `.sources`) et remplace la clé des machines
+  encore abonnées à l'ancien dépôt. Celles qui sont déjà sur le nouveau ne sont
+  pas touchées.
+- **Workflow `apt-sync.yml`** : remplit à la demande les distributions
+  `testing` et `stable` du nouveau dépôt à partir des releases GitHub.
+
 ### Modifié
 
 - **Test apt depuis apt.frp-manager.org** : la CI installe le paquet `dev` du
