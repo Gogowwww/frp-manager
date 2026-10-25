@@ -64,6 +64,34 @@ vraiment, par exemple avec un petit programme hors dépôt, et dis comment. Ne
 déclare « ça marche » que pour ce que tu as exécuté ; dis clairement ce que tu
 n'as pas pu vérifier.
 
+## Vérifier dans un navigateur, à chaque fois
+
+Tout changement visible dans l'interface (page, dialogue, champ, message, style,
+traduction) se vérifie dans un vrai navigateur avant de rendre la main, pas
+seulement avec des tests. Les tests ne voient ni l'affichage, ni les champs
+masqués, ni le focus, ni les erreurs de la console.
+
+1. Lance le panel en local, sans toucher à `/etc/frp-manager` :
+   `echo '{"bind_port": 18765, "ssl_enabled": false}' > $TEMP/frpm.json`, puis
+   `FRP_MANAGER_CONFIG=$TEMP/frpm.json go run ./panel` en arrière-plan (adapte le
+   chemin à ta plateforme). À la première ouverture, crée l'identifiant
+   administrateur. Il faut un frpc de test pour les pages d'instance : si aucune
+   instance n'existe, crée-en une dans un dossier temporaire plutôt que d'utiliser
+   celles de la machine, et ne touche à aucun service réel.
+2. Ouvre `http://127.0.0.1:18765` avec l'outil de navigateur disponible dans ta
+   session : le navigateur intégré (outils `mcp__Claude_Browser__*`), ou, à
+   défaut, Claude in Chrome (compétence `anthropic-skills:chrome-browser`, à lire
+   avant le premier appel). Charge les outils avec ToolSearch s'ils sont différés.
+3. Parcours réellement la fonction : chaque chemin heureux, chaque message
+   d'erreur de validation, l'ouverture et la fermeture des dialogues, les champs
+   qui apparaissent ou disparaissent, l'enregistrement puis le texte écrit dans le
+   fichier de configuration. Regarde les deux langues (français et anglais) et la
+   console : aucune erreur JavaScript ne doit rester.
+4. Si aucun outil de navigateur n'est utilisable dans ta session, dis-le tout de
+   suite et clairement dans ton compte rendu, avec ce que tu aurais vérifié.
+   N'écris jamais « vérifié dans un navigateur » pour ce que tu n'as pas vu.
+5. Arrête le panel de test et supprime ses fichiers temporaires à la fin.
+
 ## Ce que tu ne fais jamais sans demande explicite
 
 - `git push`, tag, release, promotion, publication de quoi que ce soit, ni
