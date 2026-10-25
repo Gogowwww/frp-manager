@@ -17,7 +17,7 @@ older than 0.0.51 are described in the
 
 A port can be opened in TCP and UDP at once or as a whole range, and the apt repository moves to apt.frp-manager.org.
 
-Pre-release.
+Pre-release, then final release, on the same day.
 
 ### Added
 

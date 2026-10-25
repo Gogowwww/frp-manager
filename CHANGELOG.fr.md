@@ -17,7 +17,7 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 Un port peut s'ouvrir en TCP et en UDP à la fois ou sur toute une plage, et le dépôt apt passe sur apt.frp-manager.org.
 
-Pré-release.
+Pré-release, puis release définitive le même jour.
 
 ### Ajouté
 
