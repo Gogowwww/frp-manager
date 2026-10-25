@@ -167,6 +167,7 @@ export default {
     local: 'Service local',
     unnamed: 'sans nom',
     flags: {
+      range: { one: 'Plage · {count} port', other: 'Plage · {count} ports' },
       proxyProtocol: 'PROXY {v}',
       encrypted: 'Chiffré',
       compressed: 'Compressé',
@@ -197,6 +198,7 @@ export default {
       localIP: 'Adresse',
       localPort: 'Port',
       localHint: 'Là où le service écoute. 127.0.0.1 si le service tourne sur cette machine.',
+      rangeHint: 'Plusieurs ports d’un coup : une plage (30000-30010) ou une liste (6000-6006,6007), avec autant de ports pour le port public, alors obligatoire. frpc crée un tunnel par port, nommé nom-<port> ; il faut frp 0.56 ou plus récent.',
       publicAccess: 'Accès depuis Internet',
       remotePort: 'Port public',
       remotePortHint: 'Port ouvert sur {server}. Laissez vide pour que le serveur en choisisse un (il change à chaque démarrage de frpc).',
@@ -218,6 +220,7 @@ export default {
     types: {
       tcp: 'Pour la plupart des services : SSH, bases de données, jeux, sites en HTTPS géré par le service.',
       udp: 'Pour les services UDP : DNS, VPN (WireGuard), certains jeux.',
+      both: 'Le même port en TCP et en UDP (jeux, DNS…) : crée deux tunnels, nom-tcp et nom-udp, avec les mêmes ports et options.',
       http: 'Site web servi sur un nom de domaine, via le port HTTP du serveur.',
       https: 'Site web en HTTPS sur un nom de domaine, via le port HTTPS du serveur.',
       stcp: 'Port privé : accessible seulement aux machines qui ont la clé (visiteurs).',
@@ -395,7 +398,13 @@ export default {
   validation: {
     required: 'Champ obligatoire.',
     nameTaken: 'Ce nom est déjà utilisé.',
+    nameClash: '« {name} » est déjà le nom d’un autre tunnel.',
     port: 'Entrez un port entre 1 et 65535.',
+    portSpec: 'Entrez un port (8080), une plage (30000-30010) ou une liste (6000-6006,6007), entre 1 et 65535.',
+    rangeTooBig: 'Une plage compte au plus {max} ports.',
+    rangeRemote: 'Obligatoire pour une plage de ports.',
+    bothRemote: 'Obligatoire pour TCP + UDP : sans lui, le serveur choisirait un port différent pour chacun.',
+    rangeCount: 'Il faut autant de ports des deux côtés : {local} pour le service, {remote} ici.',
   },
 
   config: {

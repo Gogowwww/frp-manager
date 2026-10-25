@@ -865,7 +865,7 @@ func deleteInstance(c *Ctx) {
 // est l'adresse publique, port attribué par frps compris (remotePort = 0).
 func frpcProxyStatus(content string) (map[string]J, bool, error) {
 	var conf map[string]any
-	if toml.Unmarshal([]byte(content), &conf) != nil {
+	if toml.Unmarshal([]byte(frpTOML(content)), &conf) != nil {
 		return nil, false, nil
 	}
 	ws := mapv(conf, "webServer")
@@ -909,7 +909,7 @@ func frpcProxyStatus(content string) (map[string]J, bool, error) {
 // port est déjà configuré ; refus si [webServer] existe sans port.
 func enableFrpcAdmin(content string, port int) (string, bool, error) {
 	var conf map[string]any
-	if err := toml.Unmarshal([]byte(content), &conf); err != nil {
+	if err := toml.Unmarshal([]byte(frpTOML(content)), &conf); err != nil {
 		return "", false, err
 	}
 	if _, ok := conf["webServer"]; ok {
@@ -923,7 +923,11 @@ func enableFrpcAdmin(content string, port int) (string, bool, error) {
 		port, tokenHex(16))
 	lines := strings.SplitAfter(content, "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "[") {
+		// Avant la première table, ou avant la ligne « {{- range … }} » qui la
+		// précède : dans la boucle, le bloc serait répété
+		// Before the first table, or before the "{{- range … }}" line in front of
+		// it: inside the loop, the block would be repeated
+		if s := strings.TrimSpace(line); strings.HasPrefix(s, "[") || strings.HasPrefix(s, "{{") {
 			return strings.Join(lines[:i], "") + block + strings.Join(lines[i:], ""), true, nil
 		}
 	}
@@ -945,7 +949,7 @@ func freeAdminPort(self string) int {
 			continue
 		}
 		var conf map[string]any
-		if b, err := os.ReadFile(inst.Config); err == nil && toml.Unmarshal(b, &conf) == nil {
+		if b, err := os.ReadFile(inst.Config); err == nil && toml.Unmarshal([]byte(frpTOML(string(b))), &conf) == nil {
 			taken[tomlInt(mapv(conf, "webServer")["port"])] = true
 		}
 	}
@@ -1143,8 +1147,13 @@ func (l Lang) validateConfigContent(p, content string) error {
 		return errors.New(l.M("Configuration invalide : caractère nul", "Invalid configuration: null character"))
 	}
 	if filepath.Ext(p) == ".toml" {
+		// Modèle frp (plages de ports…) : vérifié sans être exécuté, puis neutralisé
+		// Frp template (port ranges…): checked without being executed, then neutralized
+		if err := checkFrpTemplate(content); err != nil {
+			return errors.New(l.M("Modèle frp invalide, rien n'a été écrit : "+err.Error(), "Invalid frp template, nothing was written: "+err.Error()))
+		}
 		var v map[string]any
-		if err := toml.Unmarshal([]byte(content), &v); err != nil {
+		if err := toml.Unmarshal([]byte(frpTOML(content)), &v); err != nil {
 			return errors.New(l.M("TOML invalide, rien n'a été écrit : "+tomlErrorText(err), "Invalid TOML, nothing was written: "+tomlErrorText(err)))
 		}
 	}
@@ -1353,10 +1362,27 @@ func extractPortsFromConfig(content, binType string) []J {
 		}
 		// remotePort de chaque [[proxies]] (ports exposés côté serveur frps)
 		inProxy, proxyName, proxyType := false, "", "tcp"
+		// Plage de ports (modèle de la page Ports) : un tunnel par paire de ports,
+		// nommé comme frpc le fera (« nom-<port local> »)
+		// Port range (Ports page template): one tunnel per pair of ports, named the
+		// way frpc will name it ("name-<local port>")
+		var pendingRange, proxyRange [][2]int
 		for _, line := range splitLines(content) {
 			s := strings.TrimSpace(line)
+			if m := frpRangeLineRe.FindStringSubmatch(s); m != nil {
+				pendingRange = nil
+				first, err1 := frpPortRange(m[1])
+				second, err2 := frpPortRange(m[2])
+				if err1 == nil && err2 == nil && len(first) == len(second) {
+					for i := range first {
+						pendingRange = append(pendingRange, [2]int{first[i], second[i]})
+					}
+				}
+				continue
+			}
 			if s == "[[proxies]]" {
 				inProxy, proxyName, proxyType = true, "", "tcp"
+				proxyRange, pendingRange = pendingRange, nil
 				continue
 			}
 			if strings.HasPrefix(s, "[") && !strings.HasPrefix(s, "[[proxies]]") {
@@ -1369,6 +1395,16 @@ func extractPortsFromConfig(content, binType string) []J {
 				}
 				if m := typeLineRe.FindStringSubmatch(s); m != nil {
 					proxyType = strings.TrimSpace(m[1])
+				}
+				if frpSecondRe.MatchString(s) {
+					proto := "tcp"
+					if proxyType == "udp" {
+						proto = "udp"
+					}
+					for _, pair := range proxyRange {
+						label := frpFirstRe.ReplaceAllString(proxyName, strconv.Itoa(pair[0]))
+						ports = append(ports, J{"port": pair[1], "proto": proto, "label": "Tunnel " + label + " (remotePort)"})
+					}
 				}
 				if m := remotePortRe.FindStringSubmatch(s); m != nil {
 					proto := "tcp"

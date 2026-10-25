@@ -38,7 +38,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo
 ## Fonctionnalités
 
 - **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms ; un service frps/frpc supprimé se réinstalle en un clic.
-- **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression. Les réglages que l'éditeur ne gère pas sont conservés tels quels. Un port laissé sans numéro reçoit son port public du serveur ; le panel peut l'afficher, après confirmation, par le tableau de bord local de frpc (voir [SECURITY](docs/SECURITY.md), en anglais).
+- **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression, le même port en TCP et en UDP d'un coup, et des [plages de ports](docs/installation.fr.md#ports--tcp--udp-et-plages-de-ports) (`30000-30010`). Les réglages que l'éditeur ne gère pas sont conservés tels quels. Un port laissé sans numéro reçoit son port public du serveur ; le panel peut l'afficher, après confirmation, par le tableau de bord local de frpc (voir [SECURITY](docs/SECURITY.md), en anglais).
 - **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
 - **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
@@ -92,7 +92,7 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECUR
 ## Documentation
 
 - [Site du projet](https://frp-manager.org/fr/) : présentation, démo en ligne et toute la documentation
-- [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, reverse proxy, mot de passe perdu, structure des fichiers
+- [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, plages de ports et TCP + UDP, reverse proxy, mot de passe perdu, structure des fichiers
 - [Politique de sécurité](docs/SECURITY.md) (en anglais)
 - [Journal des modifications](CHANGELOG.fr.md)
 

@@ -26,6 +26,14 @@ older than 0.0.51 are described in the
   install method) and of the GitHub release downloads, with the same data in
   `/prive/stats.json`. A static page, no script or external resource. A
   workflow deploys it on demand and runs its tests.
+- **Ports: TCP + UDP and port ranges**: when creating a port, the "TCP + UDP"
+  type opens the same port in both protocols (two tunnels, `<name>-tcp` and
+  `<name>-udp`, same ports and options, public port required). The `tcp` and `udp` ports accept a
+  range or a list (`30000-30010`, `6000-6006,6007`, 1,000 ports at most), with
+  as many public ports; it stays a single entry, written as an frp template
+  (`parseNumberRangePair`, frp 0.56 or later) that creates one tunnel per port.
+  The panel checks the template before saving (syntax, ranges in pairs) and
+  refuses a name that one of these tunnels would already use.
 
 ### Changed
 

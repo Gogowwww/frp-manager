@@ -166,6 +166,7 @@ export default {
     local: 'Local service',
     unnamed: 'unnamed',
     flags: {
+      range: { one: 'Range · {count} port', other: 'Range · {count} ports' },
       proxyProtocol: 'PROXY {v}',
       encrypted: 'Encrypted',
       compressed: 'Compressed',
@@ -196,6 +197,7 @@ export default {
       localIP: 'Address',
       localPort: 'Port',
       localHint: 'Where the service listens. 127.0.0.1 if the service runs on this machine.',
+      rangeHint: 'Several ports at once: a range (30000-30010) or a list (6000-6006,6007), with as many ports for the public port, which is then required. frpc creates one tunnel per port, named name-<port>; this needs frp 0.56 or later.',
       publicAccess: 'Access from the Internet',
       remotePort: 'Public port',
       remotePortHint: 'Port opened on {server}. Leave empty to let the server pick one (it changes each time frpc starts).',
@@ -217,6 +219,7 @@ export default {
     types: {
       tcp: 'For most services: SSH, databases, games, sites whose HTTPS is handled by the service.',
       udp: 'For UDP services: DNS, VPN (WireGuard), some games.',
+      both: 'The same port in TCP and UDP (games, DNS…): creates two tunnels, name-tcp and name-udp, with the same ports and options.',
       http: 'Website served on a domain name, through the server’s HTTP port.',
       https: 'HTTPS website on a domain name, through the server’s HTTPS port.',
       stcp: 'Private port: only reachable by machines that have the key (visitors).',
@@ -394,7 +397,13 @@ export default {
   validation: {
     required: 'Required field.',
     nameTaken: 'This name is already in use.',
+    nameClash: '“{name}” is already the name of another tunnel.',
     port: 'Enter a port between 1 and 65535.',
+    portSpec: 'Enter a port (8080), a range (30000-30010) or a list (6000-6006,6007), between 1 and 65535.',
+    rangeTooBig: 'A range has at most {max} ports.',
+    rangeRemote: 'Required for a port range.',
+    bothRemote: 'Required for TCP + UDP: without it, the server would pick a different port for each.',
+    rangeCount: 'Both sides need as many ports: {local} for the service, {remote} here.',
   },
 
   config: {

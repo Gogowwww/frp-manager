@@ -81,6 +81,52 @@ func TestTOMLValidation(t *testing.T) {
 	}
 }
 
+// Plage de ports telle que l'écrit la page Ports (generateProxy de toml.js)
+// Port range as written by the Ports page (generateProxy in toml.js)
+const rangeTOML = "{{- range $_, $v := parseNumberRangePair \"30000-30002\" \"40000-40001,40005\" }}\n[[proxies]]\n" +
+	"name = \"jeu-{{ $v.First }}\"\ntype = \"udp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {{ $v.First }}\nremotePort = {{ $v.Second }}\n{{- end }}\n"
+
+func TestFrpTemplateValidation(t *testing.T) {
+	for _, good := range []string{
+		validTOML + "\n" + rangeTOML,
+		rangeTOML,
+		"serverAddr = \"{{ .Envs.FRP_SERVER }}\"\nserverPort = {{ .Envs.FRP_PORT }}\n",
+	} {
+		if err := FR.validateConfigContent("/etc/frp/frpc.toml", good); err != nil {
+			t.Errorf("%q : %v", truncRunes(good, 40), err)
+		}
+	}
+	for _, bad := range []string{
+		// Pas autant de ports des deux côtés, plage à l'envers, port hors limites,
+		// range sans end, fonction inconnue, « {{ » que frp lirait comme un modèle
+		// Not as many ports on both sides, reversed range, port out of bounds,
+		// range without end, unknown function, "{{" that frp would read as a template
+		strings.Replace(rangeTOML, "40000-40001,40005", "40000", 1),
+		strings.Replace(rangeTOML, "30000-30002", "30002-30000", 1),
+		strings.Replace(rangeTOML, "30000-30002", "65534-65536", 1),
+		strings.Replace(rangeTOML, "{{- end }}\n", "", 1),
+		strings.Replace(rangeTOML, "parseNumberRangePair", "inconnue", 1),
+		"token = \"a{{b\"\n",
+	} {
+		if err := FR.validateConfigContent("/etc/frp/frpc.toml", bad); err == nil {
+			t.Errorf("accepté : %q", truncRunes(bad, 80))
+		}
+	}
+	// Les numéros de ligne restent ceux du fichier, pour les messages d'erreur
+	// Line numbers stay those of the file, for error messages
+	if got := frpTOML(rangeTOML); strings.Count(got, "\n") != strings.Count(rangeTOML, "\n") || strings.Contains(got, "{{") {
+		t.Fatalf("%q", got)
+	}
+	if ports, err := frpPortRange(" 6000-6002, 6007 "); err != nil || !reflect.DeepEqual(ports, []int{6000, 6001, 6002, 6007}) {
+		t.Fatal(ports, err)
+	}
+	for _, bad := range []string{"", "0", "70000", "10-5", "1-2-3", "a", "1-65535,1"} {
+		if _, err := frpPortRange(bad); err == nil {
+			t.Errorf("plage acceptée : %q", bad)
+		}
+	}
+}
+
 func TestInvalidTOMLNeverWritten(t *testing.T) {
 	e := setup(t)
 	dir := filepath.Join(e.dir, "frp")
@@ -360,6 +406,11 @@ func TestFrpcProxyStatus(t *testing.T) {
 	if proxies["ssh"]["remote_addr"] != "vps.example.com:34567" || proxies["jeu"]["err"] != "port already used" {
 		t.Fatalf("%v", proxies)
 	}
+	// Une plage de ports (modèle frp) n'empêche pas de lire [webServer]
+	// A port range (frp template) does not prevent reading [webServer]
+	if _, admin, err := frpcProxyStatus(conf("secret") + rangeTOML); !admin || err != nil {
+		t.Fatal(admin, err)
+	}
 	if _, admin, err := frpcProxyStatus(conf("faux")); !admin || err == nil {
 		t.Fatal("mauvais mot de passe accepté")
 	}
@@ -393,6 +444,17 @@ func TestEnableFrpcAdmin(t *testing.T) {
 		if again, changed, _ := enableFrpcAdmin(out, 7402); changed || again != out {
 			t.Fatal("ajouté deux fois")
 		}
+	}
+	// Plage de ports juste après la connexion : le bloc va avant la ligne
+	// « range », pas dans la boucle
+	// Port range right after the connection: the block goes before the "range"
+	// line, not inside the loop
+	out, changed, err := enableFrpcAdmin("serverAddr = \"vps.example.com\"\n\n"+rangeTOML, 7401)
+	if err != nil || !changed || strings.Index(out, "webServer.port") > strings.Index(out, "{{- range") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if err := FR.validateConfigContent("/etc/frp/frpc.toml", out); err != nil {
+		t.Fatal(err)
 	}
 	if _, _, err := enableFrpcAdmin("[webServer]\naddr = \"127.0.0.1\"\n", 7400); err == nil {
 		t.Fatal("webServer sans port accepté")
@@ -478,6 +540,17 @@ func TestExtractPorts(t *testing.T) {
 		got = append(got, p["label"].(string)+":"+p["proto"].(string)+":"+strings.TrimSpace(pyStr(float64(p["port"].(int)))))
 	}
 	want := []string{"Connexion serveur:tcp:7000", "Tunnel ssh (remotePort):tcp:6000", "Visiteur db (bindPort):tcp:9000", "Dashboard web:tcp:7400"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+	// Plage de ports : un tunnel par paire, nommé comme frpc le fera
+	// Port range: one tunnel per pair, named the way frpc will name it
+	got = nil
+	for _, p := range extractPortsFromConfig(validTOML+"\n"+rangeTOML, "frpc") {
+		got = append(got, p["label"].(string)+":"+p["proto"].(string)+":"+strings.TrimSpace(pyStr(float64(p["port"].(int)))))
+	}
+	want = []string{"Connexion serveur:tcp:7000", "Tunnel ssh (remotePort):tcp:6000",
+		"Tunnel jeu-30000 (remotePort):udp:40000", "Tunnel jeu-30001 (remotePort):udp:40001", "Tunnel jeu-30002 (remotePort):udp:40005"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
 	}

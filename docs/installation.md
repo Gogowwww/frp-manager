@@ -357,6 +357,39 @@ else (shown in Settings before you turn it on):
 - It helps to know which versions are still in use, so as to plan
   compatibility and updates. Turning it off stops the sending right away.
 
+## Ports: TCP + UDP and port ranges
+
+On the **Ports** page, the port editor offers two shortcuts for services
+that need more than one tunnel:
+
+- **TCP + UDP** (when creating a port only) opens the same port in both
+  protocols, for games or DNS for instance. The panel creates two ordinary
+  tunnels, `<name>-tcp` and `<name>-udp`, with the same ports and options. The
+  public port is required, otherwise the server would pick a different one
+  for each. Afterwards, each one is edited or deleted on its own.
+- **Port range** (`tcp` and `udp`): type a range (`30000-30010`) or a list
+  (`6000-6006,6007`) in the local port, and as many ports in the public port,
+  which is then required (1,000 ports at most). The range stays a single
+  entry in the list, and the panel writes it as an frp template:
+
+```toml
+{{- range $_, $v := parseNumberRangePair "30000-30010" "30000-30010" }}
+[[proxies]]
+name = "game-{{ $v.First }}"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = {{ $v.First }}
+remotePort = {{ $v.Second }}
+{{- end }}
+```
+
+frpc pairs the ports in order (first local port with the first public port,
+and so on) and creates one tunnel per port, named `game-30000`,
+`game-30001`… The panel refuses a name that one of these tunnels would
+already use, since frpc does not start with two tunnels of the same name.
+`parseNumberRangePair` exists since **frp 0.56**: an older frpc refuses this
+configuration, so update frp first (**Settings → Updates**).
+
 ## Webhook notifications
 
 **Settings → Notifications** sends a message to an address of your choice when something happens on the

@@ -4,7 +4,14 @@
 // Chaque tunnel garde la valeur brute de ses clés pour réécrire à l'identique
 // celles que l'interface ne gère pas (plugin, healthCheck, subdomain…).
 
-const BLOCK_RE = /^\[\[(proxies|visitors)\]\]/m;
+// Un bloc peut être précédé de la ligne « range » d'un modèle de plage de ports
+// (voir generateProxy) : elle part avec lui, pas avec la partie connexion.
+// A block may be preceded by the "range" line of a port-range template (see
+// generateProxy): it goes with the block, not with the connection part.
+const RANGE_LINE = String.raw`\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"\s*-?\}\}`;
+const BLOCK_RE = new RegExp(String.raw`^(?:${RANGE_LINE}[ \t]*\r?\n)?\[\[(proxies|visitors)\]\]`, 'm');
+const RANGE_RE = new RegExp(`^${RANGE_LINE}$`);
+const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
 
 /** Coupe un commentaire de fin de ligne situé hors chaîne. */
 function stripComment(value) {
@@ -44,13 +51,22 @@ export function parseToml(text) {
   let block = null;
   let prefix = '';
   let section = '';
+  let pendingRange = null;
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
 
+    // Modèle de plage de ports : « range » devant le bloc, « end » derrière
+    // Port-range template: "range" in front of the block, "end" behind it
+    const rm = RANGE_RE.exec(line);
+    if (rm) { pendingRange = { local: rm[1], remote: rm[2] }; continue; }
+    if (END_RE.test(line)) continue;
+
     if (line === '[[proxies]]' || line === '[[visitors]]') {
       block = { values: {}, raw: {}, order: [] };
+      if (pendingRange && line === '[[proxies]]') block.range = pendingRange;
+      pendingRange = null;
       out[line === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
       prefix = '';
       continue;
@@ -180,6 +196,58 @@ const PROXY_KEYS = new Set([
 ]);
 const VISITOR_KEYS = new Set(['name', 'type', 'serverName', 'secretKey', 'bindAddr', 'bindPort']);
 
+/** Un port (« 8080 ») ou une liste de ports et de plages (« 6000-6006,6007 »).
+ *  A port ("8080") or a list of ports and ranges ("6000-6006,6007"). */
+const PORT_SPEC_RE = /^\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*$/;
+
+/**
+ * Nombre de ports d'une saisie (« 30000-30010 » → 11), ou 0 si elle est invalide :
+ * ports de 1 à 65535, plages dans l'ordre.
+ * Number of ports of an entry ("30000-30010" → 11), or 0 if it is invalid: ports
+ * from 1 to 65535, ranges in order.
+ */
+export function portSpecCount(spec) {
+  const text = String(spec || '').replace(/\s+/g, '');
+  if (!PORT_SPEC_RE.test(text)) return 0;
+  let total = 0;
+  for (const part of text.split(',')) {
+    const [a, b = a] = part.split('-').map(Number);
+    if (a < 1 || b > 65535 || a > b) return 0;
+    total += b - a + 1;
+  }
+  return total;
+}
+
+/** Plage (ou liste) de ports plutôt qu'un port seul ?
+ *  A range (or list) of ports rather than a single port? */
+export const isPortRange = (spec) => /[-,]/.test(String(spec || ''));
+
+/** Tunnel écrit en modèle de plage (voir generateProxy) ?
+ *  Tunnel written as a range template (see generateProxy)? */
+export const isRanged = (p) => hasRemotePort(p.type) && (isPortRange(p.localPort) || isPortRange(p.remotePort));
+
+/** Plus grand nombre de ports d'une plage : au-delà, frpc crée trop de tunnels.
+ *  Largest number of ports in a range: beyond it, frpc creates too many tunnels. */
+export const MAX_RANGE_PORTS = 1000;
+
+/**
+ * Noms des tunnels que frpc créera pour cette entrée : son nom, ou « nom-<port
+ * local> » pour chaque port d'une plage. frpc refuse de démarrer si deux tunnels
+ * ont le même nom.
+ * Names of the tunnels frpc will create for this entry: its name, or "name-<local
+ * port>" for each port of a range. frpc refuses to start if two tunnels share a
+ * name.
+ */
+export function frpcNames(p) {
+  if (!isRanged(p)) return [p.name];
+  const names = [];
+  for (const part of String(p.localPort).replace(/\s+/g, '').split(',')) {
+    const [a, b = a] = part.split('-').map(Number);
+    for (let port = a; port <= b && names.length < 65535; port += 1) names.push(`${p.name}-${port}`);
+  }
+  return names;
+}
+
 let uidSeq = 0;
 const uid = () => `u${++uidSeq}`;
 
@@ -189,14 +257,19 @@ function extrasOf(block, known) {
 
 export function proxyFromBlock(block) {
   const v = block.values;
+  // Bloc d'un modèle de plage : les ports sont ceux de la ligne « range », le nom
+  // perd son suffixe « -{{ $v.First }} »
+  // Block of a range template: the ports are those of the "range" line, the name
+  // loses its "-{{ $v.First }}" suffix
+  const range = block.range || null;
   return {
     uid: uid(),
-    name: v.name || '',
+    name: range ? (v.name || '').replace(/-?\{\{\s*\$v\.First\s*\}\}$/, '') : v.name || '',
     type: PROXY_TYPES.includes(v.type) ? v.type : (v.type || 'tcp'),
     localIP: v.localIP || '127.0.0.1',
-    localPort: String(v.localPort || ''),
+    localPort: range ? range.local : String(v.localPort || ''),
     // remotePort = 0 : port attribué par le serveur, comme s'il était absent
-    remotePort: Number(v.remotePort) ? String(v.remotePort) : '',
+    remotePort: range ? range.remote : Number(v.remotePort) ? String(v.remotePort) : '',
     domains: (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', '),
     secretKey: v.secretKey || '',
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',
@@ -240,10 +313,20 @@ export function newVisitor() {
 }
 
 export function generateProxy(p) {
-  const L = ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
+  // Plage de ports : un modèle frpc (parseNumberRangePair) qui crée un tunnel par
+  // port, nommé « nom-<port> ». Les deux plages ont le même nombre de ports.
+  // Port range: an frpc template (parseNumberRangePair) that creates one tunnel
+  // per port, named "name-<port>". Both ranges have the same number of ports.
+  const ranged = isRanged(p);
+  const L = ranged
+    ? [`{{- range $_, $v := parseNumberRangePair "${p.localPort}" "${p.remotePort}" }}`, '[[proxies]]',
+      `name = ${str(`${p.name}-{{ $v.First }}`)}`, `type = ${str(p.type)}`]
+    : ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
   if (p.localIP) L.push(`localIP = ${str(p.localIP)}`);
-  if (p.localPort) L.push(`localPort = ${p.localPort}`);
-  if (hasRemotePort(p.type) && p.remotePort) L.push(`remotePort = ${p.remotePort}`);
+  if (ranged) L.push('localPort = {{ $v.First }}');
+  else if (p.localPort) L.push(`localPort = ${p.localPort}`);
+  if (ranged) L.push('remotePort = {{ $v.Second }}');
+  else if (hasRemotePort(p.type) && p.remotePort) L.push(`remotePort = ${p.remotePort}`);
   if (hasDomains(p.type) && p.domains) {
     const list = p.domains.split(',').map((s) => s.trim()).filter(Boolean);
     L.push(`customDomains = [${list.map(str).join(', ')}]`);
@@ -253,6 +336,7 @@ export function generateProxy(p) {
   if (p.encryption) L.push('transport.useEncryption = true');
   if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
   for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
+  if (ranged) L.push('{{- end }}');
   return L.join('\n');
 }
 

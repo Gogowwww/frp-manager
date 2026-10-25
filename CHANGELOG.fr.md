@@ -19,14 +19,17 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   reçoit `/api/ping` sur frp-manager.org avec les mêmes contrôles et limites que
   le serveur du site (compteurs par jour dans une base D1, adresses salées,
   hachées et gardées pour le jour même seulement), redirige l'ancienne adresse du
-  site vers frp-manager.org et sert l'espace privé `/prive/`, protégé par mot de
-  passe (HTTP Basic, vérifié contre le secret `PRIVE_SHA256` ; 429 après 10 mots
-  de passe refusés en 10 minutes) : un tableau de bord des envois des panels
-  (aujourd'hui, 7 et 30 jours, total, graphique des 30 jours, répartition par
-  version, architecture et méthode d'installation) et des téléchargements des
-  releases GitHub, avec les mêmes données dans `/prive/stats.json`. Une page
-  statique, sans script ni ressource externe. Un workflow le déploie à la demande
-  et lance ses tests.
+  site vers frp-manager.org et sert `/stats.json` avec un jeton. Un workflow le
+  déploie à la demande et lance ses tests.
+- **Ports : TCP + UDP et plages de ports** : à la création d'un port, le type
+  « TCP + UDP » ouvre le même port dans les deux protocoles (deux tunnels,
+  `<nom>-tcp` et `<nom>-udp`, mêmes ports et mêmes options, port public obligatoire). Les ports `tcp` et
+  `udp` acceptent une plage ou une liste (`30000-30010`, `6000-6006,6007`,
+  1 000 ports au plus), avec autant de ports publics ; elle reste une seule
+  ligne, écrite sous forme de modèle frp (`parseNumberRangePair`, frp 0.56 ou
+  plus récent) qui crée un tunnel par port. Le panel vérifie le modèle avant
+  d'enregistrer (syntaxe, plages par paires) et refuse un nom que l'un de ces
+  tunnels utiliserait déjà.
 
 ### Modifié
 

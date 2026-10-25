@@ -368,6 +368,40 @@ exactement ceci et rien d'autre (affiché dans Réglages avant de les activer) :
   la compatibilité et des mises à jour. Les désactiver arrête l'envoi tout de
   suite.
 
+## Ports : TCP + UDP et plages de ports
+
+Dans la page **Ports**, l'éditeur de port propose deux raccourcis pour les
+services qui ont besoin de plus d'un tunnel :
+
+- **TCP + UDP** (à la création d'un port seulement) ouvre le même port dans
+  les deux protocoles, pour un jeu ou un DNS par exemple. Le panel crée deux
+  tunnels ordinaires, `<nom>-tcp` et `<nom>-udp`, avec les mêmes ports et les
+  mêmes options. Le port public est obligatoire, sinon le serveur en
+  choisirait un différent pour chacun. Ensuite, chacun se modifie ou se
+  supprime séparément.
+- **Plage de ports** (`tcp` et `udp`) : saisissez une plage (`30000-30010`) ou
+  une liste (`6000-6006,6007`) dans le port local, et autant de ports dans le
+  port public, alors obligatoire (1 000 ports au plus). La plage reste une
+  seule ligne dans la liste, et le panel l'écrit sous forme de modèle frp :
+
+```toml
+{{- range $_, $v := parseNumberRangePair "30000-30010" "30000-30010" }}
+[[proxies]]
+name = "jeu-{{ $v.First }}"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = {{ $v.First }}
+remotePort = {{ $v.Second }}
+{{- end }}
+```
+
+frpc associe les ports dans l'ordre (le premier port local au premier port
+public, et ainsi de suite) et crée un tunnel par port, nommé `jeu-30000`,
+`jeu-30001`… Le panel refuse un nom que l'un de ces tunnels utiliserait déjà,
+car frpc ne démarre pas avec deux tunnels du même nom. `parseNumberRangePair`
+existe depuis **frp 0.56** : un frpc plus ancien refuse cette configuration,
+mettez donc frp à jour d'abord (**Réglages → Mises à jour**).
+
 ## Notifications par webhook
 
 **Réglages → Notifications** envoie un message à l'adresse de votre choix quand quelque chose se passe sur la

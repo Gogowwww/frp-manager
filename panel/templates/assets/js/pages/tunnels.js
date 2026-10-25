@@ -13,6 +13,7 @@ import {
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
+  portSpecCount, isPortRange, isRanged, frpcNames, MAX_RANGE_PORTS,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -270,10 +271,15 @@ function route(fromLabel, from, toLabel, to, fromIsText = false) {
 
 function proxyRow(p) {
   const flags = [];
+  if (isRanged(p)) flags.push(badge(t('tunnels.flags.range', { count: portSpecCount(p.localPort) }), ''));
   if (p.proxyProtocol) flags.push(badge(t('tunnels.flags.proxyProtocol', { v: p.proxyProtocol }), ''));
   if (p.encryption) flags.push(badge(t('tunnels.flags.encrypted'), ''));
   if (p.compression) flags.push(badge(t('tunnels.flags.compressed'), ''));
-  const live = S.status?.proxies?.[p.name];
+  // Plage : frpc a un tunnel par port, on montre la première erreur
+  // Range: frpc has one tunnel per port, the first error is shown
+  const live = isRanged(p)
+    ? frpcNames(p).map((n) => S.status?.proxies?.[n]).find((x) => x?.err)
+    : S.status?.proxies?.[p.name];
   if (serverPicked(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
   if (live?.err) flags.push(badge(t('tunnels.flags.error'), 'danger', { title: live.err }));
 
@@ -340,6 +346,35 @@ async function removeVisitor(v) {
 const PORT_RE = /^\d{1,5}$/;
 const validPort = (v) => PORT_RE.test(v) && +v >= 1 && +v <= 65535;
 
+/** Choix « TCP + UDP » : deux tunnels, nom-tcp et nom-udp, avec les mêmes ports.
+ *  "TCP + UDP" choice: two tunnels, name-tcp and name-udp, with the same ports. */
+const BOTH = 'both';
+
+/**
+ * Erreurs des deux champs de port. Un port seul reste un port ; dès qu'un côté est
+ * une plage, le port public est obligatoire et les deux côtés ont le même nombre
+ * de ports (frpc associe le 1er au 1er, le 2e au 2e…).
+ * Errors of the two port fields. A single port stays a port; as soon as one side is
+ * a range, the public port is required and both sides have the same number of
+ * ports (frpc pairs the 1st with the 1st, the 2nd with the 2nd…).
+ */
+function portErrors(kind, local, remote) {
+  if (!hasRemotePort(kind) || !(isPortRange(local) || isPortRange(remote))) {
+    return {
+      local: validPort(local) ? '' : t('validation.port'),
+      remote: !hasRemotePort(kind) || !remote || validPort(remote) ? '' : t('validation.port'),
+    };
+  }
+  const nl = portSpecCount(local);
+  const nr = portSpecCount(remote);
+  return {
+    local: !nl ? t('validation.portSpec') : nl > MAX_RANGE_PORTS ? t('validation.rangeTooBig', { max: MAX_RANGE_PORTS }) : '',
+    remote: !remote ? t('validation.rangeRemote')
+      : !nr ? t('validation.portSpec')
+        : nl && nr !== nl ? t('validation.rangeCount', { local: nl, remote: nr }) : '',
+  };
+}
+
 function editProxy(existing) {
   const draft = existing ? { ...existing, extras: existing.extras } : newProxy();
 
@@ -350,11 +385,17 @@ function editProxy(existing) {
     build: ({ close }) => {
       const name = input({ value: draft.name, placeholder: t('tunnels.fields.namePlaceholder'), mono: true, autocomplete: 'off' });
       const typeHint = h('p', { class: 'field-hint' });
-      const type = segmented(PROXY_TYPES.map((v) => ({ value: v, label: v.toUpperCase() })), draft.type, () => sync(), { label: t('tunnels.fields.type') });
+      // « TCP + UDP » seulement à la création : ensuite, ce sont deux tunnels
+      // "TCP + UDP" only on creation: afterwards, they are two tunnels
+      const kinds = PROXY_TYPES.flatMap((v) => (v === 'udp' && !existing ? [v, BOTH] : [v]));
+      const type = segmented(kinds.map((v) => ({ value: v, label: v === BOTH ? 'TCP + UDP' : v.toUpperCase() })), draft.type, () => sync(), { label: t('tunnels.fields.type') });
 
+      // Pas de clavier numérique : une plage s'écrit avec « - » et « , »
+      // No numeric keyboard: a range is written with "-" and ","
       const localIP = input({ value: draft.localIP, placeholder: '127.0.0.1', mono: true });
-      const localPort = input({ value: draft.localPort, placeholder: '8080', inputmode: 'numeric', mono: true });
-      const remotePort = input({ value: draft.remotePort, placeholder: '8080', inputmode: 'numeric', mono: true });
+      const localPort = input({ value: draft.localPort, placeholder: '8080', mono: true });
+      const remotePort = input({ value: draft.remotePort, placeholder: '8080', mono: true });
+      const rangeHint = h('p', { class: 'field-hint' }, t('tunnels.fields.rangeHint'));
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
 
@@ -372,36 +413,62 @@ function editProxy(existing) {
       const encryption = switchRow({ label: t('tunnels.fields.encryption'), description: t('tunnels.fields.encryptionHint'), checked: draft.encryption });
       const compression = switchRow({ label: t('tunnels.fields.compression'), description: t('tunnels.fields.compressionHint'), checked: draft.compression });
 
+      // TCP + UDP se comporte comme TCP pour les champs affichés
+      // TCP + UDP behaves like TCP for the fields shown
+      const kindOf = (tp) => (tp === BOTH ? 'tcp' : tp);
+
       function sync() {
         const tp = type.value;
+        const kind = kindOf(tp);
         typeHint.textContent = t(`tunnels.types.${tp}`);
-        remoteField.hidden = !hasRemotePort(tp);
-        domainsField.hidden = !hasDomains(tp);
-        secretField.hidden = !hasSecret(tp);
+        remoteField.hidden = !hasRemotePort(kind);
+        rangeHint.hidden = !hasRemotePort(kind);
+        domainsField.hidden = !hasDomains(kind);
+        secretField.hidden = !hasSecret(kind);
       }
       sync();
 
       function submit(e) {
         e.preventDefault();
         const tp = type.value;
+        const kind = kindOf(tp);
         const values = {
           name: name.value.trim(),
           localIP: localIP.value.trim(),
-          localPort: localPort.value.trim(),
-          remotePort: remotePort.value.trim(),
+          localPort: localPort.value.replace(/\s+/g, ''),
+          remotePort: remotePort.value.replace(/\s+/g, ''),
         };
+        // Tunnels que l'entrée deviendra : deux pour TCP + UDP
+        // Tunnels the entry will become: two for TCP + UDP
+        const made = tp === BOTH
+          ? [{ name: `${values.name}-tcp`, type: 'tcp' }, { name: `${values.name}-udp`, type: 'udp' }]
+          : [{ name: values.name, type: tp }];
+
+        // Noms de la liste et noms réels côté frpc (« nom-<port> » pour une
+        // plage) : aucun en double
+        // Names in the list and real names on the frpc side ("name-<port>" for
+        // a range): no duplicates
+        const others = S.proxies.filter((p) => p.uid !== draft.uid);
+        const taken = new Set([...others.map((p) => p.name), ...others.flatMap(frpcNames)]);
+        const clash = made.flatMap((m) => [m.name, ...frpcNames({ ...m, localPort: values.localPort, remotePort: values.remotePort })])
+          .find((n) => taken.has(n));
+        const ports = portErrors(kind, values.localPort, values.remotePort);
 
         let ok = true;
         const check = (ctrl, msg) => { setFieldError(ctrl, msg); if (msg) ok = false; };
         check(name, !values.name ? t('validation.required')
-          : S.proxies.some((p) => p.uid !== draft.uid && p.name === values.name) ? t('validation.nameTaken') : '');
+          : clash === values.name ? t('validation.nameTaken')
+            : clash ? t('validation.nameClash', { name: clash }) : '');
         check(localIP, !values.localIP ? t('validation.required') : '');
-        check(localPort, !validPort(values.localPort) ? t('validation.port') : '');
-        check(remotePort, hasRemotePort(tp) && values.remotePort && !validPort(values.remotePort) ? t('validation.port') : '');
+        check(localPort, ports.local);
+        // TCP + UDP sans port public : le serveur en tirerait un différent pour chacun
+        // TCP + UDP without a public port: the server would pick a different one for each
+        check(remotePort, tp === BOTH && !values.remotePort ? t('validation.bothRemote') : ports.remote);
         if (!ok) { draftDialogFocusError(); return; }
 
         Object.assign(draft, values, {
-          type: tp,
+          type: made[0].type,
+          name: made[0].name,
           domains: domains.value.trim(),
           secretKey: secret.input.value,
           proxyProtocol: ppv.value,
@@ -410,6 +477,9 @@ function editProxy(existing) {
         });
         if (existing) S.proxies = S.proxies.map((p) => (p.uid === draft.uid ? draft : p));
         else S.proxies = [...S.proxies, draft];
+        // TCP + UDP : le tunnel UDP, mêmes ports et mêmes options
+        // TCP + UDP: the UDP tunnel, same ports and same options
+        if (made[1]) S.proxies = [...S.proxies, { ...draft, ...made[1], uid: newProxy().uid, extras: [] }];
         close(true);
         render();
       }
@@ -426,7 +496,8 @@ function editProxy(existing) {
             h('div', { class: 'form-grid-2' },
               field({ label: t('tunnels.fields.localIP'), tomlKey: 'localIP', control: localIP }),
               field({ label: t('tunnels.fields.localPort'), tomlKey: 'localPort', control: localPort })),
-            h('p', { class: 'field-hint' }, t('tunnels.fields.localHint'))),
+            h('p', { class: 'field-hint' }, t('tunnels.fields.localHint')),
+            rangeHint),
           h('fieldset', { class: 'fieldset' },
             h('legend', { class: 'fieldset-title' }, t('tunnels.fields.publicAccess')),
             remoteField, domainsField, secretField),
