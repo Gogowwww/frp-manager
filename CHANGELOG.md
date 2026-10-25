@@ -13,6 +13,14 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Added
+
+- **Self-hosted statistics receiver**: `tools/statsd` is a small program with no
+  dependency that receives the panels' anonymous statistics (`/api/ping`) with
+  the same checks and limits as the website server, keeps daily counters in a
+  file, serves them with a token, and redirects the old website address to
+  frp-manager.org. It replaces the website's cloudpod for this.
+
 ### Changed
 
 - **Installation guide**: the apt commands use `apt.frp-manager.org`.

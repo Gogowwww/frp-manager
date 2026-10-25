@@ -13,6 +13,15 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Ajouté
+
+- **Récepteur de statistiques à héberger soi-même** : `tools/statsd` est un
+  petit programme sans dépendance qui reçoit les statistiques anonymes des
+  panels (`/api/ping`) avec les mêmes contrôles et limites que le serveur du
+  site, garde des compteurs par jour dans un fichier, les sert avec un jeton,
+  et redirige l'ancienne adresse du site vers frp-manager.org. Il remplace le
+  cloudpod du site pour cela.
+
 ### Modifié
 
 - **Guide d'installation** : les commandes apt utilisent `apt.frp-manager.org`.
