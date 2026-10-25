@@ -1,10 +1,10 @@
 // Worker Cloudflare : récepteur des statistiques anonymes de FRP Manager.
 // Cloudflare Worker: receiver of FRP Manager's anonymous statistics.
 //
-// Routes (wrangler.toml) : frp-manager.org/api/ping, et l'ancien nom d'hôte
+// Routes (wrangler.jsonc) : frp-manager.org/api/ping, et l'ancien nom d'hôte
 // (OLD_HOST) en entier, dont les pages sont redirigées vers NEW_SITE. Le reste de
 // frp-manager.org est servi par GitHub Pages, derrière Cloudflare.
-// Routes (wrangler.toml): frp-manager.org/api/ping, and the whole old host name
+// Routes (wrangler.jsonc): frp-manager.org/api/ping, and the whole old host name
 // (OLD_HOST), whose pages are redirected to NEW_SITE. The rest of frp-manager.org
 // is served by GitHub Pages, behind Cloudflare.
 //

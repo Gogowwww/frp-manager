@@ -1,0 +1,33 @@
+// Worker Cloudflare des statistiques anonymes / Cloudflare Worker for the anonymous statistics
+//
+// Format .jsonc et non .toml : le .gitignore du dépôt exclut tous les *.toml.
+// .jsonc format and not .toml: the repository .gitignore excludes every *.toml.
+//
+// Déploiement : workflow « Worker des statistiques » (Actions), ou
+//   npx wrangler d1 create frp-manager-stats   (puis mettre database_id ci-dessous)
+//   npx wrangler d1 execute frp-manager-stats --remote --file=schema.sql
+//   npx wrangler deploy
+//   npx wrangler secret put IP_SALT && npx wrangler secret put STATS_TOKEN
+// Deployment: "Worker des statistiques" workflow (Actions), or the commands above.
+{
+  "name": "frp-manager-stats",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+
+  // Les deux zones doivent être sur Cloudflare, enregistrements « proxied » (nuage orange)
+  // Both zones must be on Cloudflare, "proxied" records (orange cloud)
+  "routes": [
+    { "pattern": "frp-manager.org/api/ping", "zone_name": "frp-manager.org" },
+    { "pattern": "frp-manager.gogow.fr/*", "zone_name": "gogow.fr" }
+  ],
+
+  "vars": {
+    "OLD_HOST": "frp-manager.gogow.fr",
+    "NEW_SITE": "https://frp-manager.org"
+  },
+
+  "d1_databases": [
+    { "binding": "STATS", "database_name": "frp-manager-stats", "database_id": "A-REMPLACER" }
+  ]
+}

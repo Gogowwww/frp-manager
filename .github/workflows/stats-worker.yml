@@ -74,7 +74,7 @@ jobs:
             id=$(npx --yes wrangler@4 d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));const d=l.find(x=>x.name==="frp-manager-stats");console.log(d?d.uuid:"")')
           fi
           [ -n "$id" ] || { echo "Base D1 introuvable"; exit 1; }
-          sed -i "s/A-REMPLACER/$id/" wrangler.toml
+          sed -i "s/A-REMPLACER/$id/" wrangler.jsonc
           npx --yes wrangler@4 d1 execute frp-manager-stats --remote --file=schema.sql
       - name: Déployer
         run: npx --yes wrangler@4 deploy
