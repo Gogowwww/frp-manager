@@ -115,12 +115,12 @@ jobs:
           [ -f out/site/index.html ] || { echo "out/site/index.html absent : site non construit"; exit 1; }
           rm -rf pages
           cp -r out/site pages
-          # L'espace privé (/prive/ : cahier des charges, statistiques) est protégé par
-          # mot de passe par le serveur Go, pas par Pages : jamais publié ici
-          # The private area (/prive/: specification, statistics) is password-protected
-          # by the Go server, not by Pages: never published here
+          # Le dossier privé du site est protégé par le serveur Go, pas par Pages :
+          # jamais publié ici
+          # The site's private folder is protected by the Go server, not by Pages:
+          # never published here
           rm -rf pages/prive
-          ! find pages -ipath '*prive*' | grep -q . || { echo "espace privé encore présent"; exit 1; }
+          ! find pages -ipath '*prive*' | grep -q . || { echo "dossier privé encore présent"; exit 1; }
           printf '%s\n' "$SITE_DOMAIN" > pages/CNAME
           touch pages/.nojekyll
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"

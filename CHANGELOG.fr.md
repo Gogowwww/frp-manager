@@ -18,9 +18,9 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 - **Worker Cloudflare des statistiques anonymes** (`tools/stats-worker`) :
   reçoit `/api/ping` sur frp-manager.org avec les mêmes contrôles et limites que
   le serveur du site (compteurs par jour dans une base D1, adresses salées,
-  hachées et gardées pour le jour même seulement), redirige l'ancienne adresse du
-  site vers frp-manager.org et sert `/stats.json` avec un jeton. Un workflow le
-  déploie à la demande et lance ses tests.
+  hachées et gardées pour le jour même seulement) et redirige l'ancienne adresse
+  du site vers frp-manager.org. Un workflow le déploie à la demande et lance ses
+  tests.
 - **Ports : TCP + UDP et plages de ports** : à la création d'un port, le type
   « TCP + UDP » ouvre le même port dans les deux protocoles (deux tunnels,
   `<nom>-tcp` et `<nom>-udp`, mêmes ports et mêmes options, port public obligatoire). Les ports `tcp` et
