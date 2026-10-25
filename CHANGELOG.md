@@ -13,6 +13,10 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Installation guide**: the apt commands use `apt.frp-manager.org`.
+
 ### Added
 
 - **Machines move to the new apt repository on their own**: the package

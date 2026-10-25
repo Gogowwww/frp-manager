@@ -13,6 +13,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Guide d'installation** : les commandes apt utilisent `apt.frp-manager.org`.
+
 ### Ajouté
 
 - **Les machines passent seules sur le nouveau dépôt apt** : le paquet embarque

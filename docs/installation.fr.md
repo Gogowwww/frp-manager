@@ -63,8 +63,8 @@ n'importe quel paquet :
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
-sudo curl -fsSL https://forgejo.gogow.fr/api/packages/administrator/debian/repository.key -o /etc/apt/keyrings/frp-manager.asc
-echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://forgejo.gogow.fr/api/packages/administrator/debian stable main" \
+sudo curl -fsSL https://apt.frp-manager.org/repository.key -o /etc/apt/keyrings/frp-manager.asc
+echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] https://apt.frp-manager.org stable main" \
   | sudo tee /etc/apt/sources.list.d/frp-manager.list
 sudo apt update
 sudo apt install frp-manager

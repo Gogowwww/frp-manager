@@ -68,9 +68,13 @@ python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
 All continuous integration, releases and publishing run on GitHub Actions
 (`.github/workflows/`), including the [Plumber](https://getplumber.io) scan,
 which only reads `.github/workflows` and only publishes the README score from
-GitHub. The Forgejo only hosts the apt repository and the private repository
-of the website; the `FORGEJO_PACKAGES_TOKEN` and `DEMO_REPO_TOKEN` secrets give
-GitHub access to them.
+GitHub. The apt repository is `apt.frp-manager.org`, a static repository
+signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` in
+`Gogowwww/frp-manager-apt` (GitHub Pages, `APT_DEPLOY_KEY` secret). The Forgejo
+still hosts the old apt repository, kept up to date for machines that have not
+moved yet, and the private repository of the website; the
+`FORGEJO_PACKAGES_TOKEN` and `DEMO_REPO_TOKEN` secrets give GitHub access to
+them.
 
 - **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
   `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a
