@@ -15,14 +15,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Ajouté
 
-- **Récepteur de statistiques à héberger soi-même** : `tools/statsd` est un
-  petit programme sans dépendance qui reçoit les statistiques anonymes des
-  panels (`/api/ping`) avec les mêmes contrôles et limites que le serveur du
-  site, garde des compteurs par jour dans un fichier, les sert avec un jeton,
-  et redirige l'ancienne adresse du site vers frp-manager.org. Il remplace le
-  cloudpod du site pour cela. Une image Docker
-  (`ghcr.io/gogowwww/frp-manager-statsd`, amd64 et arm64) et un fichier de stack
-  pour Portainer (`tools/statsd/compose.yml`) sont fournis.
+- **Worker Cloudflare des statistiques anonymes** (`tools/stats-worker`) :
+  reçoit `/api/ping` sur frp-manager.org avec les mêmes contrôles et limites que
+  le serveur du site (compteurs par jour dans une base D1, adresses salées,
+  hachées et gardées pour le jour même seulement), redirige l'ancienne adresse du
+  site vers frp-manager.org et sert `/stats.json` avec un jeton. Un workflow le
+  déploie à la demande et lance ses tests.
 
 ### Modifié
 

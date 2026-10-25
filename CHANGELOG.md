@@ -15,13 +15,12 @@ older than 0.0.51 are described in the
 
 ### Added
 
-- **Self-hosted statistics receiver**: `tools/statsd` is a small program with no
-  dependency that receives the panels' anonymous statistics (`/api/ping`) with
-  the same checks and limits as the website server, keeps daily counters in a
-  file, serves them with a token, and redirects the old website address to
-  frp-manager.org. It replaces the website's cloudpod for this. A Docker image
-  (`ghcr.io/gogowwww/frp-manager-statsd`, amd64 and arm64) and a stack file for
-  Portainer (`tools/statsd/compose.yml`) are provided.
+- **Cloudflare Worker for the anonymous statistics** (`tools/stats-worker`):
+  receives `/api/ping` on frp-manager.org with the same checks and limits as the
+  website server (daily counters in a D1 database, addresses salted, hashed and
+  kept for the same day only), redirects the old website address to
+  frp-manager.org and serves `/stats.json` with a token. A workflow deploys it on
+  demand and runs its tests.
 
 ### Changed
 
