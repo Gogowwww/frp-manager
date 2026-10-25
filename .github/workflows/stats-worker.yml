@@ -1,0 +1,95 @@
+# GitHub Actions : Worker Cloudflare des statistiques anonymes (tools/stats-worker).
+# GitHub Actions: Cloudflare Worker for the anonymous statistics (tools/stats-worker).
+#
+# Tests (node --test) à chaque changement du Worker. Le déploiement se lance à la
+# main (Actions → « Worker des statistiques » → Run workflow) : il crée la base D1
+# si elle manque, applique schema.sql, pose les secrets du Worker puis déploie.
+# Tests (node --test) on every change of the Worker. The deployment is started by
+# hand (Actions → "Worker des statistiques" → Run workflow): it creates the D1
+# database if missing, applies schema.sql, sets the Worker secrets, then deploys.
+#
+# Prérequis du déploiement, secrets GitHub : CLOUDFLARE_API_TOKEN (modèle « Edit
+# Cloudflare Workers », plus la permission D1 : Edit), CLOUDFLARE_ACCOUNT_ID, et
+# facultativement STATS_TOKEN (lecture de /stats.json). Les zones frp-manager.org et
+# gogow.fr doivent être sur Cloudflare, enregistrements en « proxied ».
+# Deployment requirements, GitHub secrets: CLOUDFLARE_API_TOKEN ("Edit Cloudflare
+# Workers" template, plus the D1: Edit permission), CLOUDFLARE_ACCOUNT_ID, and
+# optionally STATS_TOKEN (read /stats.json). The frp-manager.org and gogow.fr
+# zones must be on Cloudflare, records "proxied".
+
+name: Worker des statistiques
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/stats-worker/**', '.github/workflows/stats-worker.yml']
+  pull_request:
+    paths: ['tools/stats-worker/**', '.github/workflows/stats-worker.yml']
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Tests
+        run: node --test
+        working-directory: tools/stats-worker
+
+  deploy:
+    needs: test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: tools/stats-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Base D1
+        run: |
+          set -eu
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "Secrets Cloudflare absents"; exit 1; }
+          id=$(npx --yes wrangler@4 d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));const d=l.find(x=>x.name==="frp-manager-stats");console.log(d?d.uuid:"")')
+          if [ -z "$id" ]; then
+            npx --yes wrangler@4 d1 create frp-manager-stats
+            id=$(npx --yes wrangler@4 d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));const d=l.find(x=>x.name==="frp-manager-stats");console.log(d?d.uuid:"")')
+          fi
+          [ -n "$id" ] || { echo "Base D1 introuvable"; exit 1; }
+          sed -i "s/A-REMPLACER/$id/" wrangler.toml
+          npx --yes wrangler@4 d1 execute frp-manager-stats --remote --file=schema.sql
+      - name: Déployer
+        run: npx --yes wrangler@4 deploy
+      # Les secrets se posent sur un Worker qui existe : donc après le déploiement.
+      # Le sel des adresses est tiré une fois puis gardé.
+      # Secrets are set on a Worker that exists: hence after the deployment. The
+      # address salt is drawn once, then kept.
+      - name: Secrets du Worker
+        env:
+          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}
+        run: |
+          set -eu
+          if ! npx --yes wrangler@4 secret list | grep -q IP_SALT; then
+            openssl rand -hex 24 | npx --yes wrangler@4 secret put IP_SALT
+          fi
+          if [ -n "$STATS_TOKEN" ]; then
+            printf '%s' "$STATS_TOKEN" | npx --yes wrangler@4 secret put STATS_TOKEN
+          fi
