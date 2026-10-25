@@ -13,6 +13,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Test apt depuis apt.frp-manager.org** : la CI installe le paquet `dev` du
+  nouveau dépôt (Debian 12 et Ubuntu 24.04), attend la version exacte qu'elle
+  vient de publier, démarre le panel puis le désinstalle.
+
 ### Ajouté
 
 - **Dépôt apt sur apt.frp-manager.org** (en plus de celui du Forgejo, pour

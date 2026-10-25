@@ -30,11 +30,12 @@ permissions: {}
 env:
   FORGEJO_URL: https://forgejo.gogow.fr
   APT_OWNER: administrator
-  APT_REPO: https://forgejo.gogow.fr/api/packages/administrator/debian
 
 jobs:
   go:
     runs-on: ubuntu-24.04
+    outputs:
+      deb_version: ${{ steps.build.outputs.deb_version }}
     # Un seul publieur à la fois sur le dépôt APT / One publisher at a time on the APT repository
     concurrency:
       group: apt-pages
@@ -51,12 +52,14 @@ jobs:
       - name: go vet, go test, gofmt
         run: docker buildx build --target test --progress plain .
       - name: Programme (trois architectures) et paquets .deb
+        id: build
         run: |
           set -eu
           SHORT=$(git rev-parse --short=7 HEAD)
           BASE=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//' || true)
           PANEL_VERSION="dev-$SHORT"
           DEB_VERSION="${BASE:-0.0.0}+dev.${{ github.run_number }}.g$SHORT"
+          echo "deb_version=$DEB_VERSION" >> "$GITHUB_OUTPUT"
           docker buildx build --target binaries --build-arg PANEL_VERSION="$PANEL_VERSION" \
             --output type=local,dest=ci/bin .
           ls -l ci/bin
@@ -118,10 +121,14 @@ jobs:
           done
           python3 -m py_compile packaging/python-bridge/app.py
 
-  # Installation par apt, comme sur une vraie machine : clé, source, paquet,
-  # panel qui répond, puis désinstallation complète.
-  # Installation with apt, like on a real machine: key, source, package, panel
-  # answering, then complete uninstall.
+  # Installation par apt depuis apt.frp-manager.org (GitHub Pages), comme sur une
+  # vraie machine : clé, source, paquet, panel qui répond, puis désinstallation
+  # complète. Pages met une à deux minutes à servir le paquet qui vient d'être
+  # publié : on attend la version exacte du job go.
+  # Installation with apt from apt.frp-manager.org (GitHub Pages), like on a real
+  # machine: key, source, package, panel answering, then complete uninstall. Pages
+  # takes a minute or two to serve the package that was just published: we wait
+  # for the exact version of the go job.
   apt:
     needs: go
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -136,6 +143,9 @@ jobs:
           - ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     container:
       image: ${{ matrix.image }}
+    env:
+      APT_URL: https://apt.frp-manager.org
+      DEB_VERSION: ${{ needs.go.outputs.deb_version }}
     steps:
       - name: apt install frp-manager (canal dev)
         run: |
@@ -144,12 +154,21 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq curl ca-certificates iproute2 procps >/dev/null
           install -d -m 0755 /etc/apt/keyrings
-          curl -fsSL "$APT_REPO/repository.key" -o /etc/apt/keyrings/frp-manager.asc
-          echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $APT_REPO dev main" > /etc/apt/sources.list.d/frp-manager.list
-          apt-get update -qq
+          curl -fsSL "$APT_URL/repository.key" -o /etc/apt/keyrings/frp-manager.asc
+          echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $APT_URL dev main" > /etc/apt/sources.list.d/frp-manager.list
+          # Attendre que Pages serve la version qui vient d'être publiée (7 minutes au plus)
+          # Wait for Pages to serve the version that was just published (7 minutes at most)
+          found=""
+          for i in $(seq 1 21); do
+            apt-get update -qq || true
+            if apt-cache madison frp-manager | grep -qF "$DEB_VERSION"; then found=1; break; fi
+            echo "version $DEB_VERSION pas encore servie (essai $i)"; sleep 20
+          done
           apt-cache policy frp-manager
-          apt-get install -y frp-manager
+          [ -n "$found" ] || { echo "version $DEB_VERSION jamais servie par $APT_URL"; exit 1; }
+          apt-get install -y "frp-manager=$DEB_VERSION"
           frp-manager --version
+          [ "$(dpkg-query -W -f='${Version}' frp-manager)" = "$DEB_VERSION" ]
           test -f /etc/frp/frps.toml && grep bindPort /etc/frp/frps.toml
           test -f /etc/systemd/system/frps.service
           # Pas de systemd dans le conteneur : le panel est lancé à la main

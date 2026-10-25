@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **apt test from apt.frp-manager.org**: the CI installs the `dev` package from
+  the new repository (Debian 12 and Ubuntu 24.04), waits for the exact version
+  it just published, starts the panel and uninstalls it.
+
 ### Added
 
 - **apt repository at apt.frp-manager.org** (in addition to the Forgejo one,
