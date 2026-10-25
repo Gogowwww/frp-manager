@@ -76,3 +76,54 @@ export function sameSecret(a, b) {
   for (let i = 0; i < Math.max(x.length, y.length); i += 1) diff |= (x[i] || 0) ^ (y[i] || 0);
   return diff === 0;
 }
+
+// Espace privé (/prive/) : au-delà de PRIVE_MAX_FAILS mots de passe refusés en
+// PRIVE_FAIL_WINDOW secondes, tous visiteurs confondus, il répond 429 sans rien vérifier.
+// Private area (/prive/): beyond PRIVE_MAX_FAILS refused passwords within
+// PRIVE_FAIL_WINDOW seconds, all visitors together, it answers 429 without checking.
+export const PRIVE_MAX_FAILS = 10;
+export const PRIVE_FAIL_WINDOW = 600; // secondes / seconds
+
+/**
+ * Empreinte SHA-256 du mot de passe de /prive/ (64 caractères hexadécimaux, rendus en
+ * minuscules), ou null si elle est absente ou invalide : l'espace est alors fermé.
+ * SHA-256 hash of the /prive/ password (64 hexadecimal characters, lowercased), or null
+ * if it is missing or invalid: the area is then closed.
+ */
+export function privateKey(hex) {
+  if (typeof hex !== 'string') return null;
+  const h = hex.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(h) ? h : null;
+}
+
+/**
+ * Mot de passe d'un en-tête « Authorization: Basic … » (l'identifiant est ignoré), ou
+ * null si l'en-tête manque ou est mal formé (base64 ou UTF-8 invalide, pas de « : »).
+ * Password of an "Authorization: Basic …" header (the user name is ignored), or null if
+ * the header is missing or malformed (invalid base64 or UTF-8, no ":").
+ */
+export function basicPassword(header) {
+  const m = /^Basic +([A-Za-z0-9+/]+={0,2}) *$/i.exec(typeof header === 'string' ? header : '');
+  if (!m) return null;
+  let text;
+  try {
+    const bytes = Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0));
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+  const i = text.indexOf(':');
+  return i < 0 ? null : text.slice(i + 1);
+}
+
+/**
+ * Secondes à attendre (Retry-After) quand l'espace privé est bloqué : jusqu'à ce que le
+ * plus ancien refus de la fenêtre en sorte, au moins 1.
+ * Seconds to wait (Retry-After) while the private area is blocked: until the oldest
+ * refusal of the window leaves it, at least 1.
+ */
+export function retryAfter(firstFailMs, nowMs) {
+  const first = typeof firstFailMs === 'number' ? firstFailMs : NaN;
+  const left = Math.ceil((first + PRIVE_FAIL_WINDOW * 1000 - nowMs) / 1000);
+  return Number.isFinite(left) ? Math.min(PRIVE_FAIL_WINDOW, Math.max(1, left)) : PRIVE_FAIL_WINDOW;
+}

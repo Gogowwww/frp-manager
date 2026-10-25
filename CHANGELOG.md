@@ -19,8 +19,13 @@ older than 0.0.51 are described in the
   receives `/api/ping` on frp-manager.org with the same checks and limits as the
   website server (daily counters in a D1 database, addresses salted, hashed and
   kept for the same day only), redirects the old website address to
-  frp-manager.org and serves `/stats.json` with a token. A workflow deploys it on
-  demand and runs its tests.
+  frp-manager.org and serves the private area `/prive/`, protected by a password
+  (HTTP Basic, checked against the `PRIVE_SHA256` secret; 429 after 10 refused
+  passwords in 10 minutes): a French dashboard of the panels' pings (today,
+  7 and 30 days, total, 30-day chart, breakdown by version, architecture and
+  install method) and of the GitHub release downloads, with the same data in
+  `/prive/stats.json`. A static page, no script or external resource. A
+  workflow deploys it on demand and runs its tests.
 
 ### Changed
 

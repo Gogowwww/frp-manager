@@ -7,8 +7,13 @@
 //   npx wrangler d1 create frp-manager-stats   (puis mettre database_id ci-dessous)
 //   npx wrangler d1 execute frp-manager-stats --remote --file=schema.sql
 //   npx wrangler deploy
-//   npx wrangler secret put IP_SALT && npx wrangler secret put STATS_TOKEN
+//   npx wrangler secret put IP_SALT && npx wrangler secret put PRIVE_SHA256
 // Deployment: "Worker des statistiques" workflow (Actions), or the commands above.
+//
+// PRIVE_SHA256 : empreinte SHA-256 en hexadécimal du mot de passe de /prive/
+// (« printf '%s' 'mot de passe' | sha256sum ») ; sans elle /prive/ répond 404.
+// PRIVE_SHA256: hexadecimal SHA-256 hash of the /prive/ password
+// ("printf '%s' 'password' | sha256sum"); without it /prive/ answers 404.
 {
   "name": "frp-manager-stats",
   "main": "worker.js",
@@ -19,6 +24,8 @@
   // Both zones must be on Cloudflare, "proxied" records (orange cloud)
   "routes": [
     { "pattern": "frp-manager.org/api/ping", "zone_name": "frp-manager.org" },
+    { "pattern": "frp-manager.org/prive", "zone_name": "frp-manager.org" },
+    { "pattern": "frp-manager.org/prive/*", "zone_name": "frp-manager.org" },
     { "pattern": "frp-manager.gogow.fr/*", "zone_name": "gogow.fr" }
   ],
 

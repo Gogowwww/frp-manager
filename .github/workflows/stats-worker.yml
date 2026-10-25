@@ -10,11 +10,13 @@
 #
 # Prérequis du déploiement, secrets GitHub : CLOUDFLARE_API_TOKEN (modèle « Edit
 # Cloudflare Workers », plus la permission D1 : Edit), CLOUDFLARE_ACCOUNT_ID, et
-# facultativement STATS_TOKEN (lecture de /stats.json). Les zones frp-manager.org et
-# gogow.fr doivent être sur Cloudflare, enregistrements en « proxied ».
+# facultativement PRIVE_SHA256 (empreinte SHA-256 en hexadécimal du mot de passe de
+# l'espace privé /prive/ ; sans elle /prive/ répond 404). Les zones frp-manager.org
+# et gogow.fr doivent être sur Cloudflare, enregistrements en « proxied ».
 # Deployment requirements, GitHub secrets: CLOUDFLARE_API_TOKEN ("Edit Cloudflare
 # Workers" template, plus the D1: Edit permission), CLOUDFLARE_ACCOUNT_ID, and
-# optionally STATS_TOKEN (read /stats.json). The frp-manager.org and gogow.fr
+# optionally PRIVE_SHA256 (hexadecimal SHA-256 hash of the password of the /prive/
+# private area; without it /prive/ answers 404). The frp-manager.org and gogow.fr
 # zones must be on Cloudflare, records "proxied".
 
 name: Worker des statistiques
@@ -84,12 +86,12 @@ jobs:
       # address salt is drawn once, then kept.
       - name: Secrets du Worker
         env:
-          STATS_TOKEN: ${{ secrets.STATS_TOKEN }}
+          PRIVE_SHA256: ${{ secrets.PRIVE_SHA256 }}
         run: |
           set -eu
           if ! npx --yes wrangler@4 secret list | grep -q IP_SALT; then
             openssl rand -hex 24 | npx --yes wrangler@4 secret put IP_SALT
           fi
-          if [ -n "$STATS_TOKEN" ]; then
-            printf '%s' "$STATS_TOKEN" | npx --yes wrangler@4 secret put STATS_TOKEN
+          if [ -n "$PRIVE_SHA256" ]; then
+            printf '%s' "$PRIVE_SHA256" | npx --yes wrangler@4 secret put PRIVE_SHA256
           fi

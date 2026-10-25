@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  countedVersion, pingKey, dayOf, oldestKept, redirectTarget, sameSecret, KEEP_DAYS, MAX_BODY,
+  countedVersion, pingKey, dayOf, oldestKept, redirectTarget, sameSecret, privateKey, basicPassword, retryAfter,
+  KEEP_DAYS, MAX_BODY, PRIVE_FAIL_WINDOW,
 } from './logic.js';
 import worker from './worker.js';
 
@@ -55,9 +56,41 @@ test('sameSecret', () => {
   assert.equal(sameSecret('', ''), true);
 });
 
+test('privateKey : 64 caractères hexadécimaux, sinon espace fermé', () => {
+  const h = 'AB'.repeat(32);
+  assert.equal(privateKey(h), 'ab'.repeat(32));
+  assert.equal(privateKey(` ${h}\n`), 'ab'.repeat(32));
+  for (const bad of [undefined, null, '', 'abc', 'g'.repeat(64), 'a'.repeat(63), 'a'.repeat(65)]) {
+    assert.equal(privateKey(bad), null, String(bad));
+  }
+});
+
+test('basicPassword : seul le mot de passe compte', () => {
+  const basic = (s) => `Basic ${Buffer.from(s, 'utf8').toString('base64')}`;
+  assert.equal(basicPassword(basic('moi:secret')), 'secret');
+  assert.equal(basicPassword(basic(':secret')), 'secret');
+  assert.equal(basicPassword(basic('x:a:b')), 'a:b');
+  assert.equal(basicPassword(basic('x:')), '');
+  assert.equal(basicPassword(basic('x:mot de passe é')), 'mot de passe é');
+  assert.equal(basicPassword(`basic ${Buffer.from('x:y').toString('base64')}`), 'y');
+  for (const bad of [undefined, '', 'Bearer abc', 'Basic', 'Basic %%%', basic('sans-deux-points'), `Basic ${Buffer.from([0x78, 0x3a, 0xff]).toString('base64')}`]) {
+    assert.equal(basicPassword(bad), null, String(bad));
+  }
+});
+
+test('retryAfter : jusqu\'à la sortie du plus ancien refus, entre 1 et la fenêtre', () => {
+  const now = 1_800_000_000_000;
+  assert.equal(retryAfter(now, now), PRIVE_FAIL_WINDOW);
+  assert.equal(retryAfter(now - 540_000, now), 60);
+  assert.equal(retryAfter(now - 599_999, now), 1);
+  assert.equal(retryAfter(now - 700_000, now), 1);
+  assert.equal(retryAfter(null, now), PRIVE_FAIL_WINDOW);
+  assert.equal(retryAfter(undefined, now), PRIVE_FAIL_WINDOW);
+});
+
 // Chemins du Worker qui ne touchent pas à la base
 // Worker paths that do not touch the database
-const env = { OLD_HOST: 'frp-manager.gogow.fr', NEW_SITE: 'https://frp-manager.org', STATS_TOKEN: '' };
+const env = { OLD_HOST: 'frp-manager.gogow.fr', NEW_SITE: 'https://frp-manager.org' };
 const ctx = { waitUntil() {} };
 const call = (url, init) => worker.fetch(new Request(url, init), env, ctx);
 
@@ -76,12 +109,7 @@ test('Worker : redirection, méthode, corps, route cachée', async () => {
   assert.equal(r.status, 404);
   r = await call('https://frp-manager.org/autre');
   assert.equal(r.status, 404);
-});
-
-test('Worker : /stats.json demande le jeton', async () => {
-  const withToken = { ...env, STATS_TOKEN: 'secret' };
-  let r = await worker.fetch(new Request('https://frp-manager.org/stats.json'), withToken, ctx);
-  assert.equal(r.status, 401);
-  r = await worker.fetch(new Request('https://frp-manager.org/stats.json', { headers: { Authorization: 'Bearer faux' } }), withToken, ctx);
-  assert.equal(r.status, 401);
+  r = await call('https://frp-manager.gogow.fr/prive/');
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get('Location'), 'https://frp-manager.org/prive/');
 });
