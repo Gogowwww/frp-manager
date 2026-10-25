@@ -20,6 +20,13 @@
 // <STATS_TOKEN>" header; without STATS_TOKEN, that route does not exist (404).
 // GET /healthz answers 200.
 //
+// « frp-manager-statsd -healthcheck » interroge /healthz du programme déjà lancé
+// et sort en 0 s'il répond (contrôle de santé de l'image Docker, qui n'a pas
+// de curl).
+// "frp-manager-statsd -healthcheck" queries /healthz of the already running
+// program and exits 0 if it answers (health check of the Docker image, which
+// has no curl).
+//
 // Variables : LISTEN (défaut :8080), STATS_FILE (défaut stats.json),
 // STATS_TOKEN, TRUST_PROXY=1 (lire l'adresse dans CF-Connecting-IP ou
 // X-Forwarded-For, derrière un proxy ou un tunnel de confiance), OLD_HOST
@@ -255,8 +262,32 @@ func env(key, def string) string {
 	return def
 }
 
+// healthcheck : GET /healthz sur l'adresse d'écoute, 0 si 200.
+// healthcheck: GET /healthz on the listen address, 0 if 200.
+func healthcheck(listen string) int {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return 1
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + net.JoinHostPort(host, port) + "/healthz")
+	if err != nil {
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
+}
+
 func main() {
 	addr := env("LISTEN", ":8080")
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck(addr))
+	}
 	file := env("STATS_FILE", "stats.json")
 	s := &server{
 		st:         newStore(file),

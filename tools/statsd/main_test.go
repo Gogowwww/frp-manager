@@ -135,6 +135,22 @@ func TestStatsToken(t *testing.T) {
 	}
 }
 
+func TestHealthcheck(t *testing.T) {
+	s, _ := newTestServer(t, "")
+	srv := httptest.NewServer(s)
+	defer srv.Close()
+	if code := healthcheck(strings.TrimPrefix(srv.URL, "http://")); code != 0 {
+		t.Fatalf("serveur en marche : %d", code)
+	}
+	srv.Close()
+	if code := healthcheck(strings.TrimPrefix(srv.URL, "http://")); code == 0 {
+		t.Fatal("serveur arrêté : le contrôle doit échouer")
+	}
+	if code := healthcheck("pas-une-adresse"); code == 0 {
+		t.Fatal("adresse invalide : le contrôle doit échouer")
+	}
+}
+
 func TestOldHostRedirect(t *testing.T) {
 	s, _ := newTestServer(t, "")
 	if w := do(s, "GET", "/docs/install/?a=1", "", "FRP-Manager.gogow.fr:443", ""); w.Code != http.StatusMovedPermanently ||

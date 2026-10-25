@@ -20,7 +20,9 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
   panels (`/api/ping`) avec les mêmes contrôles et limites que le serveur du
   site, garde des compteurs par jour dans un fichier, les sert avec un jeton,
   et redirige l'ancienne adresse du site vers frp-manager.org. Il remplace le
-  cloudpod du site pour cela.
+  cloudpod du site pour cela. Une image Docker
+  (`ghcr.io/gogowwww/frp-manager-statsd`, amd64 et arm64) et un fichier de stack
+  pour Portainer (`tools/statsd/compose.yml`) sont fournis.
 
 ### Modifié
 

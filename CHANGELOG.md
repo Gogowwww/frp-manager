@@ -19,7 +19,9 @@ older than 0.0.51 are described in the
   dependency that receives the panels' anonymous statistics (`/api/ping`) with
   the same checks and limits as the website server, keeps daily counters in a
   file, serves them with a token, and redirects the old website address to
-  frp-manager.org. It replaces the website's cloudpod for this.
+  frp-manager.org. It replaces the website's cloudpod for this. A Docker image
+  (`ghcr.io/gogowwww/frp-manager-statsd`, amd64 and arm64) and a stack file for
+  Portainer (`tools/statsd/compose.yml`) are provided.
 
 ### Changed
 
