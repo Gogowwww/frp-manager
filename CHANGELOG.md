@@ -13,62 +13,52 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-25
+
+A port can be opened in TCP and UDP at once or as a whole range, and the apt repository moves to apt.frp-manager.org.
+
+Pre-release.
+
 ### Added
 
+- **Ports: TCP + UDP and port ranges**: when creating a port, the "TCP + UDP"
+  type opens the same port in both protocols (two tunnels, `<name>-tcp` and
+  `<name>-udp`, same ports and options, public port required). The `tcp` and
+  `udp` ports accept a range or a list (`30000-30010`, `6000-6006,6007`, 1,000
+  ports at most), with as many public ports; it stays a single entry, written as
+  an frp template (`parseNumberRangePair`, frp 0.56 or later) that creates one
+  tunnel per port. The panel checks the template before saving (syntax, ranges
+  in pairs) and refuses a name that one of these tunnels would already use.
+- **apt repository at apt.frp-manager.org**: a signed repository (`dev`,
+  `testing`, `stable`) served by GitHub Pages, built by the CI, the pre-release
+  and the promotion; the installation guide now uses it. The old repository is
+  still kept up to date for now. A machine still subscribed to the old one moves
+  on its own: the package carries the new key, and its post-installation step
+  rewrites the source (`frp-manager.list` or `.sources`) and replaces the key;
+  machines already on the new repository are left alone. The `apt-sync.yml`
+  workflow can fill `testing` and `stable` from the GitHub releases.
 - **Cloudflare Worker for the anonymous statistics** (`tools/stats-worker`):
   receives `/api/ping` on frp-manager.org with the same checks and limits as the
   website server (daily counters in a D1 database, addresses salted, hashed and
   kept for the same day only) and redirects the old website address to
   frp-manager.org. A workflow deploys it on demand and runs its tests.
-- **Ports: TCP + UDP and port ranges**: when creating a port, the "TCP + UDP"
-  type opens the same port in both protocols (two tunnels, `<name>-tcp` and
-  `<name>-udp`, same ports and options, public port required). The `tcp` and `udp` ports accept a
-  range or a list (`30000-30010`, `6000-6006,6007`, 1,000 ports at most), with
-  as many public ports; it stays a single entry, written as an frp template
-  (`parseNumberRangePair`, frp 0.56 or later) that creates one tunnel per port.
-  The panel checks the template before saving (syntax, ranges in pairs) and
-  refuses a name that one of these tunnels would already use.
-
-### Changed
-
-- **Installation guide**: the apt commands use `apt.frp-manager.org`.
-
-### Added
-
-- **Machines move to the new apt repository on their own**: the package
-  carries the key of `apt.frp-manager.org`, and its post-installation step
-  rewrites the source (`frp-manager.list` or `.sources`) and replaces the key
-  of machines still subscribed to the old repository. Machines already on the
-  new one are left alone.
-- **`apt-sync.yml` workflow**: fills the `testing` and `stable` distributions
-  of the new repository from the GitHub releases, on demand.
-
-### Changed
-
-- **apt test from apt.frp-manager.org**: the CI installs the `dev` package from
-  the new repository (Debian 12 and Ubuntu 24.04), waits for the exact version
-  it just published, starts the panel and uninstalls it.
-
-### Added
-
-- **apt repository at apt.frp-manager.org** (in addition to the Forgejo one,
-  for now): `packaging/deb/publish-pages.sh` builds a signed static
-  repository (`dev`, `testing`, `stable`) in the `Gogowwww/frp-manager-apt`
-  repository, served by GitHub Pages and updated by the CI, the pre-release
-  and the promotion.
-
-### Added
-
 - **Public figures of the repository**: `tools/ghstats` and a daily workflow
   record the downloads of each release, the stars and the forks on the `stats`
   branch (`stats.json`, `history.json`), from GitHub's public API only.
 
 ### Changed
 
+- **Address of the anonymous statistics**: when turned on, the panel now sends
+  its daily signal to `https://frp-manager.org/api/ping`, with the same three
+  fields and nothing else. The old address keeps answering for panels that are
+  already installed. The installation guide and SECURITY say so.
 - **New project address**: the website, the live demo and the documentation
-  move to [frp-manager.org](https://frp-manager.org). The old address keeps
-  working, including the anonymous statistics endpoint used by installed panels.
-  The site is also published on GitHub Pages (`demo.yml`, `gh-pages` branch).
+  move to [frp-manager.org](https://frp-manager.org). The old address redirects
+  to it. The site is also published on GitHub Pages (`demo.yml`, `gh-pages`
+  branch).
+- **apt test from apt.frp-manager.org**: the CI installs the `dev` package from
+  the new repository (Debian 12 and Ubuntu 24.04), waits for the exact version it
+  just published, starts the panel and uninstalls it.
 
 ## [0.4.1] - 2026-10-25
 
@@ -522,7 +512,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0

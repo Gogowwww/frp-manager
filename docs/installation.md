@@ -341,7 +341,7 @@ log. If github.com is reachable for you, disable the mirrors
 
 Off by default. If you turn it on (box in the initial setup, or
 **Settings → Panel access → Anonymous statistics**), the panel sends once a
-day, to `https://frp-manager.gogow.fr/api/ping`, exactly this and nothing
+day, to `https://frp-manager.org/api/ping`, exactly this and nothing
 else (shown in Settings before you turn it on):
 
 ```json

@@ -29,8 +29,14 @@ var statsURL = func() string {
 	if u := os.Getenv("FRP_MANAGER_STATS_URL"); u != "" {
 		return u
 	}
-	return "https://frp-manager.gogow.fr/api/ping"
+	return defaultStatsURL
 }()
+
+// defaultStatsURL : le site du projet. L'ancienne adresse (frp-manager.gogow.fr)
+// répond toujours, pour les panels déjà installés.
+// defaultStatsURL: the project website. The old address (frp-manager.gogow.fr)
+// still answers, for panels that are already installed.
+const defaultStatsURL = "https://frp-manager.org/api/ping"
 
 var statsMu sync.Mutex // un envoi à la fois / one send at a time
 

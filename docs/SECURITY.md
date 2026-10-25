@@ -107,7 +107,7 @@ soon as possible. The report is credited in the release notes if you wish.
 The panel sends nothing to the project unless its administrator turns on
 **anonymous statistics** (off by default; initial setup or Settings → Panel
 access). Then, once a day, it sends only its version, architecture and install
-method to `https://frp-manager.gogow.fr/api/ping`: no identifier, no address,
+method to `https://frp-manager.org/api/ping`: no identifier, no address,
 no frp configuration. The website keeps daily counters only and does not store
 IP addresses. Details:
 [installation guide](installation.md#anonymous-statistics).

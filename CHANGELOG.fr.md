@@ -13,54 +13,38 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.5.0] - 2026-10-25
+
+Un port peut s'ouvrir en TCP et en UDP à la fois ou sur toute une plage, et le dépôt apt passe sur apt.frp-manager.org.
+
+Pré-release.
+
 ### Ajouté
 
+- **Ports : TCP + UDP et plages de ports** : à la création d'un port, le type
+  « TCP + UDP » ouvre le même port dans les deux protocoles (deux tunnels,
+  `<nom>-tcp` et `<nom>-udp`, mêmes ports et mêmes options, port public
+  obligatoire). Les ports `tcp` et `udp` acceptent une plage ou une liste
+  (`30000-30010`, `6000-6006,6007`, 1 000 ports au plus), avec autant de ports
+  publics ; elle reste une seule ligne, écrite sous forme de modèle frp
+  (`parseNumberRangePair`, frp 0.56 ou plus récent) qui crée un tunnel par port.
+  Le panel vérifie le modèle avant d'enregistrer (syntaxe, plages par paires) et
+  refuse un nom que l'un de ces tunnels utiliserait déjà.
+- **Dépôt apt sur apt.frp-manager.org** : un dépôt signé (`dev`, `testing`,
+  `stable`) servi par GitHub Pages, construit par la CI, la pré-release et la
+  promotion ; le guide d'installation l'utilise maintenant. L'ancien dépôt reste
+  tenu à jour pour l'instant. Une machine encore abonnée à l'ancien passe seule
+  sur le nouveau : le paquet embarque la nouvelle clé, et son étape de
+  post-installation réécrit la source (`frp-manager.list` ou `.sources`) et
+  remplace la clé ; celles qui sont déjà sur le nouveau dépôt ne sont pas
+  touchées. Le workflow `apt-sync.yml` peut remplir `testing` et `stable` à
+  partir des releases GitHub.
 - **Worker Cloudflare des statistiques anonymes** (`tools/stats-worker`) :
   reçoit `/api/ping` sur frp-manager.org avec les mêmes contrôles et limites que
   le serveur du site (compteurs par jour dans une base D1, adresses salées,
   hachées et gardées pour le jour même seulement) et redirige l'ancienne adresse
   du site vers frp-manager.org. Un workflow le déploie à la demande et lance ses
   tests.
-- **Ports : TCP + UDP et plages de ports** : à la création d'un port, le type
-  « TCP + UDP » ouvre le même port dans les deux protocoles (deux tunnels,
-  `<nom>-tcp` et `<nom>-udp`, mêmes ports et mêmes options, port public obligatoire). Les ports `tcp` et
-  `udp` acceptent une plage ou une liste (`30000-30010`, `6000-6006,6007`,
-  1 000 ports au plus), avec autant de ports publics ; elle reste une seule
-  ligne, écrite sous forme de modèle frp (`parseNumberRangePair`, frp 0.56 ou
-  plus récent) qui crée un tunnel par port. Le panel vérifie le modèle avant
-  d'enregistrer (syntaxe, plages par paires) et refuse un nom que l'un de ces
-  tunnels utiliserait déjà.
-
-### Modifié
-
-- **Guide d'installation** : les commandes apt utilisent `apt.frp-manager.org`.
-
-### Ajouté
-
-- **Les machines passent seules sur le nouveau dépôt apt** : le paquet embarque
-  la clé de `apt.frp-manager.org`, et son étape de post-installation réécrit la
-  source (`frp-manager.list` ou `.sources`) et remplace la clé des machines
-  encore abonnées à l'ancien dépôt. Celles qui sont déjà sur le nouveau ne sont
-  pas touchées.
-- **Workflow `apt-sync.yml`** : remplit à la demande les distributions
-  `testing` et `stable` du nouveau dépôt à partir des releases GitHub.
-
-### Modifié
-
-- **Test apt depuis apt.frp-manager.org** : la CI installe le paquet `dev` du
-  nouveau dépôt (Debian 12 et Ubuntu 24.04), attend la version exacte qu'elle
-  vient de publier, démarre le panel puis le désinstalle.
-
-### Ajouté
-
-- **Dépôt apt sur apt.frp-manager.org** (en plus de celui du Forgejo, pour
-  l'instant) : `packaging/deb/publish-pages.sh` construit un dépôt statique
-  signé (`dev`, `testing`, `stable`) dans le dépôt `Gogowwww/frp-manager-apt`,
-  servi par GitHub Pages et mis à jour par la CI, la pré-release et la
-  promotion.
-
-### Ajouté
-
 - **Chiffres publics du dépôt** : `tools/ghstats` et un workflow quotidien
   relèvent les téléchargements de chaque release, les étoiles et les forks sur
   la branche `stats` (`stats.json`, `history.json`), à partir de la seule API
@@ -68,11 +52,17 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ### Modifié
 
+- **Adresse des statistiques anonymes** : une fois activées, le panel envoie
+  maintenant son signal quotidien à `https://frp-manager.org/api/ping`, avec les
+  mêmes trois champs et rien d'autre. L'ancienne adresse continue de répondre
+  pour les panels déjà installés. Le guide d'installation et SECURITY le disent.
 - **Nouvelle adresse du projet** : le site, la démo en ligne et la
   documentation passent sur [frp-manager.org](https://frp-manager.org).
-  L'ancienne adresse continue de répondre, y compris pour les statistiques
-  anonymes des panels déjà installés. Le site est aussi publié sur GitHub
-  Pages (`demo.yml`, branche `gh-pages`).
+  L'ancienne adresse y redirige. Le site est aussi publié sur GitHub Pages
+  (`demo.yml`, branche `gh-pages`).
+- **Test apt depuis apt.frp-manager.org** : la CI installe le paquet `dev` du
+  nouveau dépôt (Debian 12 et Ubuntu 24.04), attend la version exacte qu'elle
+  vient de publier, démarre le panel puis le désinstalle.
 
 ## [0.4.1] - 2026-10-25
 
@@ -546,7 +536,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Gogowwww/frp-manager/compare/v0.2.1...v0.3.0

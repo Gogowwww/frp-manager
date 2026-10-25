@@ -350,7 +350,7 @@ désactivez les miroirs (**Réglages → Accès réseau**).
 
 Désactivées par défaut. Si vous les activez (case de la configuration
 initiale, ou **Réglages → Accès au panel → Statistiques anonymes**), le panel
-envoie une fois par jour, à `https://frp-manager.gogow.fr/api/ping`,
+envoie une fois par jour, à `https://frp-manager.org/api/ping`,
 exactement ceci et rien d'autre (affiché dans Réglages avant de les activer) :
 
 ```json

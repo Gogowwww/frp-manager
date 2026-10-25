@@ -112,3 +112,11 @@ func TestStatsChoiceAtSetupAndInSettings(t *testing.T) {
 		t.Fatal("case de la configuration initiale ignorée")
 	}
 }
+
+// L'adresse par défaut est celle du projet, en HTTPS : ce que disent la doc et SECURITY.
+// The default address is the project's, over HTTPS: what the docs and SECURITY say.
+func TestStatsDefaultURL(t *testing.T) {
+	if defaultStatsURL != "https://frp-manager.org/api/ping" {
+		t.Fatalf("adresse par défaut inattendue : %s", defaultStatsURL)
+	}
+}
