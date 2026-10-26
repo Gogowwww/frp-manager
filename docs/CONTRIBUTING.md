@@ -61,7 +61,7 @@ python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
   never with `innerHTML` on data. No emoji in the interface: icons are the
   embedded SVGs of `panel/templates/partials/icons.html`.
 - Update the "Unreleased" section of the changelog, in both languages:
-  [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.fr.md](../CHANGELOG.fr.md).
+  [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.fr.md](CHANGELOG.fr.md).
 
 ## Versions and releases
 

@@ -85,7 +85,7 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
 - **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.
 
-> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](docs/installation.fr.md#docker-et-portainer) avant de le déployer.
+> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`packaging/docker/docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](docs/installation.fr.md#docker-et-portainer) avant de le déployer.
 
 Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECURITY.md) (en anglais).
 
@@ -94,7 +94,7 @@ Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECUR
 - [Site du projet](https://frp-manager.org/fr/) : présentation, démo en ligne et toute la documentation
 - [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, plages de ports et TCP + UDP, reverse proxy, mot de passe perdu, structure des fichiers
 - [Politique de sécurité](docs/SECURITY.md) (en anglais)
-- [Journal des modifications](CHANGELOG.fr.md)
+- [Journal des modifications](docs/CHANGELOG.fr.md)
 
 ## Contribuer
 

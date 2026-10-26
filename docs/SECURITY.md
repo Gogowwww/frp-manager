@@ -51,9 +51,9 @@ soon as possible. The report is credited in the release notes if you wish.
 - **An authenticated administrator has, by design, root-equivalent power over
   the machine**: they install binaries, write systemd units, change the
   firewall. Protecting the password means protecting the machine.
-- **With Docker in host mode (`docker-compose.host.yml`), `pid: host`,
-  `privileged: true` and the Docker socket give the container root-equivalent
-  access to the host** (see
+- **With Docker in host mode (`packaging/docker/docker-compose.host.yml`),
+  `pid: host`, `privileged: true` and the Docker socket give the container
+  root-equivalent access to the host** (see
   [installation.md](installation.md#docker-and-portainer)). Container isolation does not limit what
   the panel can do. The standalone mode (`docker-compose.yml`) runs frps and
   frpc inside the container and only adds `NET_ADMIN`, for the firewall: on

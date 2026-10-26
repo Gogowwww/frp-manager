@@ -1,20 +1,26 @@
 # Mode hôte : le panel pilote frps/frpc installés SUR L'HÔTE (services systemd,
 # journal, programmes de /usr/local/bin, nftables) avec nsenter. C'est la
 # configuration des installations faites avant le mode autonome ; le
-# docker-compose.yml plus simple lance plutôt frps et frpc dans le conteneur.
+# docker-compose.yml plus simple, à la racine du dépôt, lance plutôt frps et
+# frpc dans le conteneur.
 # Host mode: the panel drives frps/frpc installed ON THE HOST (systemd services,
 # journal, /usr/local/bin binaries, nftables) through nsenter. This is the
 # configuration of installs made before the standalone mode; the simpler
-# docker-compose.yml runs frps and frpc inside the container instead.
+# docker-compose.yml, at the root of the repository, runs frps and frpc inside
+# the container instead.
 #
+#   curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/packaging/docker/docker-compose.host.yml
 #   docker compose -f docker-compose.host.yml up -d
 
 services:
   frp-manager:
     # Prebuilt image on GitHub Container Registry
     image: ghcr.io/gogowwww/frp-manager:latest
-    # To build from source: comment out the image line and uncomment build
-    # build: .
+    # Construire depuis les sources (dans une copie du dépôt) : commenter la
+    # ligne image et décommenter build, qui pointe vers la racine du dépôt.
+    # To build from source (in a clone of the repository): comment out the
+    # image line and uncomment build, which points to the repository root.
+    # build: ../..
     container_name: frp-manager
     restart: unless-stopped
 

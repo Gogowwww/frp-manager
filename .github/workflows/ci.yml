@@ -88,12 +88,14 @@ jobs:
           [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
           sh packaging/deb/publish-pages.sh dev ci/deb/*.deb
 
-  # Le reste du dépôt (le panel est testé par le job go, dans l'image) : outils
-  # (robot des listes, notes de release), code partagé, vulnérabilités connues
-  # des dépendances, syntaxe des scripts shell et de la passerelle Python.
-  # The rest of the repository (the panel is tested by the go job, in the image):
-  # tools (lists bot, release notes), shared code, known vulnerabilities of
-  # dependencies, syntax of the shell scripts and of the Python bridge.
+  # Le reste du dépôt (le panel et ses sous-paquets, dont panel/netaddr, sont
+  # testés par le job go, dans l'image) : outils (robot des listes, notes de
+  # release), vulnérabilités connues des dépendances, syntaxe des scripts shell
+  # et de la passerelle Python.
+  # The rest of the repository (the panel and its sub-packages, panel/netaddr
+  # included, are tested by the go job, in the image): tools (lists bot, release
+  # notes), known vulnerabilities of dependencies, syntax of the shell scripts
+  # and of the Python bridge.
   outils:
     runs-on: ubuntu-24.04
     permissions:
@@ -113,7 +115,7 @@ jobs:
           git config --global user.email ci@frp-manager.invalid
           test -z "$(gofmt -l .)" || { echo "gofmt :"; gofmt -l .; exit 1; }
           go vet ./...
-          go test -count=1 ./internal/... ./tools/...
+          go test -count=1 ./tools/...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
           bash -n panel/install.sh
           for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh packaging/deb/publish-pages.sh; do

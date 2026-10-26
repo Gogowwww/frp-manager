@@ -13,6 +13,10 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Changed
+
+- **Repository layout**: the CHANGELOGs now live in `docs/` (`docs/CHANGELOG.md`, `docs/CHANGELOG.fr.md`), `docker-compose.host.yml` moved to `packaging/docker/`, and the address-filtering package moved to `panel/netaddr`. The agent instructions are no longer in the repository. Nothing changes for users of the panel; the commands to test the Go code are now `go test ./panel/... ./tools/...`.
+
 ## [0.6.2] - 2026-10-26
 
 The sign-in and setup pages now show the panel's tab icon.

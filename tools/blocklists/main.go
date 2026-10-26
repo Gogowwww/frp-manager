@@ -7,8 +7,11 @@
 //	go run ./tools/blocklists [-dir catalogue] sync            le robot (workflow blocklists.yml)
 //
 // Les règles sont celles du panel (même règle des adresses publiques :
-// internal/netaddr) : le panel écarte de lui-même les entrées refusées, ce
+// panel/netaddr) : le panel écarte de lui-même les entrées refusées, ce
 // programme les refuse avant la fusion, pour que le catalogue reste propre.
+// The rules are the panel's (same public address rule: panel/netaddr): the
+// panel drops rejected entries by itself, this program rejects them before the
+// merge, so that the catalog stays clean.
 //
 // sync : pour chaque issue ouverte dont le titre commence par « Nouvelle liste »
 // ou « Mise à jour de la liste », l'entrée JSON de l'issue est vérifiée ; une
@@ -39,7 +42,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Gogowwww/frp-manager/internal/netaddr"
+	"github.com/Gogowwww/frp-manager/panel/netaddr"
 )
 
 const (

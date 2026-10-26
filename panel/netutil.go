@@ -7,10 +7,11 @@ import (
 	"net/netip"
 	"sort"
 
-	"github.com/Gogowwww/frp-manager/internal/netaddr"
+	"github.com/Gogowwww/frp-manager/panel/netaddr"
 )
 
-// Règle des adresses publiques : internal/netaddr (partagée avec tools/blocklists).
+// Règle des adresses publiques : panel/netaddr (partagée avec tools/blocklists).
+// Public address rule: panel/netaddr (shared with tools/blocklists).
 var (
 	addrIsGlobal   = netaddr.IsGlobal
 	prefixIsGlobal = netaddr.PrefixIsGlobal
