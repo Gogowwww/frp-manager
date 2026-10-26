@@ -86,9 +86,36 @@ func TestSendStatsSkipsDevelopmentBuild(t *testing.T) {
 	}
 }
 
+// waitStatsSent : attend la fin de l'envoi lancé en arrière-plan (go sendStats())
+// par le panel : il écrit dans la configuration partagée, donc doit finir
+// avant que le test ne recrée un environnement ou ne se termine.
+// waitStatsSent: waits for the background send (go sendStats()) started by the
+// panel to finish: it writes to the shared configuration, so it must be over
+// before the test builds another environment or ends.
+func waitStatsSent(t *testing.T, got *[]map[string]any, mu *sync.Mutex) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		mu.Lock()
+		n := len(*got)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("envoi des statistiques jamais reçu")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// sendStats garde statsMu jusqu'à l'enregistrement du jour d'envoi
+	// sendStats holds statsMu until the send day is saved
+	statsMu.Lock()
+	statsMu.Unlock() //nolint:staticcheck // barrière : attendre la fin / barrier: wait for the end
+}
+
 func TestStatsChoiceAtSetupAndInSettings(t *testing.T) {
 	e := setup(t)
-	statsReceiver(t)
+	got, mu := statsReceiver(t)
 	c := e.client()
 	expectCode(t, c.post("/api/setup", J{"username": "moi", "password": testPassword}), 200)
 	if e.savedConfig()["anonymous_stats"] != false {
@@ -104,10 +131,12 @@ func TestStatsChoiceAtSetupAndInSettings(t *testing.T) {
 	if e.savedConfig()["anonymous_stats"] != true {
 		t.Fatal("accord non enregistré")
 	}
+	waitStatsSent(t, got, mu)
 
 	other := setup(t)
-	statsReceiver(t)
+	got2, mu2 := statsReceiver(t)
 	expectCode(t, other.client().post("/api/setup", J{"username": "moi", "password": testPassword, "anonymous_stats": true}), 200)
+	defer waitStatsSent(t, got2, mu2)
 	if other.savedConfig()["anonymous_stats"] != true {
 		t.Fatal("case de la configuration initiale ignorée")
 	}
