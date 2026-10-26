@@ -63,7 +63,7 @@ frp is a single binary configured by TOML files. Running it by hand works well, 
 |---|---|---|
 | Add or change a tunnel | edit `frpc.toml`, restart frpc | guided form, TOML validated before saving, save and restart in one click |
 | See what is exposed | read the configs | list of ports with their path, per client |
-| Several frps/frpc instances | one unit and one file per instance to track | detected automatically, one card each |
+| Several frps/frpc instances | one unit and one file per instance to track | detected automatically, one card each; a new one is created from the dashboard with free ports |
 | Filter who reaches frps ports | write nftables or iptables rules | rules by IP, network or AS, tested before applying |
 | Follow logs | `journalctl -fu frpc` over SSH | live logs in the browser |
 | Update frp | download, check, replace the binaries, restart | one click, SHA-256 checked, services restarted |

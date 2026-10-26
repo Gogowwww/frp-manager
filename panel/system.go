@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -602,9 +603,15 @@ func systemctlShow(units, props []string) map[string]map[string]string {
 }
 
 var (
-	unitNameRe   = regexp.MustCompile(`^frp[sc]\d*\.service$`)
-	execConfigRe = regexp.MustCompile(`-c\s+([^\s;]+)`)
-	serverAddrRe = regexp.MustCompile(`(?m)^\s*(?:serverAddr|server_addr)\s*[=:]\s*["']?([^"'\s#]+)`)
+	// Noms d'unités frps/frpc : les anciens (frpc, frpc2) et ceux à suffixe
+	// (frpc-maison, créés par « Nouvelle instance »), sans les modèles « @ ».
+	// frps/frpc unit names: the old ones (frpc, frpc2) and suffixed ones
+	// (frpc-maison, created by "New instance"), without "@" templates.
+	unitNameRe       = regexp.MustCompile(`^frp[sc][A-Za-z0-9_.-]{0,60}\.service$`)
+	legacyUnitNameRe = regexp.MustCompile(`^frp[sc]\d*\.service$`)
+	execPathRe       = regexp.MustCompile(`path=([^\s;]+)`)
+	execConfigRe     = regexp.MustCompile(`-c\s+([^\s;]+)`)
+	serverAddrRe     = regexp.MustCompile(`(?m)^\s*(?:serverAddr|server_addr)\s*[=:]\s*["']?([^"'\s#]+)`)
 )
 
 type unitCfg struct{ name, config string }
@@ -625,6 +632,16 @@ func findSystemdUnits() map[string][]unitCfg {
 		prop := execs[unit]["ExecStart"]
 		if !strings.Contains(prop, "/"+bin) && !strings.Contains(prop, " "+bin) {
 			continue
+		}
+		// Nom à suffixe : le programme lancé doit s'appeler exactement frps ou
+		// frpc (frps-exporter.service lance frps_exporter, pas frps)
+		// Suffixed name: the program run must be named exactly frps or frpc
+		// (frps-exporter.service runs frps_exporter, not frps)
+		if !legacyUnitNameRe.MatchString(unit) {
+			m := execPathRe.FindStringSubmatch(prop)
+			if m == nil || path.Base(m[1]) != bin {
+				continue
+			}
 		}
 		conf := ""
 		if m := execConfigRe.FindStringSubmatch(prop); m != nil {
@@ -768,8 +785,12 @@ func buildInstances() map[string]*Instance {
 				if b == "" {
 					b = filepath.Join(frpBinDir, binType)
 				}
+				// Journal : le log.to de la config s'il est donné (une config déposée à
+				// la main peut garder celui d'une autre instance)
+				// Log: the config's log.to when set (a config dropped by hand may keep
+				// another instance's one)
 				instances[iid] = &Instance{ID: iid, Type: binType, Source: "systemd", Binary: b, Version: version,
-					Config: conf, Service: iid, Log: filepath.Join(frpLogDir, iid+".log")}
+					Config: conf, Service: iid, Log: frpLogFile(conf, iid)}
 			}
 		} else if bin != "" {
 			// Programme sans service systemd : une instance par config existante,

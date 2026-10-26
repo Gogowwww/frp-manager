@@ -743,19 +743,25 @@ func fwKnownPorts() []J {
 	return fwKnownList
 }
 
-// fwKnownPortsRead → [{start, end, proto, label, kind, online}].
+// fwKnownPortsRead → [{start, end, proto, label, kind, online, frps}] ; frps :
+// l'instance qui ouvre le port ("" si on ne sait pas laquelle).
+// fwKnownPortsRead → [{start, end, proto, label, kind, online, frps}]; frps: the
+// instance that opens the port ("" when unknown).
 func fwKnownPortsRead() []J {
 	known := []J{}
 	seen := map[string]bool{}
+	owner := ""
 	add := func(start, end int, proto, label, kind string, online any) {
-		key := fmt.Sprintf("%d-%d-%s", start, end, proto)
+		key := fmt.Sprintf("%d-%d-%s-%s", start, end, proto, owner)
 		if seen[key] || !(1 <= start && start <= end && end <= 65535) {
 			return
 		}
 		seen[key] = true
-		known = append(known, J{"start": start, "end": end, "proto": proto, "label": label, "kind": kind, "online": online})
+		known = append(known, J{"start": start, "end": end, "proto": proto, "label": label, "kind": kind, "online": online, "frps": owner})
 	}
-	for _, inst := range frpsInstances() {
+	instances := frpsInstances()
+	for _, inst := range instances {
+		owner = inst.ID
 		text, ok := frpsConfigText(inst)
 		if !ok {
 			continue
@@ -807,6 +813,12 @@ func fwKnownPortsRead() []J {
 	// Ports réellement ouverts : sans tableau de bord frps ni allowPorts, ceux
 	// des clients ne sont connus que par là.
 	for _, lp := range frpsListeningPorts() {
+		// Un seul frps : le port est forcément le sien
+		// A single frps: the port is necessarily its own
+		owner = lp.owner
+		if owner == "" && len(instances) == 1 {
+			owner = instances[0].ID
+		}
 		covered := false
 		for _, k := range known {
 			if k["start"].(int) <= lp.port && lp.port <= k["end"].(int) && (k["proto"] == lp.proto || k["proto"] == "any") {
@@ -830,12 +842,47 @@ func fwKnownPortsRead() []J {
 type portProto struct {
 	port  int
 	proto string
+	owner string // instance frps, "" si inconnue / frps instance, "" if unknown
+}
+
+var ssPIDRe = regexp.MustCompile(`\(\("frps",pid=(\d+)`)
+
+// frpsPIDs : PID du processus principal → instance frps (services systemd et
+// programmes lancés par le panel).
+// frpsPIDs: PID of the main process → frps instance (systemd services and
+// programs run by the panel).
+func frpsPIDs(instances []*Instance) map[string]string {
+	out := map[string]string{}
+	var units []string
+	for _, inst := range instances {
+		switch inst.Source {
+		case "standalone":
+			p := procFor(inst.ID)
+			p.mu.Lock()
+			if p.cmd != nil && p.cmd.Process != nil {
+				out[strconv.Itoa(p.cmd.Process.Pid)] = inst.ID
+			}
+			p.mu.Unlock()
+		case "systemd":
+			if validServiceName(inst.Service) {
+				units = append(units, inst.Service+".service")
+			}
+		}
+	}
+	for unit, props := range systemctlShow(units, []string{"MainPID"}) {
+		if pid := props["MainPID"]; pid != "" && pid != "0" {
+			out[pid] = strings.TrimSuffix(unit, ".service")
+		}
+	}
+	return out
 }
 
 // frpsListeningPorts : ports sur lesquels frps écoute (processus de l'hôte, ou
 // conteneur en réseau « host »), et ports publiés par les conteneurs frps.
 func frpsListeningPorts() []portProto {
 	set := map[portProto]bool{}
+	instances := frpsInstances()
+	var pids map[string]string
 	if ok, out, _ := runHost([]string{"ss", "-H", "-lntup"}, 15*time.Second, nil); ok {
 		for _, line := range strings.Split(out, "\n") {
 			cols := strings.Fields(line)
@@ -856,11 +903,18 @@ func frpsListeningPorts() []portProto {
 				if cols[0] == "udp" {
 					proto = "udp"
 				}
-				set[portProto{atoi(port), proto}] = true
+				owner := ""
+				if m := ssPIDRe.FindStringSubmatch(line); m != nil {
+					if pids == nil {
+						pids = frpsPIDs(instances)
+					}
+					owner = pids[m[1]]
+				}
+				set[portProto{atoi(port), proto, owner}] = true
 			}
 		}
 	}
-	for _, inst := range frpsInstances() {
+	for _, inst := range instances {
 		if inst.Source != "docker" {
 			continue
 		}
@@ -879,7 +933,7 @@ func frpsListeningPorts() []portProto {
 				bm, _ := b.(map[string]any)
 				hp, hip := pyStr(bm["HostPort"]), str(bm, "HostIp", "")
 				if bm["HostPort"] != nil && isDigits(hp) && !strings.HasPrefix(hip, "127.") && !strings.HasPrefix(hip, "::1") {
-					set[portProto{atoi(hp), proto}] = true
+					set[portProto{atoi(hp), proto, inst.ID}] = true
 				}
 			}
 		}
@@ -931,11 +985,19 @@ func (l Lang) fwParsePorts(spec string) ([]portRange, error) {
 }
 
 // fwRuleRanges : plages de ports d'une règle, sans le port du panel (jamais filtré).
+// « Tous les ports » : ceux de son frps, ou de tous les frps pour une règle sans
+// frps (règles créées avant le choix du frps).
+// fwRuleRanges: port ranges of a rule, without the panel port (never filtered).
+// "All ports": those of its frps, or of every frps for a rule without frps
+// (rules created before the frps choice).
 func (l Lang) fwRuleRanges(rule J, known []J) ([]portRange, error) {
 	var ranges []portRange
 	if rule["ports"] == "*" {
+		frps := str(rule, "frps", "")
 		for _, k := range known {
-			ranges = append(ranges, portRange{k["start"].(int), k["end"].(int)})
+			if frps == "" || k["frps"] == frps {
+				ranges = append(ranges, portRange{k["start"].(int), k["end"].(int)})
+			}
 		}
 	} else {
 		var err error
@@ -1054,6 +1116,14 @@ func (l Lang) fwNormalizeRule(raw map[string]any, index int) (J, error) {
 	rule := J{"id": id, "name": name, "mode": mode, "ports": ports, "sources": sources, "enabled": raw["enabled"] != false}
 	if lst != "" {
 		rule["list"] = lst
+	}
+	// frps concerné (page Pare-feu) ; absent : tous, comme avant ce choix
+	// frps concerned (Firewall page); missing: all of them, as before this choice
+	if frps := strings.TrimSpace(str(raw, "frps", "")); frps != "" {
+		if !validInstanceID(frps) {
+			return fail("frps « "+frps+" » invalide", "invalid frps “"+frps+"”")
+		}
+		rule["frps"] = frps
 	}
 	return rule, nil
 }
@@ -1609,7 +1679,11 @@ func (c *Ctx) parseRules(data map[string]any) ([]J, error) {
 func init() {
 	route("GET /api/firewall", "api_firewall_get", perm(P("firewall.view"), func(c *Ctx) {
 		detectFrp(false)
-		hasFrps := len(frpsInstances()) > 0
+		frpsIDs := []string{}
+		for _, inst := range frpsInstances() {
+			frpsIDs = append(frpsIDs, inst.ID)
+		}
+		hasFrps := len(frpsIDs) > 0
 		fc := fwCfg()
 		ok, out, e := false, "", ""
 		if hasFrps {
@@ -1647,7 +1721,7 @@ func init() {
 			rules = []J{}
 		}
 		c.JSON(J{
-			"ok": true, "has_frps": hasFrps, "available": ok, "nft": nft,
+			"ok": true, "has_frps": hasFrps, "frps": frpsIDs, "available": ok, "nft": nft,
 			"enabled": fc.Enabled, "rules": rules, "ports": c.Lang.withPortLabels(known),
 			"active": ok && fwTablePresent(), "counters": counters,
 			"asns": asnInfo(fwRuleASNs(fc.Rules)), "lists": listsInfo(fc.Rules),

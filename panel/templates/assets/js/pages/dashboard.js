@@ -7,13 +7,20 @@ import {
 } from '../store.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, confirmDialog, promptDialog, menuButton,
-  switchControl, switchRow, openDialog, callout, emptyState, pageHeader,
+  switchControl, switchRow, openDialog, callout, emptyState, pageHeader, field, input, select, segmented, setFieldError,
 } from '../ui.js';
 import { navigate } from '../router.js';
 import { renderLog } from './updates.js';
 
 let unsubscribe = null;
 let lastSignature = '';
+// Configs sans service (mode systemd), relues quand la liste des instances change
+// Configs without a service (systemd mode), read again when the instance list changes
+let orphanKey = '';
+let orphanSeq = 0;
+
+// Même règle que le serveur (instanceSuffixRe) / Same rule as the server (instanceSuffixRe)
+const SUFFIX_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 export default {
   id: 'dashboard',
@@ -23,18 +30,27 @@ export default {
   mount(view) {
     const alerts = h('div', { class: 'form-stack' });
     const grid = h('div', { class: 'svc-grid' });
+    const orphanSlot = h('div', { class: 'form-stack', hidden: true });
     const detectBtn = button(t('dashboard.redetect'), {
       iconName: 'refresh',
       onClick: () => busy(detectBtn, async () => {
-        try { await detect(); toast(t('dashboard.detected'), 'success', 2000); } catch (e) { toastError(e); }
+        try {
+          orphanKey = '';
+          await detect();
+          toast(t('dashboard.detected'), 'success', 2000);
+        } catch (e) { toastError(e); }
       }),
     });
+    const newBtn = can('instances.create')
+      ? button(t('dashboard.newInstance'), { iconName: 'plus', onClick: () => newInstance() })
+      : null;
 
     // Un bouton par service frps/frpc absent (supprimé depuis le tableau de bord)
     const reinstallSlot = h('div', { style: { display: 'contents' } });
     view.append(h('div', { class: 'page' },
-      pageHeader({ title: t('dashboard.title'), description: t('dashboard.description'), actions: [reinstallSlot, detectBtn] }),
+      pageHeader({ title: t('dashboard.title'), description: t('dashboard.description'), actions: [reinstallSlot, newBtn, detectBtn] }),
       alerts,
+      orphanSlot,
       grid));
 
     const render = () => {
@@ -44,8 +60,10 @@ export default {
       renderAlerts(alerts);
       renderGrid(grid);
       renderReinstall(reinstallSlot);
+      loadOrphans(orphanSlot);
     };
     lastSignature = '';
+    orphanKey = '';
     unsubscribe = store.subscribe(render);
     render();
   },
@@ -338,6 +356,155 @@ async function reinstall(type) {
     setTimeout(tick, 1100);
   };
   tick();
+}
+
+/** Nouvelle instance frps ou frpc : nom (suffixe), configuration par défaut ou
+ *  copiée d'une instance du même type. Créée arrêtée.
+ *  New frps or frpc instance: name (suffix), default configuration or copied
+ *  from an instance of the same type. Created stopped. */
+async function newInstance() {
+  const standalone = store.standalone;
+  let type = 'frpc';
+  const result = await openDialog({
+    title: t('dashboard.new.title'),
+    description: t('dashboard.new.description'),
+    build: ({ close }) => {
+      const nameInput = input({
+        mono: true, maxLength: 32, autocomplete: 'off', spellcheck: false, autofocus: true,
+        placeholder: t('dashboard.new.namePlaceholder'),
+      });
+      const preview = h('p', { class: 'field-hint', 'aria-live': 'polite' });
+      const copySelect = select([], '');
+      const copyHint = h('p', { class: 'field-hint' });
+      const errorBox = h('div', { hidden: true });
+      const suffix = () => nameInput.value.trim().toLowerCase();
+      const refresh = () => {
+        // Aperçu des fichiers créés, seulement pour un nom valide (ou l'exemple)
+        // Preview of the files created, only for a valid name (or the example)
+        const id = `${type}-${suffix() || t('dashboard.new.namePlaceholder')}`;
+        preview.hidden = !!suffix() && !SUFFIX_RE.test(suffix());
+        preview.textContent = t(standalone ? 'dashboard.new.previewStandalone' : 'dashboard.new.preview',
+          { id, path: `/etc/frp/${id}.toml`, service: `${id}.service` });
+        // Copie possible depuis une instance du même type dont la config est lisible ici
+        // Copy possible from an instance of the same type whose config is readable here
+        const sources = instanceIds((i) => i.type === type && !isDocker(i) && i.config_exists);
+        const previous = copySelect.value;
+        copySelect.replaceChildren(
+          h('option', { value: '' }, t('dashboard.new.copyNone')),
+          ...sources.map((iid) => h('option', { value: iid }, t('dashboard.new.copyFrom', { name: displayName(iid) }))));
+        copySelect.value = sources.includes(previous) ? previous : '';
+        copyHint.textContent = t(copySelect.value ? `dashboard.new.copyHint.${type}` : `dashboard.new.defaultHint.${type}`);
+      };
+      const typeControl = segmented(['frpc', 'frps'].map((v) => ({
+        value: v, label: t(`instance.type.${v}`), icon: v === 'frps' ? 'server' : 'laptop',
+      })), type, (v) => { type = v; refresh(); }, { label: t('dashboard.new.type') });
+      nameInput.addEventListener('input', () => { setFieldError(nameInput, ''); refresh(); });
+      copySelect.addEventListener('change', refresh);
+      refresh();
+
+      const createBtn = button(t('dashboard.new.create'), { variant: 'primary', type: 'submit', form: 'new-instance-form', iconName: 'plus' });
+      const submit = (e) => {
+        e.preventDefault();
+        errorBox.hidden = true;
+        if (!SUFFIX_RE.test(suffix())) {
+          setFieldError(nameInput, t('dashboard.new.nameInvalid'));
+          nameInput.focus();
+          return;
+        }
+        busy(createBtn, async () => {
+          try {
+            const d = await post('/api/instance/create', { type, name: suffix(), copy_from: copySelect.value });
+            if (d.ok) { close(d); return; }
+            errorBox.replaceChildren(callout({ type: 'danger', compact: true, text: d.msg || t('errors.generic') }));
+            errorBox.hidden = false;
+          } catch (err) { toastError(err); }
+        });
+      };
+      return {
+        body: [h('form', { id: 'new-instance-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+          h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('dashboard.new.type')), typeControl),
+          h('div', null, field({ label: t('dashboard.new.name'), hint: t('dashboard.new.nameHint'), control: nameInput }), preview),
+          h('div', null, field({ label: t('dashboard.new.copy'), control: copySelect }), copyHint),
+          callout({ type: 'neutral', compact: true, text: t(standalone ? 'dashboard.new.manualStandalone' : 'dashboard.new.manual') }),
+          errorBox)],
+        foot: [button(t('common.cancel'), { onClick: () => close(undefined) }), createBtn],
+      };
+    },
+  }).result;
+  if (!result) return;
+  toast(result.msg || t('dashboard.new.created', { id: result.id }), 'success', 6000);
+  orphanKey = '';
+  await detect().catch(() => {});
+}
+
+/** Configs déposées à la main sans service systemd (frpc-ancelade.toml à côté
+ *  de frpc.toml) : signalées, avec un bouton pour créer leur service.
+ *  Configs dropped by hand without a systemd service (frpc-ancelade.toml next
+ *  to frpc.toml): reported, with a button to create their service. */
+async function loadOrphans(host) {
+  if (!store.ready || store.standalone || !can('instances.create')) {
+    host.replaceChildren();
+    host.hidden = true;
+    return;
+  }
+  const key = JSON.stringify(Object.keys(store.instances).sort());
+  if (key === orphanKey) return;
+  orphanKey = key;
+  const seq = ++orphanSeq;
+  let list = [];
+  try {
+    const d = await api('/api/instance/orphans');
+    if (d.ok) list = d.orphans || [];
+  } catch { return; }
+  if (seq !== orphanSeq) return;
+  host.replaceChildren(...list.map((o) => callout({
+    type: 'warn', iconName: 'config',
+    title: t('dashboard.orphan.title', { path: o.config_path }),
+    text: t('dashboard.orphan.text', { service: `${o.id}.service` }),
+    actions: [button(t('dashboard.orphan.adopt'), { size: 'sm', variant: 'primary', iconName: 'plus', onClick: () => adopt(o) })],
+  })));
+  host.hidden = !list.length;
+}
+
+async function adopt(o) {
+  const service = `${o.id}.service`;
+  const result = await openDialog({
+    title: t('dashboard.orphan.adoptTitle', { service }),
+    build: ({ close }) => {
+      const body = [h('p', { style: { color: 'var(--text-2)' } },
+        t('dashboard.orphan.adoptText', { service, path: o.config_path, type: o.type }))];
+      let fixRow = null;
+      if (o.conflicts?.length) {
+        body.push(callout({
+          type: 'warn', title: t('dashboard.orphan.conflicts'),
+          text: h('ul', { class: 'admin-steps' }, o.conflicts.map((c) => h('li', null, c))),
+        }));
+        if (o.fixable) {
+          fixRow = switchRow({ label: t('dashboard.orphan.fix'), description: t('dashboard.orphan.fixHint') });
+          body.push(fixRow);
+        }
+      }
+      return {
+        body: [h('div', { class: 'form-stack' }, body)],
+        foot: [
+          button(t('common.cancel'), { onClick: () => close(undefined) }),
+          button(t('dashboard.orphan.adopt'), {
+            variant: 'primary', iconName: 'plus', autofocus: true,
+            onClick: () => close({ fix: !!(fixRow && fixRow.input.checked) }),
+          }),
+        ],
+      };
+    },
+  }).result;
+  if (!result) return;
+  try {
+    const d = await post('/api/instance/adopt', { config_path: o.config_path, fix: result.fix });
+    toastResult(d, t('dashboard.orphan.adopted', { service }));
+    if (d.ok) {
+      orphanKey = '';
+      await detect().catch(() => {});
+    }
+  } catch (e) { toastError(e); }
 }
 
 async function rename(iid) {

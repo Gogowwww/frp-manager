@@ -63,7 +63,7 @@ frp est un binaire unique configuré par des fichiers TOML. Le piloter à la mai
 |---|---|---|
 | Ajouter ou modifier un tunnel | éditer `frpc.toml`, redémarrer frpc | formulaire guidé, TOML vérifié avant l'enregistrement, enregistrer et redémarrer en un clic |
 | Voir ce qui est exposé | lire les configurations | liste des ports avec leur chemin, par client |
-| Plusieurs instances frps/frpc | un service et un fichier par instance à suivre | détectées automatiquement, une carte chacune |
+| Plusieurs instances frps/frpc | un service et un fichier par instance à suivre | détectées automatiquement, une carte chacune ; une nouvelle se crée depuis le tableau de bord, avec des ports libres |
 | Filtrer qui atteint les ports de frps | écrire des règles nftables ou iptables | règles par IP, réseau ou AS, testées avant application |
 | Suivre les journaux | `journalctl -fu frpc` en SSH | journaux en direct dans le navigateur |
 | Mettre à jour frp | télécharger, vérifier, remplacer les binaires, redémarrer | un clic, SHA-256 vérifiée, services redémarrés |

@@ -176,8 +176,8 @@ type permInfo struct{ scoped, sensitive bool }
 // permission → (limitable à certaines instances, sensible). « Sensible » : revient
 // à donner la main sur la machine (config frp, pare-feu, mise à jour du panel…).
 var permissionOrder = []string{
-	"instances.view", "instances.control", "instances.delete", "config.read", "config.write", "logs.view",
-	"ports.view", "ports.manage", "firewall.view", "firewall.manage", "updates.view", "updates.install",
+	"instances.view", "instances.control", "instances.create", "instances.delete", "config.read", "config.write",
+	"logs.view", "ports.view", "ports.manage", "firewall.view", "firewall.manage", "updates.view", "updates.install",
 	"updates.panel", "webhooks.view", "webhooks.manage", "settings.manage", "users.manage",
 }
 
@@ -188,11 +188,16 @@ var permissions = map[string]permInfo{
 	"firewall.manage": {false, true}, "updates.view": {false, false}, "updates.install": {false, true},
 	"updates.panel": {false, true}, "webhooks.view": {false, false}, "webhooks.manage": {false, true},
 	"settings.manage": {false, true}, "users.manage": {false, true},
+	// Créer une instance : nouvelle unité systemd et nouvelle config, sans
+	// instance existante à laquelle la limiter
+	// Creating an instance: new systemd unit and new config, with no existing
+	// instance to limit it to
+	"instances.create": {false, true},
 }
 
 // Accorder la clé accorde aussi les valeurs (écrire une config suppose de la lire)
 var permissionImplies = map[string][]string{
-	"instances.control": {"instances.view"}, "instances.delete": {"instances.view"},
+	"instances.control": {"instances.view"}, "instances.delete": {"instances.view"}, "instances.create": {"instances.view"},
 	"config.read": {"instances.view"}, "config.write": {"config.read"}, "logs.view": {"instances.view"},
 	"ports.view": {"instances.view"}, "ports.manage": {"ports.view"}, "firewall.view": {"instances.view"},
 	"firewall.manage": {"firewall.view"}, "updates.install": {"updates.view"}, "updates.panel": {"updates.view"},

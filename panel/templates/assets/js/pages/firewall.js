@@ -6,17 +6,21 @@ import { t } from '../i18n.js';
 import { api, apiOk } from '../api.js';
 import {
   h, icon, button, busy, toast, toastResult, toastError, openDialog, confirmDialog,
-  field, input, switchControl, switchRow, segmented, callout, emptyState, pageHeader, card, badge, saveBar, copyButton,
+  field, input, select, switchControl, switchRow, segmented, callout, emptyState, pageHeader, card, badge, saveBar, copyButton,
 } from '../ui.js';
 
 const POLL_MS = 5000;          // repli sans WebSocket
 const AGO_MS = 5000;           // rafraîchit « il y a … » sans rien redemander
 const WS_MAX_FAILS = 3;        // WebSocket jamais ouvert (proxy) : on reste en repli
 import { navigate } from '../router.js';
-import { can } from '../store.js';
+import { can, displayName } from '../store.js';
+
+// Dernier frps choisi en haut de la page / Last frps chosen at the top of the page
+const FRPS_KEY = 'frpm.fw.frps';
 
 const S = {
   data: null,
+  frps: '',             // frps affiché : ses règles et ses ports / frps shown: its rules and ports
   enabled: false,
   rules: [],
   snapshot: '',
@@ -31,6 +35,12 @@ function stopLive() {
 }
 
 const snapshotOf = () => JSON.stringify([S.enabled, S.rules]);
+
+// Règle ou port du frps choisi ; une règle sans frps (créée avant ce choix) ou
+// un port sans frps connu vaut pour tous.
+// Rule or port of the chosen frps; a rule without frps (created before this
+// choice) or a port with no known frps applies to all of them.
+const ofFrps = (x) => !x.frps || x.frps === S.frps;
 // Lecture seule (pas de firewall.manage) : jamais de modification à enregistrer
 const isDirty = () => can('firewall.manage') && S.snapshot !== '' && snapshotOf() !== S.snapshot;
 
@@ -78,6 +88,10 @@ async function load() {
   S.enabled = S.data.enabled;
   S.rules = S.data.rules.map((r) => ({ ...r, sources: r.sources.map((s) => ({ ...s })) }));
   S.snapshot = snapshotOf();
+  const list = S.data.frps || [];
+  let saved = '';
+  try { saved = localStorage.getItem(FRPS_KEY) || ''; } catch { /* stockage indisponible */ }
+  S.frps = list.includes(saved) ? saved : list[0] || '';
   build();
 }
 
@@ -97,11 +111,28 @@ async function installNft(e) {
 
 // ── Rendu ──────────────────────────────────────────────────────────────────
 
+/** Choix du frps, en haut à droite : seulement s'il y en a plusieurs.
+ *  Choice of the frps, top right: only when there are several. */
+function frpsPicker() {
+  const list = S.data.frps || [];
+  if (list.length < 2) return [];
+  const sel = select(list.map((id) => ({ value: id, label: displayName(id) })), S.frps, {
+    class: 'select select-inline', 'aria-label': t('firewall.frpsLabel'),
+  });
+  sel.addEventListener('change', () => {
+    S.frps = sel.value;
+    try { localStorage.setItem(FRPS_KEY, S.frps); } catch { /* stockage indisponible */ }
+    if (S.els.testOut) S.els.testOut.replaceChildren();
+    render();
+  });
+  return [sel];
+}
+
 function build() {
   const root = S.els.root;
   if (!root) return;
-  const head = pageHeader({ title: t('firewall.title'), description: t('firewall.description') });
   const d = S.data;
+  const head = pageHeader({ title: t('firewall.title'), description: t('firewall.description'), actions: d.available ? frpsPicker() : [] });
 
   if (!d.has_frps) {
     root.replaceChildren(head, h('div', { class: 'card' }, emptyState({
@@ -167,7 +198,7 @@ function render() {
 
 function renderStatus() {
   const d = S.data;
-  const activeRules = S.rules.filter((r) => r.enabled).length;
+  const activeRules = S.rules.filter((r) => r.enabled && ofFrps(r)).length;
   let state;
   if (isDirty()) state = badge(t('firewall.state.pending'), 'warn');
   else if (S.enabled && d.active) state = badge(t('firewall.state.on', { count: activeRules }), 'success');
@@ -183,7 +214,7 @@ function renderStatus() {
 
   const you = [];
   if (d.client_ip) {
-    const blocked = d.client_verdicts.filter((v) => v.blocked_by.length);
+    const blocked = d.client_verdicts.filter((v) => v.blocked_by.length && ofFrps(v));
     you.push(h('p', { class: 'fw-you' },
       icon('globe'), t('firewall.yourIp'), ' ', h('span', { class: 'mono' }, d.client_ip),
       blocked.length
@@ -208,7 +239,9 @@ function parseSpec(spec) {
 }
 
 function ruleCovers(rule, port) {
-  if (rule.ports === '*') return true;
+  // Comme fwRuleRanges : « tous les ports » d'une règle sont ceux de son frps
+  // Like fwRuleRanges: a rule's "all ports" are those of its frps
+  if (rule.ports === '*') return !rule.frps || port.frps === rule.frps;
   return parseSpec(rule.ports).some(([a, b]) => a <= port.end && port.start <= b);
 }
 
@@ -218,7 +251,9 @@ function ruleTitle(rule) {
 
 function renderRules() {
   const host = S.els.rules;
-  if (!S.rules.length) {
+  const shown = S.rules.filter(ofFrps);
+  const several = (S.data.frps || []).length > 1;
+  if (!shown.length) {
     host.replaceChildren(emptyState({
       iconName: 'shield', title: t('firewall.emptyTitle'), text: t('firewall.emptyText'),
       actions: can('firewall.manage') ? [button(t('firewall.addRule'), { variant: 'primary', iconName: 'plus', onClick: () => editRule(null) })] : [],
@@ -226,7 +261,7 @@ function renderRules() {
     return;
   }
   const saved = JSON.parse(S.snapshot || '[false,[]]')[1];
-  host.replaceChildren(h('ul', { class: 'rows' }, S.rules.map((rule) => {
+  host.replaceChildren(h('ul', { class: 'rows' }, shown.map((rule) => {
     const before = saved.find((r) => r.id === rule.id);
     const state = !before ? 'new' : JSON.stringify(before) === JSON.stringify(rule) ? '' : 'changed';
     const count = S.data.counters[rule.id];
@@ -245,7 +280,11 @@ function renderRules() {
       badge(t(`firewall.mode.${rule.mode}`), rule.mode === 'allow' ? 'success' : 'danger')),
     h('div', { class: 'fw-detail' },
       h('span', null, h('small', null, t('firewall.portsLabel')),
-        rule.ports === '*' ? h('span', null, t('firewall.allPorts')) : h('span', { class: 'mono' }, rule.ports)),
+        rule.ports !== '*' ? h('span', { class: 'mono' }, rule.ports)
+          // Règle sans frps (créée avant ce choix) : les ports de tous les frps
+          // Rule without frps (created before this choice): every frps's ports
+          : several && !rule.frps ? h('span', { title: t('firewall.allFrpsHint') }, t('firewall.allFrpsPorts'))
+            : h('span', null, t('firewall.allPorts'))),
       h('span', null, h('small', null, t('firewall.sourcesLabel')),
         h('span', { title: [rule.list && listText(rule.list), ...rule.sources.map(sourceTitle)].filter(Boolean).join('\n') },
           rule.list ? h('span', { class: 'fw-list-tag' }, icon('globe'), listText(rule.list)) : null,
@@ -289,7 +328,7 @@ function updateCounts(counters) {
 
 function renderPorts() {
   const host = S.els.ports;
-  const ports = S.data.ports;
+  const ports = S.data.ports.filter(ofFrps);
   if (!ports.length) {
     host.replaceChildren(h('p', { class: 'muted', style: { padding: '16px 20px' } }, t('firewall.noPorts')));
     return;
@@ -315,12 +354,13 @@ function renderPorts() {
 function testSection() {
   const ip = input({ value: S.data.client_ip || '', placeholder: '203.0.113.4', mono: true, 'aria-label': t('firewall.testLabel') });
   const out = h('div', { class: 'fw-test-out' });
+  S.els.testOut = out;
   const run = async (e) => {
     e.preventDefault();
     try {
       const d = await api('/api/firewall/test', { method: 'POST', body: { ip: ip.value.trim(), rules: S.enabled ? S.rules : [] } });
       if (!d.ok) { toastResult(d); return; }
-      out.replaceChildren(h('ul', { class: 'fw-verdicts' }, d.verdicts.map((v) => h('li', null,
+      out.replaceChildren(h('ul', { class: 'fw-verdicts' }, d.verdicts.filter(ofFrps).map((v) => h('li', null,
         h('span', { class: `fw-dot ${v.blocked_by.length ? 'is-blocked' : 'is-ok'}` }),
         h('span', { class: 'mono' }, portText(v)), ' ', h('span', { class: 'muted' }, v.label), ' — ',
         v.blocked_by.length ? t('firewall.testBlocked', { rules: v.blocked_by.join(', ') }) : t('firewall.testOk')))));
@@ -460,12 +500,16 @@ async function chooseQuickBlock(entry) {
   if (choice) quickBlock(choice);
 }
 
+/** Une nouvelle règle appartient au frps affiché.
+ *  A new rule belongs to the frps shown. */
+const newRuleFrps = () => (S.frps ? { frps: S.frps } : {});
+
 /** Ajoute une adresse ou un AS à la règle « Blocages rapides » (créée au besoin). */
 function quickBlock(source) {
   const name = t('firewall.quickRule');
-  let rule = S.rules.find((r) => r.mode === 'block' && r.ports === '*' && r.name === name);
+  let rule = S.rules.find((r) => r.mode === 'block' && r.ports === '*' && r.name === name && ofFrps(r));
   if (!rule) {
-    rule = { id: Math.random().toString(16).slice(2, 10), name, mode: 'block', ports: '*', sources: [], enabled: true };
+    rule = { id: Math.random().toString(16).slice(2, 10), name, mode: 'block', ports: '*', sources: [], enabled: true, ...newRuleFrps() };
     S.rules.push(rule);
   }
   const label = sourceLabel(source);
@@ -574,7 +618,7 @@ async function subscribe(lst, close) {
   }))) return;
   S.rules.push({
     id: Math.random().toString(16).slice(2, 10), name: lst.name, mode: lst.mode, ports: '*',
-    sources: [], list: lst.id, enabled: true,
+    sources: [], list: lst.id, enabled: true, ...newRuleFrps(),
   });
   close(undefined);
   render();
@@ -694,7 +738,7 @@ function textToSources(text) {
 async function editRule(existing) {
   const draft = existing
     ? { ...existing, sources: existing.sources.map((s) => ({ ...s })) }
-    : { id: '', name: '', mode: 'allow', ports: '*', sources: [], enabled: true };
+    : { id: '', name: '', mode: 'allow', ports: '*', sources: [], enabled: true, ...newRuleFrps() };
   const formId = 'fw-rule-form';
 
   const result = await openDialog({

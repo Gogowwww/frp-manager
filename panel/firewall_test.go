@@ -268,3 +268,45 @@ func TestFirewallNeedsFrps(t *testing.T) {
 		t.Fatal("frps détecté")
 	}
 }
+
+// Plusieurs frps : « tous les ports » d'une règle visent ceux de son frps ; une
+// règle sans frps (créée avant ce choix) garde tous les ports, comme avant.
+// Several frps: a rule's "all ports" target its frps's ones; a rule without frps
+// (created before this choice) keeps every port, as before.
+func TestFirewallRulePerFrps(t *testing.T) {
+	setup(t)
+	known := []J{
+		{"start": 7000, "end": 7000, "proto": "tcp", "frps": "frps"},
+		{"start": 6000, "end": 6010, "proto": "any", "frps": "frps"},
+		{"start": 17307, "end": 17307, "proto": "tcp", "frps": "frps-secours"},
+		{"start": 9000, "end": 9000, "proto": "tcp", "frps": ""},
+	}
+	cases := map[string]string{"": "7000, 6000-6010, 17307, 9000", "frps": "7000, 6000-6010", "frps-secours": "17307"}
+	for frps, want := range cases {
+		rule := J{"ports": "*", "frps": frps}
+		ranges, err := FR.fwRuleRanges(rule, known)
+		if err != nil || rangesText(ranges) != want {
+			t.Errorf("frps %q : %s %v, attendu %s", frps, rangesText(ranges), err, want)
+		}
+	}
+	// Ports donnés : le frps ne change rien / Given ports: the frps changes nothing
+	if r, _ := FR.fwRuleRanges(J{"ports": "25565", "frps": "frps-secours"}, known); rangesText(r) != "25565" {
+		t.Errorf("ports donnés : %s", rangesText(r))
+	}
+	rule, err := FR.fwNormalizeRule(map[string]any{"mode": "allow", "ports": "*", "frps": "frps-secours"}, 0)
+	if err != nil || rule["frps"] != "frps-secours" {
+		t.Fatalf("%v %v", rule, err)
+	}
+	if rule, _ := FR.fwNormalizeRule(map[string]any{"mode": "allow", "ports": "*"}, 0); rule["frps"] != nil {
+		t.Fatalf("frps ajouté à une règle sans frps : %v", rule)
+	}
+	if _, err := FR.fwNormalizeRule(map[string]any{"mode": "allow", "ports": "*", "frps": "frps; nft flush"}, 0); err == nil {
+		t.Fatal("frps invalide accepté")
+	}
+	// Ruleset : la règle de frps-secours ne touche que 17307
+	// Ruleset: the frps-secours rule only touches 17307
+	nft := fwRuleset(fwConfig{true, []J{{"id": "ab", "mode": "allow", "ports": "*", "frps": "frps-secours", "sources": []any{}}}}, known, false)
+	if !strings.Contains(nft, "elements = { 17307 }") || strings.Contains(nft, "7000") {
+		t.Fatalf("%s", nft)
+	}
+}
