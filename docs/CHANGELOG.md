@@ -16,6 +16,7 @@ older than 0.0.51 are described in the
 ### Changed
 
 - **Repository layout**: the CHANGELOGs now live in `docs/` (`docs/CHANGELOG.md`, `docs/CHANGELOG.fr.md`), `docker-compose.host.yml` moved to `packaging/docker/`, and the address-filtering package moved to `panel/netaddr`. The agent instructions are no longer in the repository. Nothing changes for users of the panel; the commands to test the Go code are now `go test ./panel/... ./tools/...`.
+- **Website build moved out of this repository**: the generator now lives in a private repository and the site is deployed to Cloudflare Pages; the `gh-pages` branch and the `demo.yml` workflow are gone. Nothing changes for the panel.
 
 ## [0.6.2] - 2026-10-26
 
