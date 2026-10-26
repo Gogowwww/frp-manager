@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-26
+
+The Docker image now ships frps, frpc and nftables and runs them by itself, with no access to the host.
+
+Pre-release.
+
 ### Added
 
 - **Docker: standalone mode, frps and frpc in the image**: the image now ships
@@ -545,7 +551,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0

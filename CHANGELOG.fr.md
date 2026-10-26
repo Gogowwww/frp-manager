@@ -13,6 +13,12 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.6.0] - 2026-10-26
+
+L'image Docker embarque frps, frpc et nftables et les lance elle-même, sans accès à l'hôte.
+
+Pré-release.
+
 ### Ajouté
 
 - **Docker : mode autonome, frps et frpc dans l'image** : l'image contient
@@ -573,7 +579,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0
