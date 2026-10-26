@@ -1,17 +1,17 @@
 # Prévient le dépôt privé du site quand le contenu qu'il publie change (README,
-# docs/, CHANGELOG, panel/templates/) : il se reconstruit et se déploie alors
-# sur Cloudflare Pages. Sans le secret SITE_DISPATCH_TOKEN, le site se
+# .github/, panel/templates/) : il se reconstruit et se déploie alors
+# sur Cloudflare Pages. Sans le secret SITE_TOKEN, le site se
 # reconstruit tout de même toutes les 6 heures.
 #
-# Prérequis : secret SITE_DISPATCH_TOKEN, jeton GitHub à portée limitée au
+# Prérequis : secret SITE_TOKEN, jeton GitHub à portée limitée au
 # dépôt Gogowwww/frp-manager-site (droit « Contents : Read and write »).
 #
 # Notifies the site's private repository when the content it publishes changes
-# (README, docs/, CHANGELOG, panel/templates/): it then rebuilds and deploys
-# to Cloudflare Pages. Without the SITE_DISPATCH_TOKEN secret, the site is still
+# (README, .github/, panel/templates/): it then rebuilds and deploys
+# to Cloudflare Pages. Without the SITE_TOKEN secret, the site is still
 # rebuilt every 6 hours.
 #
-# Requirements: secret SITE_DISPATCH_TOKEN, a GitHub token limited to the
+# Requirements: secret SITE_TOKEN, a GitHub token limited to the
 # Gogowwww/frp-manager-site repository ("Contents: Read and write" right).
 
 name: Prévenir le site
@@ -19,7 +19,7 @@ name: Prévenir le site
 on:
   push:
     branches: [main]
-    paths: ['panel/templates/**', 'docs/**', '*.md', '.github/workflows/site-notify.yml']
+    paths: ['panel/templates/**', '.github/*.md', '*.md', '.github/workflows/site-notify.yml']
   workflow_dispatch:
 
 permissions: {}
@@ -30,11 +30,11 @@ jobs:
     steps:
       - name: Envoyer l'événement au dépôt du site
         env:
-          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.SITE_TOKEN }}
         run: |
           set -eu
           if [ -z "$GH_TOKEN" ]; then
-            echo "SITE_DISPATCH_TOKEN absent : le site se reconstruira à la prochaine passe planifiée"
+            echo "SITE_TOKEN absent : le site se reconstruira à la prochaine passe planifiée"
             exit 0
           fi
           curl -fsS -X POST \

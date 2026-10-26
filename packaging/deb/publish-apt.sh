@@ -9,7 +9,7 @@
 # personnel, portée write:package), puis ACTIONS_TOKEN (jeton automatique du
 # workflow). Un paquet déjà publié (même version) n'est pas une erreur.
 #
-# Côté machine, le dépôt s'ajoute ainsi (voir docs/installation.md) :
+# Côté machine, le dépôt s'ajoute ainsi (voir frp-manager.org/docs/installation/) :
 #   deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $FORGEJO_URL/api/packages/$APT_OWNER/debian <distribution> main
 set -eu
 

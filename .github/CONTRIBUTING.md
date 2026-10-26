@@ -33,11 +33,12 @@ echo '{"bind_port": 18765, "ssl_enabled": false}' > /tmp/frpm.json
 FRP_MANAGER_CONFIG=/tmp/frpm.json go run ./panel
 ```
 
-Documentation is written in this repository: `README.md`, `docs/` and the
-CHANGELOGs, in English and French. It is published as is on the
-[project website](https://frp-manager.org/docs/), which is never edited
-directly. The website and the live demo are built separately, from this
-repository.
+The README and the community files (`.github/`: SECURITY, CONTRIBUTING, CODE_OF_CONDUCT)
+are in this repository. The installation guide, the changelogs and the
+French translations of the community files live in the website's private
+repository, which builds and publishes
+[frp-manager.org](https://frp-manager.org/docs/) (the website is never edited
+directly). The live demo is built from `panel/templates/`.
 
 ## Before opening a pull request
 
@@ -60,8 +61,9 @@ python3 -m py_compile packaging/python-bridge/app.py   # Python bridge
 - The interface only builds the DOM with `h()` (`panel/templates/assets/js/ui.js`),
   never with `innerHTML` on data. No emoji in the interface: icons are the
   embedded SVGs of `panel/templates/partials/icons.html`.
-- Update the "Unreleased" section of the changelog, in both languages:
-  [CHANGELOG.md](CHANGELOG.md) and [CHANGELOG.fr.md](CHANGELOG.fr.md).
+- The maintainer records the change in the "Unreleased" section of the
+  changelogs, in both languages (they live in the website's private
+  repository, see below): contributors do not need to touch them.
 
 ## Versions and releases
 
@@ -74,7 +76,7 @@ signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` in
 still hosts the old apt repository, kept up to date for machines that have not
 moved yet; the `FORGEJO_PACKAGES_TOKEN` secret gives GitHub access to it. The
 website is built from a private repository and deployed to Cloudflare Pages;
-`site-notify.yml` tells it when the README, `docs/` or the interface change.
+`site-notify.yml` tells it when the README, `.github/` or the interface change.
 
 - **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
   `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a
@@ -109,9 +111,9 @@ language) and `en.js`.
 
 Every key added to `fr.js` must also be added to `en.js` (otherwise the
 interface silently falls back to French). The documentation exists in two
-languages: `X.md` in English, `X.fr.md` in French (README, CHANGELOG and the
-pages of `docs/`). Update both. SECURITY, CONTRIBUTING and CODE_OF_CONDUCT
-are in English only.
+languages: `X.md` in English, `X.fr.md` in French (README; the installation
+guide and the changelogs, in the website's repository). SECURITY, CONTRIBUTING
+and CODE_OF_CONDUCT are in English in this repository.
 
 ## Community blocklists
 

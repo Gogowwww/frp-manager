@@ -2,10 +2,12 @@
 // dans la forme des releases précédentes : titre, résumé, sections, « Mettre à
 // jour », lien de comparaison, puis la version anglaise.
 //
-// Les CHANGELOG sont lus dans docs/ (docs/CHANGELOG.fr.md, docs/CHANGELOG.md).
-// The CHANGELOGs are read from docs/ (docs/CHANGELOG.fr.md, docs/CHANGELOG.md).
+// Les CHANGELOG (CHANGELOG.fr.md, CHANGELOG.md) sont lus dans le dossier donné
+// par -dir : ils vivent dans le dépôt privé du site.
+// The CHANGELOGs (CHANGELOG.fr.md, CHANGELOG.md) are read from the folder given
+// by -dir: they live in the website's private repository.
 //
-//	go run ./tools/releasenotes [-dir dépôt] [-repo Gogowwww/frp-manager] [-json] v0.0.58
+//	go run ./tools/releasenotes [-dir dossier] [-repo Gogowwww/frp-manager] [-json] v0.0.58
 //
 // Le titre et l'introduction viennent du premier paragraphe de la section de la
 // version (« Le panel passe en Go : … ») ; les paragraphes d'état
@@ -29,10 +31,6 @@ var (
 	versionHead = regexp.MustCompile(`^## \[(\d+\.\d+\.\d+)\]`)
 	tagRe       = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
 )
-
-// changelogDir : dossier des deux CHANGELOG, relatif à la racine du dépôt.
-// changelogDir: folder of both CHANGELOGs, relative to the repository root.
-const changelogDir = "docs"
 
 // section : une version du CHANGELOG.
 type section struct {
@@ -156,7 +154,7 @@ func notes(dir, repo, tag string) (name, body string, err error) {
 	}
 	version := m[1]
 	read := func(f string) (*section, error) {
-		raw, err := os.ReadFile(filepath.Join(dir, changelogDir, f))
+		raw, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {
 			return nil, err
 		}
@@ -211,11 +209,11 @@ func notes(dir, repo, tag string) (name, body string, err error) {
 }
 
 func main() {
-	dir := flag.String("dir", ".", "racine du dépôt (docs/CHANGELOG.md, docs/CHANGELOG.fr.md)")
+	dir := flag.String("dir", ".", "dossier des deux CHANGELOG (CHANGELOG.md, CHANGELOG.fr.md)")
 	repo := flag.String("repo", "Gogowwww/frp-manager", "dépôt GitHub (lien de comparaison)")
 	asJSON := flag.Bool("json", false, `sortie {"name": …, "body": …}`)
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage : go run ./tools/releasenotes [-dir dépôt] [-repo o/r] [-json] vX.Y.Z")
+		fmt.Fprintln(os.Stderr, "usage : go run ./tools/releasenotes [-dir dossier] [-repo o/r] [-json] vX.Y.Z")
 	}
 	flag.Parse()
 	if flag.NArg() != 1 {

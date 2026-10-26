@@ -11,7 +11,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 
 **English** · [Français](README.fr.md)
 
-![FRP Manager dashboard](docs/img/dashboard-en.png)
+![FRP Manager dashboard](.github/img/dashboard-en.png)
 
 ## Quick start
 
@@ -22,7 +22,7 @@ curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compo
 docker compose up -d
 ```
 
-The panel listens on `127.0.0.1:8765` only. From your computer, open an SSH tunnel with `ssh -L 8765:127.0.0.1:8765 user@server`, browse to `https://127.0.0.1:8765` and create the administrator account. To open it to your network, see [Reaching the panel from another machine](docs/installation.md#reaching-the-panel-from-another-machine).
+The panel listens on `127.0.0.1:8765` only. From your computer, open an SSH tunnel with `ssh -L 8765:127.0.0.1:8765 user@server`, browse to `https://127.0.0.1:8765` and create the administrator account. To open it to your network, see [Reaching the panel from another machine](https://frp-manager.org/docs/installation/#reaching-the-panel-from-another-machine).
 
 Without Docker, the install script sets up the panel (a single program, no dependency), frp and their systemd services:
 
@@ -31,14 +31,14 @@ curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-ma
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
 
-Or with apt, once FRP Manager's repository is added: `sudo apt install frp-manager`, then `apt upgrade` for updates; see [Install with apt](docs/installation.md#install-with-apt).
+Or with apt, once FRP Manager's repository is added: `sudo apt install frp-manager`, then `apt upgrade` for updates; see [Install with apt](https://frp-manager.org/docs/installation/#install-with-apt).
 
 Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the real interface with sample data.
 
 ## Features
 
 - **Dashboard**: automatic detection of frps/frpc systemd services, binaries, configs and Docker containers, or, with Docker, frps and frpc run by the panel itself; start, stop, restart, start on boot; live status over WebSocket; nicknames; a deleted frps/frpc service can be reinstalled in one click.
-- **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options, the same port in TCP and UDP at once, and [port ranges](docs/installation.md#ports-tcp--udp-and-port-ranges) (`30000-30010`). Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](docs/SECURITY.md)).
+- **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options, the same port in TCP and UDP at once, and [port ranges](https://frp-manager.org/docs/installation/#ports-tcp--udp-and-port-ranges) (`30000-30010`). Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](.github/SECURITY.md)).
 - **Firewall (frps)**: allow-only or block rules by address, network or whole provider (AS number), applied in the kernel with nftables before Docker's NAT; blocked connections in real time; optional community lists.
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
 - **Logs**: systemd journal, log file, output of the frps/frpc run by the panel, or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
@@ -51,9 +51,9 @@ Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the re
 
 | Ports | Port editor |
 |:---:|:---:|
-| ![Ports](docs/img/ports-en.png) | ![Port editor](docs/img/port-editor-en.png) |
+| ![Ports](.github/img/ports-en.png) | ![Port editor](.github/img/port-editor-en.png) |
 | **Live logs** | **Settings** |
-| ![Live logs](docs/img/logs-en.png) | ![Settings](docs/img/settings-en.png) |
+| ![Live logs](.github/img/logs-en.png) | ![Settings](.github/img/settings-en.png) |
 
 ## Why this panel
 
@@ -85,20 +85,20 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 - **System hardening**: no shell commands built from user input, allow-listed service and container names, configs confined to frp's directories, safe archive extraction.
 - **Supply chain**: frp archives and panel updates checked against their published SHA-256; third-party mirrors (ghproxy, ghfast, gh-proxy) can be disabled and are never used without a checksum.
 
-> **Docker warning**: the standalone mode (`docker-compose.yml`) only adds the `NET_ADMIN` capability, for the firewall: whoever controls the panel can change the machine's network rules. The host mode (`packaging/docker/docker-compose.host.yml`) uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket: **that is root-equivalent access to the host**, anyone who controls the panel controls the machine. Read [the Docker section of the installation guide](docs/installation.md#docker-and-portainer) before deploying it.
+> **Docker warning**: the standalone mode (`docker-compose.yml`) only adds the `NET_ADMIN` capability, for the firewall: whoever controls the panel can change the machine's network rules. The host mode (`packaging/docker/docker-compose.host.yml`) uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket: **that is root-equivalent access to the host**, anyone who controls the panel controls the machine. Read [the Docker section of the installation guide](https://frp-manager.org/docs/installation/#docker-and-portainer) before deploying it.
 
-Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
+Threat model and vulnerability reporting: [SECURITY.md](.github/SECURITY.md).
 
 ## Documentation
 
 - [Website](https://frp-manager.org): overview, live demo and the full documentation
-- [Installation, configuration and uninstall](docs/installation.md): requirements, Docker images and their privileges, versions and pre-releases, configuration keys, port ranges and TCP + UDP, reverse proxy, lost password, file structure
-- [Security policy](docs/SECURITY.md)
-- [Changelog](docs/CHANGELOG.md)
+- [Installation, configuration and uninstall](https://frp-manager.org/docs/installation/): requirements, Docker images and their privileges, versions and pre-releases, configuration keys, port ranges and TCP + UDP, reverse proxy, lost password, file structure
+- [Security policy](.github/SECURITY.md)
+- [Changelog](https://frp-manager.org/docs/changelog/)
 
 ## Contributing
 
-Bug reports, ideas, translations and pull requests are welcome: see [CONTRIBUTING.md](docs/CONTRIBUTING.md) and the [code of conduct](docs/CODE_OF_CONDUCT.md). Addresses worth blocking can be shared through the firewall's **Publish** button or on the [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch.
+Bug reports, ideas, translations and pull requests are welcome: see [CONTRIBUTING.md](.github/CONTRIBUTING.md) and the [code of conduct](.github/CODE_OF_CONDUCT.md). Addresses worth blocking can be shared through the firewall's **Publish** button or on the [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists) branch.
 
 ## License
 
