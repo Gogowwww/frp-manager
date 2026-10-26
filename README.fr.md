@@ -15,7 +15,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 
 ## Démarrage rapide
 
-Avec Docker Compose, sur la machine qui fait (ou fera) tourner frps ou frpc :
+Avec Docker Compose : l'image contient frps et frpc, et le panel les lance lui-même (mode autonome, rien à installer sur la machine) :
 
 ```bash
 curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
@@ -37,11 +37,11 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo
 
 ## Fonctionnalités
 
-- **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms ; un service frps/frpc supprimé se réinstalle en un clic.
+- **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker, ou, avec Docker, frps et frpc lancés par le panel lui-même ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms ; un service frps/frpc supprimé se réinstalle en un clic.
 - **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression, le même port en TCP et en UDP d'un coup, et des [plages de ports](docs/installation.fr.md#ports--tcp--udp-et-plages-de-ports) (`30000-30010`). Les réglages que l'éditeur ne gère pas sont conservés tels quels. Un port laissé sans numéro reçoit son port public du serveur ; le panel peut l'afficher, après confirmation, par le tableau de bord local de frpc (voir [SECURITY](docs/SECURITY.md), en anglais).
 - **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
-- **Journaux** : journal systemd, fichier de log ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
+- **Journaux** : journal systemd, fichier de log, sortie de frps/frpc lancés par le panel ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
 - **Notifications** : webhooks vers Discord, Slack, Telegram, ntfy, Gotify ou toute adresse (modèle JSON, signature HMAC) pour les instances arrêtées, les adresses verrouillées et les mises à jour.
 - **Mises à jour** : installation de frp en un clic avec vérification SHA-256, envoi manuel d'une archive, mise à jour du panel en un clic.
 - **Utilisateurs et permissions** : plusieurs comptes, chacun avec un rôle (administrateur, opérateur, lecteur) ou des permissions choisies une à une, éventuellement limités à certaines instances ; les changements s'appliquent aussitôt, sessions ouvertes comprises.
@@ -85,7 +85,7 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
 - **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.
 
-> **Avertissement Docker** : le conteneur utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker. **C'est un accès équivalent à root sur l'hôte** : qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](docs/installation.fr.md#docker-et-portainer) avant de le déployer.
+> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](docs/installation.fr.md#docker-et-portainer) avant de le déployer.
 
 Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECURITY.md) (en anglais).
 

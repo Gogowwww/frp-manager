@@ -13,11 +13,54 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+## [0.6.0] - 2026-10-26
+
+L'image Docker embarque frps, frpc et nftables et les lance elle-même, sans accès à l'hôte.
+
+Pré-release.
+
+### Ajouté
+
+- **Docker : mode autonome, frps et frpc dans l'image** : l'image contient
+  désormais `frps` et `frpc` (archive officielle de fatedier/frp pour
+  l'architecture de l'image, somme SHA-256 vérifiée à la construction, version
+  donnée par l'argument `FRP_VERSION` du `Dockerfile`), ainsi que nftables.
+  Dans un conteneur qui ne voit rien de l'hôte, le panel les lance lui-même
+  comme ses propres processus : démarrage, arrêt, redémarrage, interrupteur
+  « Démarrage automatique » (le programme démarre avec le conteneur), relance
+  automatique après un arrêt imprévu (2 s, puis jusqu'à 60 s), arrêt propre de
+  frps et frpc à `docker stop`. Les configurations (`/etc/frp/*.toml`) se
+  modifient depuis le panel ; au tout premier lancement, le panel crée
+  `frps.toml` (port tiré au hasard ou `FRPS_BIND_PORT`, jeton tiré au hasard)
+  et `frpc.toml`. Tout ce qui doit durer est dans un seul volume `/data`
+  (configuration du panel, configurations frp, journaux, état). La page
+  Journaux montre la sortie du programme (source « Console ») ou son fichier de
+  log. Une mise à jour de frp depuis le panel va dans `/data/lib/bin` et
+  remplace la version de l'image, jusqu'à ce qu'une image plus récente en
+  apporte une plus récente. Le pare-feu lance nft directement dans le
+  conteneur : il lui faut la capacité `NET_ADMIN`, sinon la page Pare-feu
+  explique ce qui manque. Le nouveau `docker-compose.yml` utilise ce mode :
+  réseau de l'hôte, `NET_ADMIN`, un seul volume, pas de `privileged`, pas de
+  `pid: host`, pas de socket Docker. ufw n'est pas dans l'image (voir le guide
+  d'installation).
+- `FRP_MANAGER_MODE=standalone` ou `host` impose le mode ; sinon le panel
+  choisit le mode hôte dès qu'il trouve les montages de l'hôte ou `pid: host`.
+
+### Modifié
+
+- **Docker : le mode hôte passe dans `docker-compose.host.yml`** : la
+  configuration précédente (`pid: host`, `privileged`, `nsenter`, montages de
+  l'hôte) est gardée telle quelle sous ce nom, avec `FRP_MANAGER_MODE=host`.
+  Les installations en place continuent de fonctionner comme avant ; une stack
+  Portainer déployée depuis le dépôt avec le compose path `docker-compose.yml`
+  doit passer à `docker-compose.host.yml` pour continuer à piloter le frp de
+  l'hôte.
+
 ## [0.5.0] - 2026-10-25
 
 Un port peut s'ouvrir en TCP et en UDP à la fois ou sur toute une plage, et le dépôt apt passe sur apt.frp-manager.org.
 
-Pré-release.
+Pré-release, puis release définitive le même jour.
 
 ### Ajouté
 
@@ -536,7 +579,8 @@ Version consacrée à la sécurité. La mise à jour depuis le panel ou par
 - Tests pytest (connexion, migration du hash, validation TOML, noms de
   services, archives) et intégration continue : tests, ruff, pip-audit.
 
-[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[Non publié]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0

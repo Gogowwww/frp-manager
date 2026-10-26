@@ -35,12 +35,50 @@ RUN GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$LDFLAGS" -o /out/frp-m
 FROM scratch AS binaries
 COPY --from=all-binaries /out/ /
 
+# frps et frpc embarqués (mode autonome) : archive officielle de fatedier/frp pour
+# l'architecture de l'image, vérifiée avec la somme SHA-256 publiée avec la
+# release. --build-arg FRP_VERSION=… choisit une autre version de frp.
+# Embedded frps and frpc (standalone mode): official fatedier/frp archive for
+# the image's architecture, checked against the SHA-256 published with the
+# release. --build-arg FRP_VERSION=… picks another frp version.
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS frp
+ARG FRP_VERSION=0.71.1
+ARG TARGETARCH
+RUN set -eu; \
+    case "$TARGETARCH" in \
+      amd64|arm64) arch="$TARGETARCH" ;; \
+      arm) arch=arm ;; \
+      *) echo "architecture non prise en charge / unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    name="frp_${FRP_VERSION}_linux_${arch}"; \
+    url="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}"; \
+    cd /tmp; \
+    wget -q -O "$name.tar.gz" "$url/$name.tar.gz"; \
+    wget -q -O sums.txt "$url/frp_sha256_checksums.txt"; \
+    sum=$(awk -v f="$name.tar.gz" '$2 == f { print $1 }' sums.txt); \
+    [ -n "$sum" ] || { echo "pas de somme SHA-256 pour / no SHA-256 for $name.tar.gz" >&2; exit 1; }; \
+    echo "$sum  $name.tar.gz" | sha256sum -c -; \
+    tar -xzf "$name.tar.gz"; \
+    mkdir -p /out; \
+    install -m 0755 "$name/frps" "$name/frpc" /out/
+
 # ── Image ───────────────────────────────────────────────────────────────────
-# nsenter (util-linux-misc) : commandes sur l'hôte (systemd, journal, nftables)
-# avec pid: host + privileged, voir docker-compose.yml.
+# Deux modes (voir docs/installation.md) :
+# - autonome (docker-compose.yml) : le panel lance frps et frpc de l'image ;
+#   nftables (pare-feu, capacité NET_ADMIN) et ss (ports écoutés) servent dans
+#   le conteneur ;
+# - hôte (docker-compose.host.yml) : nsenter (util-linux-misc) lance les
+#   commandes sur l'hôte (systemd, journal, nftables) avec pid: host + privileged.
+# Two modes (see docs/installation.md):
+# - standalone (docker-compose.yml): the panel runs the image's frps and frpc;
+#   nftables (firewall, NET_ADMIN capability) and ss (listening ports) are used
+#   inside the container;
+# - host (docker-compose.host.yml): nsenter (util-linux-misc) runs the commands
+#   on the host (systemd, journal, nftables) with pid: host + privileged.
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates util-linux-misc tzdata
+RUN apk add --no-cache ca-certificates util-linux-misc tzdata nftables iproute2-ss
 COPY --from=build /out/frp-manager /usr/local/bin/frp-manager
+COPY --from=frp /out/ /opt/frp-manager/bin/
 ARG PANEL_VERSION=unknown
 ENV PANEL_DOCKER_VERSION=${PANEL_VERSION} DOCKER_MODE=true
 # source : GitHub relie le package ghcr.io au dépôt (onglet Packages du dépôt) ;

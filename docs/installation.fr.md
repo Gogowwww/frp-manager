@@ -17,9 +17,10 @@
 
 ## Prérequis
 
-- Linux avec **systemd**
-- Rien d'autre : le panel est un seul programme, sans dépendance (installation
-  par script ou paquet `.deb`), ou **Docker**
+- Linux avec **systemd** (installation par script ou paquet `.deb`), ou
+  **Docker** : en mode autonome, le conteneur n'a besoin ni de systemd ni de frp
+  sur l'hôte
+- Rien d'autre : le panel est un seul programme, sans dépendance
 - Architectures : `amd64`, `arm64`, `armv7`
 
 Inutile d'installer frp avant : le script télécharge `frps`/`frpc` et crée
@@ -89,14 +90,30 @@ configurations et ses services restent en place. Pour retirer le dépôt :
 
 ## Docker et Portainer
 
+L'image existe en deux modes :
+
+- **Autonome** (`docker-compose.yml`, recommandé) : l'image contient `frps` et
+  `frpc`, et le panel les lance lui-même, dans le conteneur. Rien n'est
+  installé sur l'hôte, pas de `privileged`, pas de `pid: host`, pas de socket
+  Docker.
+- **Hôte** (`docker-compose.host.yml`) : le panel pilote frp installé **sur
+  l'hôte** (services systemd, journal, `/usr/local/bin`) avec `nsenter`. C'est
+  le fonctionnement de l'image avant le mode autonome ; les installations
+  faites ainsi continuent de fonctionner à l'identique.
+
 ```bash
 curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
 docker compose up -d
 ```
 
 **Portainer** : *Stacks → Add stack → Repository*, URL
-`https://github.com/Gogowwww/frp-manager`, compose path `docker-compose.yml`,
-puis *Deploy the stack*.
+`https://github.com/Gogowwww/frp-manager`, compose path `docker-compose.yml`
+(autonome) ou `docker-compose.host.yml` (hôte), puis *Deploy the stack*.
+
+> **Stack déployée depuis le dépôt avant le mode autonome** : son compose path
+> `docker-compose.yml` mène désormais au mode autonome. Pour continuer à
+> piloter le frp de l'hôte, remplacez-le par `docker-compose.host.yml` avant
+> de redéployer la stack.
 
 | Image | Contenu |
 |---|---|
@@ -106,9 +123,80 @@ puis *Deploy the stack*.
 
 Les images sont publiées pour `amd64`, `arm64` (Raspberry Pi 4/5, serveurs ARM)
 et `armv7` à partir de la version 0.0.54 ; Docker choisit automatiquement la
-bonne. Les versions antérieures n'existent qu'en `amd64`.
+bonne. Les versions antérieures n'existent qu'en `amd64`. Elles contiennent
+`frps` et `frpc` (archive officielle de fatedier/frp, somme SHA-256 vérifiée à
+la construction ; la version de frp est l'argument `FRP_VERSION` du
+`Dockerfile`).
 
-### Ce que fait le conteneur
+Le panel choisit son mode tout seul : autonome dans un conteneur qui ne voit
+rien de l'hôte, hôte dès qu'il trouve les montages de l'hôte
+(`/host/usr/local/bin`, `/run/systemd`) ou `pid: host`.
+`FRP_MANAGER_MODE=standalone` ou `FRP_MANAGER_MODE=host` l'impose.
+
+### Mode autonome
+
+**Ce que fait le conteneur.** Le panel lance `frps` et `frpc` comme ses
+propres processus : démarrage, arrêt et redémarrage depuis le tableau de
+bord, interrupteur **Démarrage automatique** (le programme démarre avec le
+conteneur), relance automatique après un arrêt imprévu (au bout de 2 s, puis
+jusqu'à 60 s s'il échoue encore), arrêt propre de frps et frpc à
+`docker stop`. Au tout premier lancement, le panel crée `frps.toml` (port
+d'écoute tiré au hasard entre 10000 et 32767, ou `FRPS_BIND_PORT` ; jeton tiré
+au hasard) et `frpc.toml`. Une configuration supprimée depuis le panel ne
+revient pas.
+
+**Données.** Tout ce qui doit durer est dans l'unique volume `/data` :
+
+| Dossier | Vu par le panel comme | Contenu |
+|---|---|---|
+| `/data/panel` | `/etc/frp-manager` | configuration du panel, comptes, certificats |
+| `/data/frp` | `/etc/frp` | `frps*.toml` / `frpc*.toml`, modifiés depuis le panel |
+| `/data/log` | `/var/log/frp` | journaux de frp et sortie des programmes |
+| `/data/lib` | `/var/lib/frp-manager` | état, frp mis à jour depuis le panel (`bin/`) |
+
+Chaque fichier `frps*.toml` ou `frpc*.toml` de `/data/frp` est une instance
+(une carte dans le tableau de bord). Pour un dossier de l'hôte à la place du
+volume nommé : `- ./frp-manager-data:/data`.
+
+**Journaux.** La source **Console** montre ce qu'écrit le programme (sa
+sortie, `/var/log/frp/<instance>.console.log`, plafonnée à 5 Mo), la source
+**Fichier** le fichier choisi par `log.to` dans sa configuration.
+
+**Mises à jour de frp.** **Réglages → Mises à jour** installe la nouvelle
+version dans `/data/lib/bin` : elle remplace celle de l'image et survit à la
+recréation du conteneur. Une image plus récente qui apporte un frp plus récent
+reprend la main ; pour revenir à la version de l'image, supprimez
+`/data/lib/bin`.
+
+**Réseau.** La configuration fournie utilise le réseau de l'hôte : frps écoute
+directement sur les ports de la machine, et les ports des tunnels
+(`remotePort`) n'ont pas à être publiés un par un. Sans réseau de l'hôte,
+retirez `network_mode`, publiez le panel, le port de frps et ceux des tunnels,
+réglez `FRPS_BIND_PORT` sur le port publié et `FRP_MANAGER_HOST=0.0.0.0` (voir
+les commentaires de `docker-compose.yml`).
+
+**Pare-feu.** nftables fait partie de l'image. Le panel a besoin de la
+capacité `NET_ADMIN` (`cap_add: [NET_ADMIN]`, déjà dans
+`docker-compose.yml`) ; sans elle, tout le reste fonctionne et la page
+**Pare-feu** dit ce qui manque. Avec le réseau de l'hôte, les règles filtrent
+le trafic de la machine, exactement comme l'installation classique, et restent
+en place si le conteneur s'arrête. ufw n'est pas dans l'image : le panel ne
+s'en sert que par son API (lecture et ajout de règles), et dans un conteneur
+sur le réseau de l'hôte il piloterait l'iptables de l'hôte à côté de l'ufw de
+l'hôte, avec un état des règles séparé (`/etc/ufw`) et environ 45 Mo de plus
+(Python).
+
+**Privilèges.** `NET_ADMIN` sur le réseau de l'hôte permet au conteneur de
+modifier le réseau et les règles de pare-feu de la machine : qui contrôle le
+panel peut couper ou ouvrir des accès réseau. C'est bien moins que le mode
+hôte, qui donne root sur toute la machine.
+
+### Mode hôte
+
+```bash
+curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.host.yml
+docker compose -f docker-compose.host.yml up -d
+```
 
 Le panel tourne dans le conteneur mais pilote frp **sur l'hôte** : services
 systemd `frps`/`frpc`, journaux, binaires dans `/usr/local/bin`, règles
@@ -125,7 +213,7 @@ options `-m -u -i -n -p` font entrer la commande dans ses espaces de noms
 sur le système de fichiers et avec les services de l'hôte, avec les
 capacités du conteneur.
 
-### Implications : accès équivalent à root sur l'hôte
+#### Implications : accès équivalent à root sur l'hôte
 
 Avec la configuration fournie (`pid: host`, `privileged: true`,
 `network_mode: host`, socket Docker monté), **le conteneur n'isole rien** :
@@ -150,7 +238,7 @@ Conséquences pratiques :
    par IP : voir
    [Accéder au panel depuis un autre poste](#accéder-au-panel-depuis-un-autre-poste).
 
-### Réduire les privilèges : état des lieux
+#### Réduire les privilèges : état des lieux
 
 La demande est légitime : remplacer `privileged: true` par
 `cap_drop: [ALL]` plus quelques capacités, `read_only: true` et
@@ -475,7 +563,8 @@ Dépôt
   tools/                   Outils du dépôt : blocklists (listes communautaires du
                            pare-feu), releasenotes (notes des releases)
   packaging/               Paquet .deb, passage depuis une version Python
-  Dockerfile, docker-compose.yml, go.mod
+  Dockerfile, docker-compose.yml (Docker, autonome), docker-compose.host.yml
+  (Docker, mode hôte), go.mod
 
 /opt/frp-manager/          Panel installé (script) ; /usr/bin/frp-manager (paquet .deb)
 /etc/frp-manager/          Configuration du panel + certificats SSL
@@ -483,6 +572,10 @@ Dépôt
 /var/log/frp/              Journaux frp
 /var/lib/frp-manager/      État (versions installées)
 /etc/systemd/system/       frp-manager.service, frps.service, frpc.service
+
+Docker, mode autonome : un seul volume /data, vu par le panel comme les
+dossiers ci-dessus (/data/panel, /data/frp, /data/log, /data/lib) ;
+frps et frpc de l'image dans /opt/frp-manager/bin
 ```
 
 Le panel n'écrit une configuration frp que dans les dossiers où il en cherche :
@@ -501,3 +594,7 @@ Avec le paquet `.deb` : `sudo apt purge frp-manager`.
 
 Les configurations frp (`/etc/frp/`) et les binaires (`/usr/local/bin/`) sont
 conservés.
+
+Avec Docker : `docker compose down` arrête et supprime le conteneur ; en mode
+autonome, `docker compose down -v` efface aussi le volume `/data`
+(configurations frp et du panel comprises).

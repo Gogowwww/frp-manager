@@ -15,7 +15,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 
 ## Quick start
 
-With Docker Compose, on the machine that runs (or will run) frps or frpc:
+With Docker Compose: the image contains frps and frpc, and the panel runs them itself (standalone mode, nothing to install on the machine):
 
 ```bash
 curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
@@ -37,11 +37,11 @@ Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the re
 
 ## Features
 
-- **Dashboard**: automatic detection of frps/frpc systemd services, binaries, configs and Docker containers; start, stop, restart, start on boot; live status over WebSocket; nicknames; a deleted frps/frpc service can be reinstalled in one click.
+- **Dashboard**: automatic detection of frps/frpc systemd services, binaries, configs and Docker containers, or, with Docker, frps and frpc run by the panel itself; start, stop, restart, start on boot; live status over WebSocket; nicknames; a deleted frps/frpc service can be reinstalled in one click.
 - **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options, the same port in TCP and UDP at once, and [port ranges](docs/installation.md#ports-tcp--udp-and-port-ranges) (`30000-30010`). Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](docs/SECURITY.md)).
 - **Firewall (frps)**: allow-only or block rules by address, network or whole provider (AS number), applied in the kernel with nftables before Docker's NAT; blocked connections in real time; optional community lists.
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
-- **Logs**: systemd journal, log file or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
+- **Logs**: systemd journal, log file, output of the frps/frpc run by the panel, or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
 - **Notifications**: webhooks to Discord, Slack, Telegram, ntfy, Gotify or any URL (JSON template, HMAC signature) for stopped instances, locked-out addresses and updates.
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
 - **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included.
@@ -85,7 +85,7 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 - **System hardening**: no shell commands built from user input, allow-listed service and container names, configs confined to frp's directories, safe archive extraction.
 - **Supply chain**: frp archives and panel updates checked against their published SHA-256; third-party mirrors (ghproxy, ghfast, gh-proxy) can be disabled and are never used without a checksum.
 
-> **Docker warning**: the container uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket. **That is root-equivalent access to the host**: anyone who controls the panel controls the machine. Read [the Docker section of the installation guide](docs/installation.md#docker-and-portainer) before deploying it.
+> **Docker warning**: the standalone mode (`docker-compose.yml`) only adds the `NET_ADMIN` capability, for the firewall: whoever controls the panel can change the machine's network rules. The host mode (`docker-compose.host.yml`) uses `pid: host`, `privileged: true` and `nsenter` to drive systemd on the host, plus the Docker socket: **that is root-equivalent access to the host**, anyone who controls the panel controls the machine. Read [the Docker section of the installation guide](docs/installation.md#docker-and-portainer) before deploying it.
 
 Threat model and vulnerability reporting: [SECURITY.md](docs/SECURITY.md).
 

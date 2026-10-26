@@ -20,11 +20,16 @@ export default {
   badge: () => store.updates.frp || store.updates.panel,
 
   mount(host) {
-    if (store.inDocker) {
+    if (store.inDocker && !store.standalone) {
       host.append(
         callout({ type: 'warn', compact: true, iconName: 'box', title: t('updates.dockerTitle'), text: t('updates.dockerText') }),
         panelCard());
       return;
+    }
+    // Mode autonome : frp se met à jour ici, le panel avec l'image
+    // Standalone mode: frp is updated here, the panel with the image
+    if (store.standalone) {
+      host.append(callout({ type: 'info', compact: true, iconName: 'box', title: t('updates.standaloneTitle'), text: t('updates.standaloneText') }));
     }
     // frp et panel côte à côte, les outils de dépannage regroupés en dessous
     host.append(

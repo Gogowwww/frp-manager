@@ -126,6 +126,13 @@ func main() {
 	if !mirrorsAllowed() {
 		log.Printf("[INFO] Miroirs de téléchargement tiers désactivés")
 	}
+	if standalone {
+		// Conteneur autonome : le panel lance frps et frpc, et les arrête avec lui
+		// Standalone container: the panel runs frps and frpc, and stops them with it
+		log.Printf("[INFO] Mode autonome : frps et frpc lancés par le panel")
+		go handleShutdown()
+		go standaloneBoot()
+	}
 	go fwSyncLoop()
 	go webhookWorker()
 	go webhookMonitorLoop()

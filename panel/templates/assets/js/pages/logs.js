@@ -48,7 +48,9 @@ export default {
     instSel.addEventListener('change', () => { S.iid = instSel.value; replaceParams({ iid: S.iid }); syncSource(); load(); });
 
     const source = segmented([
-      { value: 'journal', label: t('logs.sources.journal') },
+      // Mode autonome : pas de journal systemd, la sortie du programme lancé par le panel
+      // Standalone mode: no systemd journal, the output of the program run by the panel
+      { value: 'journal', label: t(store.standalone ? 'logs.sources.console' : 'logs.sources.journal') },
       { value: 'file', label: t('logs.sources.file') },
     ], S.source, (v) => {
       S.source = v;

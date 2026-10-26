@@ -13,11 +13,50 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-26
+
+The Docker image now ships frps, frpc and nftables and runs them by itself, with no access to the host.
+
+Pre-release.
+
+### Added
+
+- **Docker: standalone mode, frps and frpc in the image**: the image now ships
+  `frps` and `frpc` (official fatedier/frp archive for the image's
+  architecture, SHA-256 checked at build time, version set by the
+  `FRP_VERSION` argument of the `Dockerfile`), plus nftables. In a container
+  that sees nothing of the host, the panel runs them itself as its own
+  processes: start, stop, restart, "Start on boot" switch (the program starts
+  with the container), automatic restart after an unexpected exit (2 s, then
+  up to 60 s), clean stop of frps and frpc on `docker stop`. The configurations
+  (`/etc/frp/*.toml`) are edited from the panel; on the very first launch the
+  panel creates `frps.toml` (random port or `FRPS_BIND_PORT`, random token)
+  and `frpc.toml`. Everything that must last is in a single `/data` volume
+  (panel configuration, frp configurations, logs, state). The Logs page shows
+  the program's output ("Console" source) or its log file. A frp update from
+  the panel goes to `/data/lib/bin` and replaces the image's version, until a
+  newer image brings a newer one. The firewall runs nft directly in the
+  container: it needs the `NET_ADMIN` capability, otherwise the Firewall page
+  explains what is missing. The new `docker-compose.yml` uses this mode: host
+  network, `NET_ADMIN`, one volume, no `privileged`, no `pid: host`, no Docker
+  socket. ufw is not in the image (see the installation guide).
+- `FRP_MANAGER_MODE=standalone` or `host` forces the mode; otherwise the panel
+  picks the host mode as soon as it finds the host's mounts or `pid: host`.
+
+### Changed
+
+- **Docker: the host mode moves to `docker-compose.host.yml`**: the previous
+  configuration (`pid: host`, `privileged`, `nsenter`, host mounts) is kept
+  unchanged under this name, with `FRP_MANAGER_MODE=host`. Running installs
+  keep working as before; a Portainer stack deployed from the repository with
+  the `docker-compose.yml` compose path must switch to
+  `docker-compose.host.yml` to keep driving the host's frp.
+
 ## [0.5.0] - 2026-10-25
 
 A port can be opened in TCP and UDP at once or as a whole range, and the apt repository moves to apt.frp-manager.org.
 
-Pre-release.
+Pre-release, then final release, on the same day.
 
 ### Added
 
@@ -512,7 +551,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Gogowwww/frp-manager/compare/v0.3.0...v0.4.0

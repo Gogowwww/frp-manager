@@ -11,6 +11,9 @@ export const store = {
   ready: false,
   instances: {},
   inDocker: false,
+  // Mode autonome : frps et frpc de l'image, lancés par le panel
+  // Standalone mode: the image's frps and frpc, run by the panel
+  standalone: false,
   nicknames: {},
   hasPassword: true,
   updates: { frp: false, panel: false },
@@ -64,7 +67,8 @@ export function displayName(iid) {
 export function technicalLabel(iid) {
   const inst = store.instances[iid] || {};
   const parts = [t(`instance.type.${inst.type === 'frps' ? 'frps' : 'frpc'}`)];
-  parts.push(isDocker(inst) ? t('instance.source.docker') : t('instance.source.systemd'));
+  const source = isDocker(inst) ? 'docker' : inst.source === 'standalone' ? 'standalone' : 'systemd';
+  parts.push(t(`instance.source.${source}`));
   if (inst.version) parts.push(`v${inst.version}`);
   if (store.nicknames[iid]) parts.unshift(iid);
   return parts.join(', ');
@@ -82,14 +86,14 @@ export function loadBoot() {
   try {
     const d = JSON.parse(el.textContent);
     store.nicknames = d.nicknames || {};
-    store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, hasPassword: !!d.has_password, me: d.me || null, ready: true });
+    store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, standalone: !!d.standalone, hasPassword: !!d.has_password, me: d.me || null, ready: true });
     return true;
   } catch { return false; }
 }
 
 export async function detect() {
   const d = await api('/api/detect');
-  store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, ready: true });
+  store.set({ instances: d.instances || {}, inDocker: !!d.in_docker, standalone: !!d.standalone, ready: true });
 }
 
 // ── État en direct : WebSocket /ws/status, repli sur /api/status ─────────
@@ -181,7 +185,9 @@ export async function checkUpdatesQuietly() {
   const tasks = [
     api('/api/panel/version').then((d) => { updates.panel = !!(d.ok && d.update_available); }),
   ];
-  if (!store.inDocker) {
+  // Mode autonome : frp se met à jour depuis le panel, comme sans Docker
+  // Standalone mode: frp is updated from the panel, as without Docker
+  if (!store.inDocker || store.standalone) {
     tasks.push(api('/api/update/check').then((d) => { updates.frp = !!(d.ok && d.update_available && d.installed); }));
   }
   await Promise.allSettled(tasks);

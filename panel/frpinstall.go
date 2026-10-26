@@ -422,6 +422,14 @@ func downloadArchive(l Lang, version, tag string, logf func(string)) (string, st
 // stopRunningFrpServices arrête les services actifs qui lancent l'un des
 // programmes bins → services stoppés (à redémarrer).
 func stopRunningFrpServices(bins []string) []string {
+	if standalone {
+		// Programmes lancés par le panel / Programs run by the panel
+		running := standaloneRunning(bins)
+		for _, id := range running {
+			procFor(id).stop(systemLang())
+		}
+		return running
+	}
 	_, out, _ := runCmd([]string{"systemctl", "list-units", "--type=service", "--state=active", "--no-pager", "--plain", "--no-legend"})
 	var running []string
 	for _, line := range strings.Split(out, "\n") {
@@ -589,7 +597,13 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 			list := strings.Join(running, ", ")
 			logf(l.M("[INFO] Redémarrage : "+list+" …", "[INFO] Restarting: "+list+"…"))
 			for _, svc := range running {
-				ok, _, e := runCmd([]string{"systemctl", "start", svc})
+				var ok bool
+				var e string
+				if standalone {
+					ok, e = l.standaloneAction(svc, "start")
+				} else {
+					ok, _, e = runCmd([]string{"systemctl", "start", svc})
+				}
 				if ok {
 					logf("[OK] " + svc)
 				} else {
@@ -611,6 +625,7 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 		return false
 	}
 	var installed []string
+	os.MkdirAll(frpBinDir, 0o755) // dossier persistant du mode autonome / standalone mode persistent folder
 	for _, b := range bins {
 		src := extracted[b]
 		if src == "" {

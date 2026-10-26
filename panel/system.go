@@ -40,12 +40,31 @@ var (
 	configSearchPaths = []string{"/etc/frp", "/usr/local/etc/frp", "/opt/frp", "/root/frp"}
 
 	// Détecter si le panel tourne dans un conteneur Docker
-	inDocker     = fileExists("/.dockerenv") || os.Getenv("DOCKER_MODE") == "true"
-	dockerEnv    = fileExists("/.dockerenv") // nsenter vers l'hôte : seulement dans un vrai conteneur
+	inDocker = fileExists("/.dockerenv") || os.Getenv("DOCKER_MODE") == "true"
+	// Mode autonome : frps et frpc de l'image, lancés par le panel (standalone.go)
+	// Standalone mode: the image's frps and frpc, run by the panel (standalone.go)
+	standalone = standaloneMode(os.Getenv("FRP_MANAGER_MODE"), inDocker, fileExists, pid1Name())
+	// nsenter vers l'hôte : seulement dans un vrai conteneur, en mode hôte
+	// nsenter to the host: only in a real container, in host mode
+	dockerEnv    = fileExists("/.dockerenv") && !standalone
 	dockerSocket = "/var/run/docker.sock"
 )
 
 func init() {
+	if standalone {
+		// Volume /data, puis le dossier persistant (mise à jour depuis le panel)
+		// avant les programmes de l'image
+		// /data volume, then the persistent folder (update from the panel)
+		// before the image's programs
+		data := os.Getenv("FRP_MANAGER_DATA")
+		if data == "" {
+			data = "/data"
+		}
+		linkDataDirs(data)
+		frpBinDir = frpPersistDir
+		binarySearchPaths = []string{frpPersistDir, frpEmbeddedDir}
+		return
+	}
 	// Support Docker : /host/usr/local/bin est le /usr/local/bin de l'hôte monté
 	// via docker-compose. S'il existe, les binaires frp y sont lus ET écrits.
 	if fileExists("/host/usr/local/bin") {
@@ -199,6 +218,9 @@ func getArch() string {
 func (l Lang) serviceAction(name, action string) (bool, string) {
 	if !validServiceName(name) {
 		return false, l.M(fmt.Sprintf("Nom de service refusé : %q", name), fmt.Sprintf("Service name rejected: %q", name))
+	}
+	if standalone {
+		return l.standaloneAction(name, action)
 	}
 	ok, out, errs := runCmd([]string{"systemctl", action, name})
 	if errs != "" {
@@ -354,6 +376,10 @@ func liveLogLines(ctx context.Context, l Lang, inst *Instance, source string, hi
 			}
 			// -F : suit le fichier même après une rotation des logs
 			commandLines(ctx, []string{"tail", fmt.Sprintf("-n%d", history), "-F", inst.Log}, send)
+		case inst.Source == "standalone":
+			// Sortie du programme lancé par le panel, à la place du journal systemd
+			// Output of the program run by the panel, instead of the systemd journal
+			commandLines(ctx, []string{"tail", fmt.Sprintf("-n%d", history), "-F", consoleLog(inst.ID)}, send)
 		default:
 			if !validServiceName(inst.Service) {
 				send(l.M("[frp-manager] nom de service refusé", "[frp-manager] service name rejected"))
@@ -506,6 +532,9 @@ func getInstance(iid string) *Instance {
 }
 
 func findBinary(name string) string {
+	if standalone {
+		return standaloneBinary(name)
+	}
 	for _, d := range binarySearchPaths {
 		if c := filepath.Join(d, name); isExecutable(c) {
 			return c
@@ -693,6 +722,17 @@ func detectDockerContainers() map[string]*Instance {
 
 func buildInstances() map[string]*Instance {
 	instances := map[string]*Instance{}
+	if standalone {
+		// Pas de systemd : une instance par config, lancée par le panel
+		// No systemd: one instance per config, run by the panel
+		instances = standaloneInstances()
+		for iid, inst := range detectDockerContainers() {
+			if _, ok := instances[iid]; !ok {
+				instances[iid] = inst
+			}
+		}
+		return instances
+	}
 	allUnits := findSystemdUnits()
 	for _, binType := range []string{"frps", "frpc"} {
 		bin := findBinary(binType)
@@ -789,7 +829,7 @@ func discover() (map[string]*Instance, map[string]J) {
 			configured = frpcConfigured(inst.Config)
 		}
 		result[iid] = J{
-			"id": iid, "type": inst.Type, "source": "systemd",
+			"id": iid, "type": inst.Type, "source": inst.Source,
 			"binary_path": inst.Binary, "binary_found": isExecutable(inst.Binary),
 			"version": nullable(inst.Version), "config_path": nullable(inst.Config),
 			"config_exists": inst.Config != "" && fileExists(inst.Config),
@@ -827,9 +867,11 @@ func readStatuses(found map[string]J) map[string]J {
 			}
 		}
 	}
-	statuses := map[string]J{}
+	statuses := standaloneStatuses(found)
 	for iid, inst := range found {
 		switch {
+		case inst["source"] == "standalone":
+			// Déjà lu auprès du superviseur / Already read from the supervisor
 		case inst["source"] == "docker":
 			running := containers[inst["container_name"].(string)]
 			active := "inactive"
