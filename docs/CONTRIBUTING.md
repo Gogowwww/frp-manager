@@ -72,9 +72,9 @@ GitHub. The apt repository is `apt.frp-manager.org`, a static repository
 signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` in
 `Gogowwww/frp-manager-apt` (GitHub Pages, `APT_DEPLOY_KEY` secret). The Forgejo
 still hosts the old apt repository, kept up to date for machines that have not
-moved yet, and the private repository of the website; the
-`FORGEJO_PACKAGES_TOKEN` and `DEMO_REPO_TOKEN` secrets give GitHub access to
-them.
+moved yet; the `FORGEJO_PACKAGES_TOKEN` secret gives GitHub access to it. The
+website is built from a private repository and deployed to Cloudflare Pages;
+`site-notify.yml` tells it when the README, `docs/` or the interface change.
 
 - **Numbers**: up to 0.0.60, versions follow each other (`0.0.59`,
   `0.0.60`). Then semantic versioning from `0.1.0`: the middle number for a
