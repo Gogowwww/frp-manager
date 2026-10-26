@@ -1,4 +1,7 @@
-# L'image ne contient que le panel (voir Dockerfile) : tout le reste est exclu
+# Le contexte de construction ne contient que les sources du panel : frps et
+# frpc sont téléchargés (et vérifiés) par le Dockerfile, rien d'autre n'est copié
+# The build context only holds the panel's sources: frps and frpc are
+# downloaded (and checked) by the Dockerfile, nothing else is copied
 *
 !go.mod
 !go.sum

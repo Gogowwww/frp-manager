@@ -521,6 +521,11 @@ func init() {
 		}
 		st := loadState()
 		installed := st["installed_version"]
+		if standalone {
+			// Programmes de l'image ou du dossier persistant, sans state.json
+			// Programs of the image or of the persistent folder, without state.json
+			installed = frpInstalledVersion()
+		}
 		st["last_update_check"] = time.Now().Format("2006-01-02T15:04:05.000000")
 		saveState(st)
 		available := true

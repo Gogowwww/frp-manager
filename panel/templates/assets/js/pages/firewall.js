@@ -110,6 +110,15 @@ function build() {
     })));
     return;
   }
+  if (!d.available && d.standalone) {
+    // nft est dans l'image : il manque la capacité NET_ADMIN, rien à installer
+    // nft is in the image: the NET_ADMIN capability is missing, nothing to install
+    root.replaceChildren(head, callout({
+      type: 'warn', iconName: 'box', title: t('firewall.noNftTitleStandalone'),
+      text: t('firewall.noNftTextStandalone', { detail: d.nft }),
+    }));
+    return;
+  }
   if (!d.available) {
     root.replaceChildren(head, callout({
       type: 'danger', title: t('firewall.noNftTitle'),

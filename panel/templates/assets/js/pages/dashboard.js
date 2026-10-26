@@ -38,7 +38,7 @@ export default {
       grid));
 
     const render = () => {
-      const signature = JSON.stringify([store.instances, store.nicknames, store.hasPassword, store.updates, store.inDocker, store.ready]);
+      const signature = JSON.stringify([store.instances, store.nicknames, store.hasPassword, store.updates, store.inDocker, store.standalone, store.ready]);
       if (signature === lastSignature) return;
       lastSignature = signature;
       renderAlerts(alerts);
@@ -71,7 +71,9 @@ function renderAlerts(host) {
       actions: [button(t('dashboard.seeUpdates'), { size: 'sm', onClick: () => navigate('settings', { s: 'updates' }) })],
     }));
   }
-  if (store.inDocker) {
+  if (store.standalone) {
+    items.push(callout({ type: 'info', compact: true, iconName: 'box', title: t('dashboard.standaloneTitle'), text: t('dashboard.standaloneText') }));
+  } else if (store.inDocker) {
     items.push(callout({ type: 'warn', compact: true, iconName: 'box', title: t('dashboard.dockerTitle'), text: t('dashboard.dockerText') }));
   }
   host.replaceChildren(...items);
@@ -88,7 +90,7 @@ function renderGrid(grid) {
     grid.replaceChildren(h('div', { class: 'card', style: { gridColumn: '1 / -1' } }, emptyState({
       iconName: 'server',
       title: t('dashboard.emptyTitle'),
-      text: store.inDocker ? t('dashboard.emptyTextDocker') : t('dashboard.emptyText'),
+      text: t(store.standalone ? 'dashboard.emptyTextStandalone' : store.inDocker ? 'dashboard.emptyTextDocker' : 'dashboard.emptyText'),
       actions: store.inDocker || !can('updates.install') ? [] : [button(t('dashboard.installFrp'), { variant: 'primary', iconName: 'download', onClick: () => navigate('settings', { s: 'updates' }) })],
     })));
     return;
@@ -97,14 +99,17 @@ function renderGrid(grid) {
 }
 
 function renderReinstall(host) {
-  const missing = store.ready && !store.inDocker && can('updates.install')
+  // Mode autonome : recréer une instance revient à recréer sa config
+  // Standalone mode: creating an instance again means creating its config again
+  const standalone = store.standalone;
+  const missing = store.ready && (!store.inDocker || standalone) && can('updates.install')
     ? ['frps', 'frpc'].filter((type) => !instanceIds().some((iid) => {
       const inst = store.instances[iid];
       return inst.type === type && !isDocker(inst);
     }))
     : [];
   host.replaceChildren(...missing.map((type) => button(t('dashboard.reinstall', { type }), {
-    iconName: 'plus', title: t('dashboard.reinstallHint', { type }), onClick: () => reinstall(type),
+    iconName: 'plus', title: t(standalone ? 'dashboard.reinstallHintStandalone' : 'dashboard.reinstallHint', { type }), onClick: () => reinstall(type),
   })));
 }
 
@@ -162,7 +167,7 @@ function serviceCard(iid) {
     body.push(h('div', { class: 'switch-row' },
       h('div', { class: 'switch-text' },
         h('div', { class: 'switch-label' }, t('dashboard.autostart')),
-        h('div', { class: 'switch-desc' }, t('dashboard.autostartHint'))),
+        h('div', { class: 'switch-desc' }, t(inst.source === 'standalone' ? 'dashboard.autostartHintStandalone' : 'dashboard.autostartHint'))),
       sw));
   }
 
@@ -188,7 +193,9 @@ function serviceCard(iid) {
   if (can('logs.view')) menuItems.push({ label: t('dashboard.viewLogs'), icon: 'logs', onSelect: () => navigate('logs', { iid }) });
   if (!docker) {
     if (can('config.read')) menuItems.push({ label: t('dashboard.editConfig'), icon: 'config', onSelect: () => navigate('settings', { s: 'config', iid }) });
-    if (status !== 'missing' && can('instances.control')) {
+    // Lancé par le panel : « Recharger » serait un redémarrage, déjà proposé
+    // Run by the panel: "Reload" would be a restart, already offered
+    if (status !== 'missing' && can('instances.control') && inst.source !== 'standalone') {
       menuItems.push('sep', { label: t('dashboard.reload'), icon: 'refresh', onSelect: () => serviceAction(iid, 'reload') });
     }
   }
@@ -251,7 +258,7 @@ async function deleteInstance(iid) {
     build: ({ close }) => {
       const body = [h('p', { style: { color: 'var(--text-2)' } },
         docker ? t('dashboard.deleteTextDocker', { container: inst.container_name || iid })
-          : t('dashboard.deleteTextService', { service: inst.service }))];
+          : t(inst.source === 'standalone' ? 'dashboard.deleteTextStandalone' : 'dashboard.deleteTextService', { service: inst.service }))];
       let imageRow = null;
       if (image) {
         imageRow = switchRow({
@@ -303,7 +310,7 @@ async function deleteInstance(iid) {
 async function reinstall(type) {
   const ok = await confirmDialog({
     title: t('dashboard.reinstallTitle', { type }),
-    message: t('dashboard.reinstallText', { type }),
+    message: t(store.standalone ? 'dashboard.reinstallTextStandalone' : 'dashboard.reinstallText', { type }),
     confirmLabel: t('dashboard.reinstall', { type }),
   });
   if (!ok) return;

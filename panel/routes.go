@@ -91,13 +91,13 @@ func init() {
 			insts = filterInstances(detectFrp(false), u)
 			nicks = filterInstances(nicknames(), u)
 		}
-		boot := J{"instances": insts, "in_docker": inDocker, "nicknames": nicks,
+		boot := J{"instances": insts, "in_docker": inDocker, "standalone": standalone, "nicknames": nicks,
 			"has_password": !needsSetup(), "me": meView(u)}
 		c.render("index.html", J{"boot": boot})
 	}))
 
 	route("GET /api/detect", "api_detect", perm(P("instances.view"), func(c *Ctx) {
-		c.JSON(J{"ok": true, "instances": filterInstances(detectFrp(true), c.currentUser()), "in_docker": inDocker})
+		c.JSON(J{"ok": true, "instances": filterInstances(detectFrp(true), c.currentUser()), "in_docker": inDocker, "standalone": standalone})
 	}))
 
 	route("GET /api/status", "api_status", perm(P("instances.view"), func(c *Ctx) {
@@ -328,6 +328,12 @@ func init() {
 				}
 			}
 			c.JSON(J{"ok": true, "content": validUTF8(out)})
+			return
+		}
+		if inst.Source == "standalone" {
+			// Pas de journal systemd : la sortie du programme lancé par le panel
+			// No systemd journal: the output of the program run by the panel
+			c.JSON(J{"ok": true, "content": c.Lang.standaloneConsole(inst.ID, 200)})
 			return
 		}
 		if !validServiceName(inst.Service) {
@@ -588,6 +594,18 @@ func init() {
 
 // frpInstalledVersion : state.json, sinon « frps --version » ou « frpc --version ».
 func frpInstalledVersion() any {
+	if standalone {
+		// Version du programme réellement lancé : celle de l'image peut avoir
+		// changé depuis la dernière mise à jour faite depuis le panel
+		// Version of the program actually run: the image's one may have changed
+		// since the last update made from the panel
+		for _, name := range frpBinaries {
+			if v := semverOf(readVersion(findBinary(name))); v != "" {
+				return v
+			}
+		}
+		return nil
+	}
 	st := loadState()
 	if v := st["installed_version"]; truthy(v) {
 		return v
@@ -802,6 +820,11 @@ func deleteInstance(c *Ctx) {
 		c.JSON(J{"ok": ok, "msg": msg}, code)
 		return
 	}
+	if inst.Source == "standalone" {
+		// Arrêté et retiré du démarrage automatique ; pas d'unité à supprimer
+		// Stopped and removed from automatic start; no unit to delete
+		standaloneForget(iid)
+	}
 	unit := inst.Service + ".service"
 	_, fragment, _ := runCmd([]string{"systemctl", "show", unit, "--property=FragmentPath", "--value"})
 	if fragment = strings.TrimSpace(fragment); fragment != "" {
@@ -1006,7 +1029,7 @@ func reinstallInstance(c *Ctx) {
 		c.Fail(http.StatusBadRequest, c.M("Programme inconnu (frps ou frpc)", "Unknown program (frps or frpc)"))
 		return
 	}
-	if inDocker {
+	if inDocker && !standalone {
 		c.Fail(http.StatusBadRequest, c.M("Sous Docker, les services frp sont des conteneurs.", "Under Docker, frp services are containers."))
 		return
 	}
@@ -1030,6 +1053,9 @@ func reinstallInstance(c *Ctx) {
 
 // serviceExists : une unité bin.service est-elle connue de systemd ?
 func serviceExists(bin string) bool {
+	if standalone {
+		return standaloneInstances()[bin] != nil
+	}
 	if fileExists(unitDir + bin + ".service") {
 		return true
 	}
@@ -1061,6 +1087,14 @@ func reinstallService(l Lang, bin, installed string) bool {
 		logf(l.M("[INFO] Configuration par défaut créée : "+conf, "[INFO] Default configuration created: "+conf))
 	}
 	os.MkdirAll(frpLogDir, 0o755)
+	if standalone {
+		// Pas d'unité systemd : la config suffit, le panel lance le programme
+		// No systemd unit: the config is enough, the panel runs the program
+		undismissConfig(conf)
+		invalidateCache(true)
+		logf(l.M("[OK] "+bin+" recréé, arrêté : démarrez-le depuis sa carte.", "[OK] "+bin+" recreated, stopped: start it from its card."))
+		return true
+	}
 	role := map[string]string{"frps": "server", "frpc": "client"}[bin]
 	if err := os.WriteFile(unitDir+unit, []byte(fmt.Sprintf(frpUnitTemplate, role, bin, program, conf)), 0o644); err != nil {
 		logf("[ERROR] " + err.Error())
@@ -1609,7 +1643,7 @@ func wsStatus(c *Ctx) {
 			return
 		}
 		changed := statusChangedChan()
-		data, err := json.Marshal(J{"instances": filterInstances(detectFrp(false), u), "in_docker": inDocker})
+		data, err := json.Marshal(J{"instances": filterInstances(detectFrp(false), u), "in_docker": inDocker, "standalone": standalone})
 		if err == nil && string(data) != last {
 			if conn.Write(ctx, websocket.MessageText, data) != nil {
 				return

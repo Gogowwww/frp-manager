@@ -1615,6 +1615,13 @@ func init() {
 		if hasFrps {
 			ok, out, e = runHost([]string{"nft", "--version"}, 15*time.Second, nil)
 		}
+		if hasFrps && ok && standalone {
+			// nft est dans l'image, mais sans NET_ADMIN le conteneur ne peut rien filtrer
+			// nft is in the image, but without NET_ADMIN the container cannot filter anything
+			if listed, _, le := runHost([]string{"nft", "list", "tables"}, 15*time.Second, nil); !listed {
+				ok, out, e = false, "", le
+			}
+		}
 		known := []J{}
 		if hasFrps && ok {
 			known = fwKnownPorts()
@@ -1645,12 +1652,19 @@ func init() {
 			"active": ok && fwTablePresent(), "counters": counters,
 			"asns": asnInfo(fwRuleASNs(fc.Rules)), "lists": listsInfo(fc.Rules),
 			"client_ip": nullable(client), "client_verdicts": verdicts,
-			"panel_port": fwPanelPort(), "in_docker": inDocker,
+			"panel_port": fwPanelPort(), "in_docker": inDocker, "standalone": standalone,
 		})
 	}))
 
 	// Installe nftables sur la machine (l'hôte en Docker) avec son gestionnaire de paquets.
 	route("POST /api/firewall/install", "api_firewall_install", perm(P("firewall.manage"), func(c *Ctx) {
+		if standalone {
+			// L'image contient déjà nftables ; un paquet ajouté ici disparaîtrait avec le conteneur
+			// The image already contains nftables; a package added here would vanish with the container
+			c.Fail(http.StatusBadRequest, c.M("En mode autonome, nftables fait partie de l'image : donnez au conteneur la capacité NET_ADMIN.",
+				"In standalone mode, nftables is part of the image: give the container the NET_ADMIN capability."))
+			return
+		}
 		if ok, _, _ := runHost([]string{"nft", "--version"}, 15*time.Second, nil); ok {
 			c.JSON(J{"ok": true, "msg": c.M("nftables est déjà installé.", "nftables is already installed.")})
 			return
