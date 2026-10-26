@@ -186,6 +186,7 @@ export default {
     emptyText: 'Ouvrez un port pour rendre un service local (site web, SSH, serveur de jeu…) accessible depuis Internet.',
     deleteTitle: 'Supprimer « {name} » ?',
     deleteText: 'La suppression prendra effet à l’enregistrement.',
+    deletePairText: 'Les deux tunnels, {tcp} (TCP) et {udp} (UDP), seront supprimés. La suppression prendra effet à l’enregistrement.',
     editTitle: 'Modifier « {name} »',
     newTitle: 'Nouveau port',
     editorHint: 'Les changements sont appliqués à la liste ; enregistrez ensuite pour mettre à jour frpc.',
@@ -199,6 +200,7 @@ export default {
     fields: {
       name: 'Nom',
       nameHint: 'Unique, sans espace. Il identifie le port auprès du serveur.',
+      nameHintBoth: 'Unique, sans espace. frpc crée deux tunnels : {tcp} et {udp}, affichés ici sur une seule ligne.',
       namePlaceholder: 'site-web',
       type: 'Type',
       localService: 'Service sur cette machine',

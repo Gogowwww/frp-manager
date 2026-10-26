@@ -37,17 +37,18 @@ function setupShell() {
   // Navigation : pages permises au compte connecté ; Ports seulement s'il existe
   // un frpc réellement utilisé, Pare-feu seulement s'il existe un frps réellement
   // utilisé ; pastille de mise à jour
+  // État calculé une fois par lien : il n'est réécrit que s'il change
+  // State computed once per link: it is only rewritten when it changes
+  const inUse = {
+    ports: () => store.ready && usedFrpcIds().length > 0,
+    firewall: () => store.ready && usedFrpsIds().length > 0,
+  };
   store.subscribe(() => {
     PAGES.forEach((page) => {
       const link = document.querySelector(`[data-route="${page.id}"]`);
-      if (link) link.hidden = !canOpen(page);
+      const hidden = !canOpen(page) || (page.id in inUse && !inUse[page.id]());
+      if (link && link.hidden !== hidden) link.hidden = hidden;
     });
-    if (!document.querySelector('[data-route="ports"]').hidden) {
-      document.querySelector('[data-route="ports"]').hidden = !store.ready || !usedFrpcIds().length;
-    }
-    if (!document.querySelector('[data-route="firewall"]').hidden) {
-      document.querySelector('[data-route="firewall"]').hidden = !store.ready || !usedFrpsIds().length;
-    }
     const who = document.getElementById('sidebar-user');
     who.hidden = !store.me;
     if (store.me) {

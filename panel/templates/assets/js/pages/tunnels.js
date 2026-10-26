@@ -14,6 +14,7 @@ import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
   portSpecCount, isPortRange, isRanged, frpcNames, MAX_RANGE_PORTS,
+  TCP_UDP, pairProxies, splitPair,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -128,7 +129,9 @@ async function load() {
     S.docker = !!d.docker;
     const cfg = parseToml(S.baseText);
     S.serverAddr = cfg.values.serverAddr || '';
-    S.proxies = cfg.proxies.map(proxyFromBlock);
+    // Paires X-tcp / X-udp écrites par « TCP + UDP » : une seule ligne
+    // X-tcp / X-udp pairs written by "TCP + UDP": a single row
+    S.proxies = pairProxies(cfg.proxies.map(proxyFromBlock));
     S.visitors = cfg.visitors.map(visitorFromBlock);
     S.snapshot = snapshotOf();
   } catch (e) {
@@ -275,21 +278,27 @@ function proxyRow(p) {
   if (p.proxyProtocol) flags.push(badge(t('tunnels.flags.proxyProtocol', { v: p.proxyProtocol }), ''));
   if (p.encryption) flags.push(badge(t('tunnels.flags.encrypted'), ''));
   if (p.compression) flags.push(badge(t('tunnels.flags.compressed'), ''));
-  // Plage : frpc a un tunnel par port, on montre la première erreur
-  // Range: frpc has one tunnel per port, the first error is shown
-  const live = isRanged(p)
-    ? frpcNames(p).map((n) => S.status?.proxies?.[n]).find((x) => x?.err)
+  // Plage ou TCP + UDP : frpc a plusieurs tunnels, on montre la première erreur
+  // Range or TCP + UDP: frpc has several tunnels, the first error is shown
+  const names = frpcNames(p);
+  const live = names.length > 1
+    ? names.map((n) => S.status?.proxies?.[n]).find((x) => x?.err)
     : S.status?.proxies?.[p.name];
   if (serverPicked(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
   if (live?.err) flags.push(badge(t('tunnels.flags.error'), 'danger', { title: live.err }));
 
   const state = stateOf(p, 'proxies');
   const open = () => editProxy(p);
+  // TCP + UDP : un badge par protocole, les noms réels des tunnels en infobulle
+  // TCP + UDP: one badge per protocol, the real tunnel names in the tooltip
+  const halves = splitPair(p);
   return h('li', {
     class: `row${state ? ` is-${state}` : ''}`, dataset: { state: state ? t(`common.state.${state}`) : '' },
     tabindex: '0', onClick: open, onKeydown: (e) => { if (e.key === 'Enter') open(); },
   },
-  h('div', { class: 'row-name' }, h('span', null, p.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, p.type.toUpperCase())),
+  h('div', { class: 'row-name' },
+    h('span', { title: halves.length > 1 ? halves.map((x) => x.name).join(', ') : null }, p.name || t('tunnels.unnamed')),
+    halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase()))),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
     hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains)),
   h('div', { class: 'row-flags' }, flags),
@@ -322,9 +331,13 @@ function renderVisitors() {
 }
 
 async function removeProxy(p) {
+  // TCP + UDP : la confirmation nomme les deux tunnels supprimés ensemble
+  // TCP + UDP: the confirmation names both tunnels deleted together
+  const [tcp, udp] = splitPair(p);
   const ok = await confirmDialog({
     title: t('tunnels.deleteTitle', { name: p.name || t('tunnels.unnamed') }),
-    message: t('tunnels.deleteText'), confirmLabel: t('common.delete'), danger: true,
+    message: udp ? t('tunnels.deletePairText', { tcp: tcp.name, udp: udp.name }) : t('tunnels.deleteText'),
+    confirmLabel: t('common.delete'), danger: true,
   });
   if (!ok) return;
   S.proxies = S.proxies.filter((x) => x.uid !== p.uid);
@@ -348,7 +361,7 @@ const validPort = (v) => PORT_RE.test(v) && +v >= 1 && +v <= 65535;
 
 /** Choix « TCP + UDP » : deux tunnels, nom-tcp et nom-udp, avec les mêmes ports.
  *  "TCP + UDP" choice: two tunnels, name-tcp and name-udp, with the same ports. */
-const BOTH = 'both';
+const BOTH = TCP_UDP;
 
 /**
  * Erreurs des deux champs de port. Un port seul reste un port ; dès qu'un côté est
@@ -385,9 +398,11 @@ function editProxy(existing) {
     build: ({ close }) => {
       const name = input({ value: draft.name, placeholder: t('tunnels.fields.namePlaceholder'), mono: true, autocomplete: 'off' });
       const typeHint = h('p', { class: 'field-hint' });
-      // « TCP + UDP » seulement à la création : ensuite, ce sont deux tunnels
-      // "TCP + UDP" only on creation: afterwards, they are two tunnels
-      const kinds = PROXY_TYPES.flatMap((v) => (v === 'udp' && !existing ? [v, BOTH] : [v]));
+      // « TCP + UDP » à la création, et pour une paire déjà regroupée (elle peut
+      // redevenir un seul type) : pas pour un tunnel seul, que cela renommerait
+      // "TCP + UDP" on creation, and for an already grouped pair (it can go back
+      // to a single type): not for a single tunnel, which this would rename
+      const kinds = PROXY_TYPES.flatMap((v) => (v === 'udp' && (!existing || existing.type === BOTH) ? [v, BOTH] : [v]));
       const type = segmented(kinds.map((v) => ({ value: v, label: v === BOTH ? 'TCP + UDP' : v.toUpperCase() })), draft.type, () => sync(), { label: t('tunnels.fields.type') });
 
       // Pas de clavier numérique : une plage s'écrit avec « - » et « , »
@@ -399,6 +414,7 @@ function editProxy(existing) {
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
 
+      const nameField = field({ label: t('tunnels.fields.name'), hint: t('tunnels.fields.nameHint'), tomlKey: 'name', control: name });
       const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
@@ -431,7 +447,17 @@ function editProxy(existing) {
         rangeHint.hidden = !hasRemotePort(kind);
         domainsField.hidden = !hasDomains(kind);
         secretField.hidden = !hasSecret(kind);
+        syncNameHint();
       }
+      // TCP + UDP : l'aide du nom donne les deux noms que frpc utilisera
+      // TCP + UDP: the name hint gives the two names frpc will use
+      function syncNameHint() {
+        const base = name.value.trim() || t('tunnels.fields.namePlaceholder');
+        nameField.querySelector('.field-hint').textContent = type.value === BOTH
+          ? t('tunnels.fields.nameHintBoth', { tcp: `${base}-tcp`, udp: `${base}-udp` })
+          : t('tunnels.fields.nameHint');
+      }
+      name.addEventListener('input', syncNameHint);
       sync();
 
       function submit(e) {
@@ -444,20 +470,13 @@ function editProxy(existing) {
           localPort: localPort.value.replace(/\s+/g, ''),
           remotePort: remotePort.value.replace(/\s+/g, ''),
         };
-        // Tunnels que l'entrée deviendra : deux pour TCP + UDP
-        // Tunnels the entry will become: two for TCP + UDP
-        const made = tp === BOTH
-          ? [{ name: `${values.name}-tcp`, type: 'tcp' }, { name: `${values.name}-udp`, type: 'udp' }]
-          : [{ name: values.name, type: tp }];
-
         // Noms de la liste et noms réels côté frpc (« nom-<port> » pour une
-        // plage) : aucun en double
+        // plage, nom-tcp et nom-udp pour TCP + UDP) : aucun en double
         // Names in the list and real names on the frpc side ("name-<port>" for
-        // a range): no duplicates
+        // a range, name-tcp and name-udp for TCP + UDP): no duplicates
         const others = S.proxies.filter((p) => p.uid !== draft.uid);
         const taken = new Set([...others.map((p) => p.name), ...others.flatMap(frpcNames)]);
-        const clash = made.flatMap((m) => [m.name, ...frpcNames({ ...m, localPort: values.localPort, remotePort: values.remotePort })])
-          .find((n) => taken.has(n));
+        const clash = [values.name, ...frpcNames({ ...values, type: tp })].find((n) => taken.has(n));
         const ports = portErrors(kind, values.localPort, values.remotePort);
 
         let ok = true;
@@ -472,9 +491,10 @@ function editProxy(existing) {
         check(remotePort, tp === BOTH && !values.remotePort ? t('validation.bothRemote') : ports.remote);
         if (!ok) { draftDialogFocusError(); return; }
 
+        // TCP + UDP reste une seule entrée : splitPair écrit ses deux tunnels
+        // TCP + UDP stays a single entry: splitPair writes its two tunnels
         Object.assign(draft, values, {
-          type: made[0].type,
-          name: made[0].name,
+          type: tp,
           domains: domains.value.trim(),
           secretKey: secret.input.value,
           proxyProtocol: ppv.value,
@@ -483,9 +503,6 @@ function editProxy(existing) {
         });
         if (existing) S.proxies = S.proxies.map((p) => (p.uid === draft.uid ? draft : p));
         else S.proxies = [...S.proxies, draft];
-        // TCP + UDP : le tunnel UDP, mêmes ports et mêmes options
-        // TCP + UDP: the UDP tunnel, same ports and same options
-        if (made[1]) S.proxies = [...S.proxies, { ...draft, ...made[1], uid: newProxy().uid, extras: [] }];
         close(true);
         render();
       }
@@ -493,7 +510,7 @@ function editProxy(existing) {
       const formId = `proxy-form-${draft.uid}`;
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: submit, novalidate: true },
-          field({ label: t('tunnels.fields.name'), hint: t('tunnels.fields.nameHint'), tomlKey: 'name', control: name }),
+          nameField,
           h('div', { class: 'field' },
             h('span', { class: 'field-label' }, t('tunnels.fields.type'), h('span', { class: 'field-key' }, 'type')),
             type, typeHint),

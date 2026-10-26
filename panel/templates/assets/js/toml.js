@@ -186,7 +186,12 @@ export function generateClient(v, name) {
 
 export const PROXY_TYPES = ['tcp', 'udp', 'http', 'https', 'stcp', 'xtcp'];
 export const VISITOR_TYPES = ['stcp', 'xtcp'];
-export const hasRemotePort = (type) => type === 'tcp' || type === 'udp';
+/** « TCP + UDP » : une entrée de la liste pour deux tunnels, nom-tcp et nom-udp,
+ *  avec les mêmes ports et les mêmes options (voir pairProxies et splitPair).
+ *  "TCP + UDP": one list entry for two tunnels, name-tcp and name-udp, with the
+ *  same ports and the same options (see pairProxies and splitPair). */
+export const TCP_UDP = 'both';
+export const hasRemotePort = (type) => type === 'tcp' || type === 'udp' || type === TCP_UDP;
 export const hasDomains = (type) => type === 'http' || type === 'https';
 export const hasSecret = (type) => type === 'stcp' || type === 'xtcp';
 
@@ -239,6 +244,7 @@ export const MAX_RANGE_PORTS = 1000;
  * name.
  */
 export function frpcNames(p) {
+  if (p.type === TCP_UDP) return splitPair(p).flatMap(frpcNames);
   if (!isRanged(p)) return [p.name];
   const names = [];
   for (const part of String(p.localPort).replace(/\s+/g, '').split(',')) {
@@ -277,6 +283,47 @@ export function proxyFromBlock(block) {
     encryption: v['transport.useEncryption'] === 'true',
     extras: extrasOf(block, PROXY_KEYS),
   };
+}
+
+/** Les deux tunnels d'une entrée « TCP + UDP » (nom-tcp, nom-udp), sinon l'entrée.
+ *  The two tunnels of a "TCP + UDP" entry (name-tcp, name-udp), otherwise the entry. */
+export function splitPair(p) {
+  if (p.type !== TCP_UDP) return [p];
+  return [{ ...p, name: `${p.name}-tcp`, type: 'tcp' }, { ...p, name: `${p.name}-udp`, type: 'udp' }];
+}
+
+/**
+ * Regroupe en une entrée « TCP + UDP » les paires qu'elle écrit : un tunnel tcp
+ * « X-tcp » et un tunnel udp « X-udp » identiques pour tout le reste (adresse,
+ * ports, port public renseigné, options, réglages avancés). Il suffit d'une
+ * différence pour qu'ils restent deux entrées. L'entrée prend la place du premier
+ * des deux ; à l'enregistrement, splitPair les réécrit l'un après l'autre.
+ * Groups into one "TCP + UDP" entry the pairs it writes: a tcp tunnel "X-tcp" and
+ * a udp tunnel "X-udp" identical in everything else (address, ports, public port
+ * set, options, advanced settings). A single difference keeps them as two entries.
+ * The entry takes the place of the first of the two; on save, splitPair writes
+ * them back one after the other.
+ */
+export function pairProxies(proxies) {
+  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '' });
+  const mates = new Map();
+  for (const p of proxies) {
+    const base = p.type === 'tcp' && p.remotePort ? /^(.+)-tcp$/.exec(p.name)?.[1] : null;
+    if (!base || mates.has(p)) continue;
+    const q = proxies.find((x) => x.type === 'udp' && x.name === `${base}-udp` && !mates.has(x) && rest(x) === rest(p));
+    if (q) { mates.set(p, q); mates.set(q, p); }
+  }
+  const out = [];
+  const done = new Set();
+  for (const p of proxies) {
+    if (done.has(p)) continue;
+    const q = mates.get(p);
+    if (!q) { out.push(p); continue; }
+    done.add(q);
+    const tcp = p.type === 'tcp' ? p : q;
+    out.push({ ...tcp, name: tcp.name.slice(0, -'-tcp'.length), type: TCP_UDP });
+  }
+  return out;
 }
 
 /** Port tiré au hasard dans 10000–32767 : loin du 7000 que visent les robots,
@@ -353,7 +400,7 @@ export function generateVisitor(v) {
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */
 export function composeClientConfig(baseText, proxies, visitors) {
   const blocks = [
-    ...proxies.map((p) => generateProxy(p)),
+    ...proxies.flatMap(splitPair).map((p) => generateProxy(p)),
     ...visitors.filter((v) => v.name).map(generateVisitor),
   ];
   const base = stripBlocks(baseText);

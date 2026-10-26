@@ -461,12 +461,15 @@ exactement ceci et rien d'autre (affiché dans Réglages avant de les activer) :
 Dans la page **Ports**, l'éditeur de port propose deux raccourcis pour les
 services qui ont besoin de plus d'un tunnel :
 
-- **TCP + UDP** (à la création d'un port seulement) ouvre le même port dans
-  les deux protocoles, pour un jeu ou un DNS par exemple. Le panel crée deux
-  tunnels ordinaires, `<nom>-tcp` et `<nom>-udp`, avec les mêmes ports et les
-  mêmes options. Le port public est obligatoire, sinon le serveur en
-  choisirait un différent pour chacun. Ensuite, chacun se modifie ou se
-  supprime séparément.
+- **TCP + UDP** ouvre le même port dans les deux protocoles, pour un jeu ou
+  un DNS par exemple. Le panel écrit deux tunnels ordinaires, `<nom>-tcp` et
+  `<nom>-udp`, avec les mêmes ports et les mêmes options. Le port public est
+  obligatoire, sinon le serveur en choisirait un différent pour chacun. La
+  liste affiche la paire sur une seule ligne (badges TCP et UDP), qui se
+  modifie ou se supprime d'un bloc ; repassée en TCP ou en UDP seul, elle
+  garde un seul tunnel, nommé `<nom>`. Deux tunnels ne sont regroupés que si
+  leurs noms (`X-tcp` et `X-udp`), types, adresses, ports, port public et
+  options correspondent tous : sinon, ils restent deux lignes.
 - **Plage de ports** (`tcp` et `udp`) : saisissez une plage (`30000-30010`) ou
   une liste (`6000-6006,6007`) dans le port local, et autant de ports dans le
   port public, alors obligatoire (1 000 ports au plus). La plage reste une

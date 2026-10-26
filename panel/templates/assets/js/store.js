@@ -49,14 +49,34 @@ export function instanceIds(filter) {
 
 export const isDocker = (inst) => inst && inst.source === 'docker';
 export const frpcIds = () => instanceIds((i) => i.type === 'frpc');
+
+/** Lancé, activé au démarrage, ou entre deux états : « activating » est aussi un
+ *  programme arrêté que le superviseur du mode autonome (ou systemd) va relancer.
+ *  Running, enabled at boot, or between two states: "activating" is also a
+ *  stopped program that the standalone supervisor (or systemd) will restart. */
+const wantedUp = (i) => !!(i.status?.running || i.status?.enabled
+  || ['activating', 'deactivating', 'reloading'].includes(i.status?.active));
+
+// Instances déjà comptées comme utilisées : elles le restent tant qu'elles
+// existent. Sans cela, un frpc qui échoue et que le superviseur relance fait
+// apparaître et disparaître Ports à chaque tentative (même chose pendant un
+// redémarrage).
+// Instances already counted as used: they stay so while they exist. Without
+// this, an frpc that fails and that the supervisor restarts makes Ports appear
+// and disappear on every attempt (same thing during a restart).
+const seenUsed = new Set();
+const usedIds = (type, used) => instanceIds((i, id) => {
+  if (i.type !== type) return false;
+  if (used(i)) seenUsed.add(id);
+  return seenUsed.has(id);
+});
+
 /** frpc réellement utilisés : install.sh crée partout un frpc (service + config
  * vide) ; seul un frpc avec un serveur renseigné, lancé ou en conteneur compte. */
-export const usedFrpcIds = () => instanceIds((i) => i.type === 'frpc'
-  && (isDocker(i) || i.configured || i.status?.running || i.status?.enabled));
+export const usedFrpcIds = () => usedIds('frpc', (i) => isDocker(i) || i.configured || wantedUp(i));
 /** frps réellement utilisés : même principe, mais sa config par défaut suffit à
  * le lancer, donc seuls comptent le conteneur, le service lancé ou activé. */
-export const usedFrpsIds = () => instanceIds((i) => i.type === 'frps'
-  && (isDocker(i) || i.status?.running || i.status?.enabled));
+export const usedFrpsIds = () => usedIds('frps', (i) => isDocker(i) || wantedUp(i));
 
 export function displayName(iid) {
   const inst = store.instances[iid];

@@ -13,6 +13,30 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-26
+
+A TCP + UDP port now shows as a single row in the Ports list, and the Ports link no longer flickers in the sidebar.
+
+Pre-release.
+
+### Changed
+
+- **Ports: a TCP + UDP port on a single row**: the two tunnels written by the
+  "TCP + UDP" type (`<name>-tcp` and `<name>-udp`) show up as one row, with
+  the TCP and UDP badges side by side. Editing reopens the pair as
+  "TCP + UDP" and changes both tunnels at once; deleting removes both, after
+  a confirmation that names them. Two tunnels are only grouped when
+  everything matches except the protocol (names `X-tcp` / `X-udp`, address,
+  ports, public port, options).
+
+### Fixed
+
+- **Ports link that kept disappearing**: in the sidebar, Ports (and Firewall)
+  disappeared and came back each time an frpc that failed to connect was
+  restarted by the standalone mode (or by systemd), and during a restart. An
+  frpc being restarted now counts as used, and a link that has been shown
+  stays shown as long as its instance exists.
+
 ## [0.6.0] - 2026-10-26
 
 The Docker image now ships frps, frpc and nftables and runs them by itself, with no access to the host.
@@ -551,7 +575,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/Gogowwww/frp-manager/compare/v0.4.0...v0.4.1

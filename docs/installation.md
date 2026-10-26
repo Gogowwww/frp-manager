@@ -444,11 +444,15 @@ else (shown in Settings before you turn it on):
 On the **Ports** page, the port editor offers two shortcuts for services
 that need more than one tunnel:
 
-- **TCP + UDP** (when creating a port only) opens the same port in both
-  protocols, for games or DNS for instance. The panel creates two ordinary
-  tunnels, `<name>-tcp` and `<name>-udp`, with the same ports and options. The
-  public port is required, otherwise the server would pick a different one
-  for each. Afterwards, each one is edited or deleted on its own.
+- **TCP + UDP** opens the same port in both protocols, for games or DNS for
+  instance. The panel writes two ordinary tunnels, `<name>-tcp` and
+  `<name>-udp`, with the same ports and options. The public port is required,
+  otherwise the server would pick a different one for each. The list shows
+  the pair on a single row (TCP and UDP badges), edited or deleted as a whole;
+  switching it back to TCP or UDP alone keeps a single tunnel, named `<name>`.
+  Two tunnels are only grouped when their names (`X-tcp` and `X-udp`), types,
+  addresses, ports, public port and options all match: otherwise they stay two
+  rows.
 - **Port range** (`tcp` and `udp`): type a range (`30000-30010`) or a list
   (`6000-6006,6007`) in the local port, and as many ports in the public port,
   which is then required (1,000 ports at most). The range stays a single
