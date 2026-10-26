@@ -11,7 +11,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 
 [English](README.md) · **Français**
 
-![Tableau de bord de FRP Manager](docs/img/dashboard-fr.png)
+![Tableau de bord de FRP Manager](.github/img/dashboard-fr.png)
 
 ## Démarrage rapide
 
@@ -22,7 +22,7 @@ curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compo
 docker compose up -d
 ```
 
-Le panel n'écoute que sur `127.0.0.1:8765`. Depuis votre ordinateur, ouvrez un tunnel SSH avec `ssh -L 8765:127.0.0.1:8765 utilisateur@serveur`, allez sur `https://127.0.0.1:8765` et créez l'identifiant administrateur. Pour l'ouvrir à votre réseau, voir [Accéder au panel depuis un autre poste](docs/installation.fr.md#accéder-au-panel-depuis-un-autre-poste).
+Le panel n'écoute que sur `127.0.0.1:8765`. Depuis votre ordinateur, ouvrez un tunnel SSH avec `ssh -L 8765:127.0.0.1:8765 utilisateur@serveur`, allez sur `https://127.0.0.1:8765` et créez l'identifiant administrateur. Pour l'ouvrir à votre réseau, voir [Accéder au panel depuis un autre poste](https://frp-manager.org/fr/docs/installation/#accéder-au-panel-depuis-un-autre-poste).
 
 Sans Docker, le script d'installation met en place le panel (un seul programme, sans dépendance), frp et leurs services systemd :
 
@@ -31,14 +31,14 @@ curl -LO https://github.com/Gogowwww/frp-manager/releases/latest/download/frp-ma
 unzip frp-manager.zip && cd frp-manager && sudo bash install.sh
 ```
 
-Ou avec apt, après avoir ajouté le dépôt de FRP Manager une fois : `sudo apt install frp-manager`, puis `apt upgrade` pour les mises à jour ; voir [Installation avec apt](docs/installation.fr.md#installation-avec-apt).
+Ou avec apt, après avoir ajouté le dépôt de FRP Manager une fois : `sudo apt install frp-manager`, puis `apt upgrade` pour les mises à jour ; voir [Installation avec apt](https://frp-manager.org/fr/docs/installation/#installation-avec-apt).
 
 Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo/) fait tourner la vraie interface avec des données fictives.
 
 ## Fonctionnalités
 
 - **Tableau de bord** : détection automatique des services systemd frps/frpc, des binaires, des configurations et des conteneurs Docker, ou, avec Docker, frps et frpc lancés par le panel lui-même ; démarrer, arrêter, redémarrer, démarrage automatique ; état en direct par WebSocket ; surnoms ; un service frps/frpc supprimé se réinstalle en un clic.
-- **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression, le même port en TCP et en UDP d'un coup, et des [plages de ports](docs/installation.fr.md#ports--tcp--udp-et-plages-de-ports) (`30000-30010`). Les réglages que l'éditeur ne gère pas sont conservés tels quels. Un port laissé sans numéro reçoit son port public du serveur ; le panel peut l'afficher, après confirmation, par le tableau de bord local de frpc (voir [SECURITY](docs/SECURITY.md), en anglais).
+- **Ports (frpc)** : liste lisible (`vps.example.net:25565 → 127.0.0.1:25565`) et éditeur guidé pour `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` et les visiteurs, avec options PROXY protocol, chiffrement et compression, le même port en TCP et en UDP d'un coup, et des [plages de ports](https://frp-manager.org/fr/docs/installation/#ports--tcp--udp-et-plages-de-ports) (`30000-30010`). Les réglages que l'éditeur ne gère pas sont conservés tels quels. Un port laissé sans numéro reçoit son port public du serveur ; le panel peut l'afficher, après confirmation, par le tableau de bord local de frpc (voir [SECURITY](.github/SECURITY.md), en anglais).
 - **Pare-feu (frps)** : règles « autoriser seulement » ou « bloquer » par adresse, réseau ou fournisseur entier (numéro d'AS), appliquées dans le noyau avec nftables avant le NAT de Docker ; connexions bloquées en temps réel ; listes communautaires facultatives.
 - **Configuration** : réglages de frps et frpc par sections, chaque champ affichant sa clé TOML ; les configurations sont vérifiées avant d'être écrites.
 - **Journaux** : journal systemd, fichier de log, sortie de frps/frpc lancés par le panel ou conteneur Docker, en direct (WebSocket, repli SSE), avec filtre.
@@ -51,9 +51,9 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo
 
 | Ports | Éditeur de port |
 |:---:|:---:|
-| ![Ports](docs/img/ports-fr.png) | ![Éditeur de port](docs/img/port-editor-fr.png) |
+| ![Ports](.github/img/ports-fr.png) | ![Éditeur de port](.github/img/port-editor-fr.png) |
 | **Journaux en direct** | **Réglages** |
-| ![Journaux en direct](docs/img/logs-fr.png) | ![Réglages](docs/img/settings-fr.png) |
+| ![Journaux en direct](.github/img/logs-fr.png) | ![Réglages](.github/img/settings-fr.png) |
 
 ## Pourquoi ce panel
 
@@ -85,20 +85,20 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
 - **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.
 
-> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`packaging/docker/docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](docs/installation.fr.md#docker-et-portainer) avant de le déployer.
+> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`packaging/docker/docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](https://frp-manager.org/fr/docs/installation/#docker-et-portainer) avant de le déployer.
 
-Modèle de menace et signalement des vulnérabilités : [SECURITY.md](docs/SECURITY.md) (en anglais).
+Modèle de menace et signalement des vulnérabilités : [SECURITY.md](.github/SECURITY.md) (en anglais).
 
 ## Documentation
 
 - [Site du projet](https://frp-manager.org/fr/) : présentation, démo en ligne et toute la documentation
-- [Installation, configuration et désinstallation](docs/installation.fr.md) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, plages de ports et TCP + UDP, reverse proxy, mot de passe perdu, structure des fichiers
-- [Politique de sécurité](docs/SECURITY.md) (en anglais)
-- [Journal des modifications](docs/CHANGELOG.fr.md)
+- [Installation, configuration et désinstallation](https://frp-manager.org/fr/docs/installation/) : prérequis, images Docker et leurs privilèges, versions et pré-releases, clés de configuration, plages de ports et TCP + UDP, reverse proxy, mot de passe perdu, structure des fichiers
+- [Politique de sécurité](.github/SECURITY.md) (en anglais)
+- [Journal des modifications](https://frp-manager.org/fr/docs/changelog/)
 
 ## Contribuer
 
-Signalements de bugs, idées, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.md](docs/CONTRIBUTING.md) et le [code de conduite](docs/CODE_OF_CONDUCT.md) (en anglais). Des adresses à bloquer peuvent être partagées avec le bouton **Publier** du pare-feu ou sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
+Signalements de bugs, idées, traductions et pull requests sont les bienvenus : voir [CONTRIBUTING.md](.github/CONTRIBUTING.md) et le [code de conduite](.github/CODE_OF_CONDUCT.md) (en anglais). Des adresses à bloquer peuvent être partagées avec le bouton **Publier** du pare-feu ou sur la branche [`blocklists`](https://github.com/Gogowwww/frp-manager/tree/blocklists).
 
 ## Licence
 

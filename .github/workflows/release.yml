@@ -53,6 +53,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Les CHANGELOG vivent dans le dépôt privé du site (website/content/docs) :
+      # extraction limitée à ce dossier, avec le secret SITE_TOKEN (lecture).
+      # The CHANGELOGs live in the website's private repository
+      # (website/content/docs): checkout limited to that folder, with the
+      # SITE_TOKEN secret (read access).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Gogowwww/frp-manager-site
+          token: ${{ secrets.SITE_TOKEN }}
+          path: site-private
+          sparse-checkout: website/content/docs
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26" # dernier correctif 1.26.x / latest 1.26.x patch
@@ -66,9 +78,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Notes (titre, résumé, sections, en français puis en anglais) tirées des
-      # deux CHANGELOG (docs/) : une section absente bloque la release avant
+      # deux CHANGELOG (dépôt privé du site) : une section absente bloque la release avant
       # toute construction.
-      # Notes taken from both CHANGELOGs (docs/): a missing section blocks the
+      # Notes taken from both CHANGELOGs (website private repository): a missing section blocks the
       # release before anything is built.
       - name: Préparer
         env:
@@ -81,8 +93,8 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Une release $TAG existe déjà"; exit 1
           fi
-          go run ./tools/releasenotes "$TAG"
-          go run ./tools/releasenotes -json "$TAG" > notes.json
+          go run ./tools/releasenotes -dir site-private/website/content/docs "$TAG"
+          go run ./tools/releasenotes -dir site-private/website/content/docs -json "$TAG" > notes.json
           {
             echo "TAG=$TAG"
             echo "VERSION=${TAG#v}"
@@ -104,13 +116,13 @@ jobs:
           mkdir -p dist/frp-manager/bin
           cp dist/bin/frp-manager-linux-* dist/frp-manager/bin/
           chmod 755 dist/frp-manager/bin/*
-          # Ni docs/ (captures du README, 1 Mo) ni versions françaises : la mise
-          # à jour n'utilise que le binaire, la documentation est sur le site.
-          # Le CHANGELOG anglais (docs/) va à la racine de l'archive, comme avant.
-          # No docs/ (README screenshots, 1 MB) and no French versions: the
-          # update only uses the binary, the documentation is on the website.
-          # The English CHANGELOG (docs/) goes to the archive root, as before.
-          cp panel/install.sh docs/CHANGELOG.md README.md LICENSE docker-compose.yml dist/frp-manager/
+          # Ni captures du README (1 Mo) ni versions françaises : la mise à jour
+          # n'utilise que le binaire, la documentation est sur le site. Le
+          # CHANGELOG anglais va à la racine de l'archive, comme avant.
+          # No README screenshots (1 MB) and no French versions: the update only
+          # uses the binary, the documentation is on the website. The English
+          # CHANGELOG goes to the archive root, as before.
+          cp panel/install.sh site-private/website/content/docs/CHANGELOG.md README.md LICENSE docker-compose.yml dist/frp-manager/
           # Passage d'un panel Python (≤ 0.0.57) au programme Go : sa mise à jour
           # copie app.py puis relance le service, qui installe alors ce programme
           sed "s/__VERSION__/$VERSION/" packaging/python-bridge/app.py > dist/frp-manager/app.py

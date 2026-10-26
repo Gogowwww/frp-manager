@@ -54,7 +54,7 @@ soon as possible. The report is credited in the release notes if you wish.
 - **With Docker in host mode (`packaging/docker/docker-compose.host.yml`),
   `pid: host`, `privileged: true` and the Docker socket give the container
   root-equivalent access to the host** (see
-  [installation.md](installation.md#docker-and-portainer)). Container isolation does not limit what
+  [installation.md](https://frp-manager.org/docs/installation/#docker-and-portainer)). Container isolation does not limit what
   the panel can do. The standalone mode (`docker-compose.yml`) runs frps and
   frpc inside the container and only adds `NET_ADMIN`, for the firewall: on
   the host network, whoever controls the panel can still change the machine's
@@ -114,7 +114,7 @@ access). Then, once a day, it sends only its version, architecture and install
 method to `https://frp-manager.org/api/ping`: no identifier, no address,
 no frp configuration. The website keeps daily counters only and does not store
 IP addresses. Details:
-[installation guide](installation.md#anonymous-statistics).
+[installation guide](https://frp-manager.org/docs/installation/#anonymous-statistics).
 
 ## Database
 

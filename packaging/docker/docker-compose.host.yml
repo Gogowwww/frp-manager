@@ -31,8 +31,8 @@ services:
     # ACCESS TO THE HOST. The panel uses them to drive the host's systemd
     # with nsenter (frp services, logs, nftables, files). Anyone who logs into
     # the panel, or exploits a flaw in it, therefore controls the host.
-    # Détails et pistes pour le réduire : docs/installation.fr.md#docker-et-portainer.
-    # Details and ways to reduce it: docs/installation.md#docker-and-portainer.
+    # Détails et pistes pour le réduire : https://frp-manager.org/fr/docs/installation/#docker-et-portainer.
+    # Details and ways to reduce it: https://frp-manager.org/docs/installation/#docker-and-portainer.
     pid: host
     privileged: true
 

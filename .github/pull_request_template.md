@@ -17,4 +17,4 @@
 - [ ] No system command built with `shell=True` or `sh -c` and user input / Aucune commande système construite avec `shell=True` ou `sh -c` et des données saisies
 - [ ] New translation keys added to `fr.js` **and** `en.js` / Nouvelles clés ajoutées dans `fr.js` **et** `en.js`
 - [ ] Documentation updated in both languages (`X.md` and `X.fr.md`) if needed / Documentation mise à jour dans les deux langues si nécessaire
-- [ ] "Unreleased" section of `CHANGELOG.md` and `CHANGELOG.fr.md` updated / Section « Non publié » des deux CHANGELOG complétée
+- [ ] Changelog entry: the maintainer adds it (website repository) / L'entrée du CHANGELOG est ajoutée par le mainteneur (dépôt du site)

@@ -64,14 +64,14 @@ RUN set -eu; \
     install -m 0755 "$name/frps" "$name/frpc" /out/
 
 # ── Image ───────────────────────────────────────────────────────────────────
-# Deux modes (voir docs/installation.md) :
+# Deux modes (voir frp-manager.org/docs/installation/) :
 # - autonome (docker-compose.yml) : le panel lance frps et frpc de l'image ;
 #   nftables (pare-feu, capacité NET_ADMIN) et ss (ports écoutés) servent dans
 #   le conteneur ;
 # - hôte (packaging/docker/docker-compose.host.yml) : nsenter (util-linux-misc)
 #   lance les commandes sur l'hôte (systemd, journal, nftables) avec
 #   pid: host + privileged.
-# Two modes (see docs/installation.md):
+# Two modes (see frp-manager.org/docs/installation/):
 # - standalone (docker-compose.yml): the panel runs the image's frps and frpc;
 #   nftables (firewall, NET_ADMIN capability) and ss (listening ports) are used
 #   inside the container;
