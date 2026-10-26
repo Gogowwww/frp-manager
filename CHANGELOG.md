@@ -13,6 +13,10 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Favicon on the login and setup pages**: the tab icon was missing before signing in; it is now the same as in the panel.
+
 ## [0.6.1] - 2026-10-26
 
 A TCP + UDP port now shows as a single row in the Ports list, and the Ports link no longer flickers in the sidebar.

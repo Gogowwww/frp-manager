@@ -13,6 +13,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Corrigé
+
+- **Favicon des pages de connexion et de configuration initiale** : l'icône de l'onglet manquait avant la connexion ; c'est maintenant la même que dans le panel.
+
 ## [0.6.1] - 2026-10-26
 
 Un port TCP + UDP s'affiche désormais sur une seule ligne dans la liste des ports, et le lien Ports ne clignote plus dans la barre latérale.
