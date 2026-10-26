@@ -13,6 +13,12 @@ older than 0.0.51 are described in the
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-26
+
+The sign-in and setup pages now show the panel's tab icon.
+
+Pre-release.
+
 ### Fixed
 
 - **Favicon on the login and setup pages**: the tab icon was missing before signing in; it is now the same as in the panel.
@@ -579,7 +585,8 @@ seamless: the existing password keeps working.
 - pytest tests (login, hash migration, TOML validation, service names,
   archives) and continuous integration: tests, ruff, pip-audit.
 
-[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Gogowwww/frp-manager/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Gogowwww/frp-manager/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Gogowwww/frp-manager/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Gogowwww/frp-manager/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Gogowwww/frp-manager/compare/v0.4.1...v0.5.0
