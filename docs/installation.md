@@ -94,10 +94,10 @@ The image exists in two modes:
 - **Standalone** (`docker-compose.yml`, recommended): the image ships `frps`
   and `frpc`, and the panel runs them itself, inside the container. Nothing is
   installed on the host, no `privileged`, no `pid: host`, no Docker socket.
-- **Host** (`docker-compose.host.yml`): the panel drives frp installed **on
-  the host** (systemd services, journal, `/usr/local/bin`) through `nsenter`.
-  This is how the image worked before the standalone mode; installs made that
-  way keep working unchanged.
+- **Host** (`packaging/docker/docker-compose.host.yml`): the panel drives frp
+  installed **on the host** (systemd services, journal, `/usr/local/bin`)
+  through `nsenter`. This is how the image worked before the standalone mode;
+  installs made that way keep working unchanged.
 
 ```bash
 curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
@@ -106,12 +106,15 @@ docker compose up -d
 
 **Portainer**: *Stacks → Add stack → Repository*, URL
 `https://github.com/Gogowwww/frp-manager`, compose path `docker-compose.yml`
-(standalone) or `docker-compose.host.yml` (host), then *Deploy the stack*.
+(standalone) or `packaging/docker/docker-compose.host.yml` (host), then
+*Deploy the stack*.
 
 > **Stack deployed from the repository before the standalone mode**: its
 > compose path `docker-compose.yml` now leads to the standalone mode. To keep
-> driving the host's frp, change the compose path to `docker-compose.host.yml`
-> before redeploying the stack.
+> driving the host's frp, change the compose path to
+> `packaging/docker/docker-compose.host.yml` before redeploying the stack. A
+> stack already set to `docker-compose.host.yml` (at the root of the
+> repository up to 0.6.2) needs the same new path.
 
 | Image | Contents |
 |---|---|
@@ -188,7 +191,7 @@ root over the whole machine.
 ### Host mode
 
 ```bash
-curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.host.yml
+curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/packaging/docker/docker-compose.host.yml
 docker compose -f docker-compose.host.yml up -d
 ```
 
@@ -533,6 +536,7 @@ The owner's passkeys are kept: they still sign in.
 Repository
   panel/                   The panel: a Go program (go build ./panel)
     *.go                   HTTP server, API, firewall, updates…; *_test.go: tests
+    netaddr/               Public address rule (shared with tools/blocklists)
     install.sh             Install script
     templates/             Interface, embedded in the program at build time
       index.html, login.html, setup.html
@@ -541,14 +545,14 @@ Repository
         css/app.css        Light and dark themes
         js/                Application (ES modules, no build step)
         locales/fr.js, en.js  Interface texts
-  docs/                    Documentation, security policy, contributing guide
-                           (also on the website); img/: screenshots
-  internal/                Shared code (public address rule)
+  docs/                    Documentation, changelogs, security policy, contributing
+                           guide (also on the website); img/: screenshots
   tools/                   Repository tools: blocklists (firewall community lists),
                            releasenotes (release notes)
-  packaging/               .deb package, move from a Python version
-  Dockerfile, docker-compose.yml (Docker, standalone), docker-compose.host.yml
-  (Docker, host mode), go.mod
+  packaging/               .deb package (deb/), Docker host mode
+                           (docker/docker-compose.host.yml), move from a Python
+                           version (python-bridge/)
+  Dockerfile, docker-compose.yml (Docker, standalone), go.mod
 
 /opt/frp-manager/          Installed panel (script); /usr/bin/frp-manager (.deb package)
 /etc/frp-manager/          Panel configuration + SSL certificates

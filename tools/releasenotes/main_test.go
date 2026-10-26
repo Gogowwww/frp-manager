@@ -24,8 +24,11 @@ func TestNotes(t *testing.T) {
 	en := "# Changelog\n\n## [Unreleased]\n\n## [0.0.58] - 2026-10-12\n\nThe panel moves to Go.\n\n" +
 		"Pre-release, then final release.\n\n### Changed\n\n- **Go**: rewritten.\n\n### Added\n\n- **apt**: repository.\n\n" +
 		"## [0.0.57] - 2026-10-12\n"
-	os.WriteFile(filepath.Join(dir, "CHANGELOG.fr.md"), []byte(fr), 0o644)
-	os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(en), 0o644)
+	// Les CHANGELOG vivent dans docs/, comme dans le dépôt.
+	// The CHANGELOGs live in docs/, as in the repository.
+	os.Mkdir(filepath.Join(dir, "docs"), 0o755)
+	os.WriteFile(filepath.Join(dir, "docs", "CHANGELOG.fr.md"), []byte(fr), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "CHANGELOG.md"), []byte(en), 0o644)
 	name, body, err := notes(dir, "o/r", "v0.0.58")
 	if err != nil {
 		t.Fatal(err)

@@ -13,6 +13,10 @@ numéro. Les versions antérieures à 0.0.51 sont décrites dans les
 
 ## [Non publié]
 
+### Modifié
+
+- **Organisation du dépôt** : les CHANGELOG sont maintenant dans `docs/` (`docs/CHANGELOG.md`, `docs/CHANGELOG.fr.md`), `docker-compose.host.yml` est passé dans `packaging/docker/` et le paquet de filtrage des adresses dans `panel/netaddr`. Les consignes des agents ne sont plus dans le dépôt. Rien ne change pour les utilisateurs du panel ; les commandes de test du code Go sont désormais `go test ./panel/... ./tools/...`.
+
 ## [0.6.2] - 2026-10-26
 
 Les pages de connexion et de configuration initiale affichent désormais l'icône de l'onglet du panel.

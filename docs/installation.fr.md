@@ -96,10 +96,10 @@ L'image existe en deux modes :
   `frpc`, et le panel les lance lui-même, dans le conteneur. Rien n'est
   installé sur l'hôte, pas de `privileged`, pas de `pid: host`, pas de socket
   Docker.
-- **Hôte** (`docker-compose.host.yml`) : le panel pilote frp installé **sur
-  l'hôte** (services systemd, journal, `/usr/local/bin`) avec `nsenter`. C'est
-  le fonctionnement de l'image avant le mode autonome ; les installations
-  faites ainsi continuent de fonctionner à l'identique.
+- **Hôte** (`packaging/docker/docker-compose.host.yml`) : le panel pilote frp
+  installé **sur l'hôte** (services systemd, journal, `/usr/local/bin`) avec
+  `nsenter`. C'est le fonctionnement de l'image avant le mode autonome ; les
+  installations faites ainsi continuent de fonctionner à l'identique.
 
 ```bash
 curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.yml
@@ -108,12 +108,15 @@ docker compose up -d
 
 **Portainer** : *Stacks → Add stack → Repository*, URL
 `https://github.com/Gogowwww/frp-manager`, compose path `docker-compose.yml`
-(autonome) ou `docker-compose.host.yml` (hôte), puis *Deploy the stack*.
+(autonome) ou `packaging/docker/docker-compose.host.yml` (hôte), puis
+*Deploy the stack*.
 
 > **Stack déployée depuis le dépôt avant le mode autonome** : son compose path
 > `docker-compose.yml` mène désormais au mode autonome. Pour continuer à
-> piloter le frp de l'hôte, remplacez-le par `docker-compose.host.yml` avant
-> de redéployer la stack.
+> piloter le frp de l'hôte, remplacez-le par
+> `packaging/docker/docker-compose.host.yml` avant de redéployer la stack. Une
+> stack déjà réglée sur `docker-compose.host.yml` (à la racine du dépôt
+> jusqu'à la 0.6.2) prend le même nouveau chemin.
 
 | Image | Contenu |
 |---|---|
@@ -194,7 +197,7 @@ hôte, qui donne root sur toute la machine.
 ### Mode hôte
 
 ```bash
-curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compose.host.yml
+curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/packaging/docker/docker-compose.host.yml
 docker compose -f docker-compose.host.yml up -d
 ```
 
@@ -552,6 +555,7 @@ connecter.
 Dépôt
   panel/                   Le panel : programme Go (go build ./panel)
     *.go                   Serveur HTTP, API, pare-feu, mises à jour… ; *_test.go : tests
+    netaddr/               Règle des adresses publiques (partagée avec tools/blocklists)
     install.sh             Installation par script
     templates/             Interface, intégrée au programme à la compilation
       index.html, login.html, setup.html
@@ -560,14 +564,15 @@ Dépôt
         css/app.css        Thèmes clair et sombre
         js/                Application (modules ES, sans étape de build)
         locales/fr.js, en.js  Textes de l'interface
-  docs/                    Documentation, politique de sécurité, guide de contribution
-                           (aussi sur le site) ; img/ : captures
-  internal/                Code partagé (règle des adresses publiques)
+  docs/                    Documentation, journaux des modifications, politique de
+                           sécurité, guide de contribution (aussi sur le site) ;
+                           img/ : captures
   tools/                   Outils du dépôt : blocklists (listes communautaires du
                            pare-feu), releasenotes (notes des releases)
-  packaging/               Paquet .deb, passage depuis une version Python
-  Dockerfile, docker-compose.yml (Docker, autonome), docker-compose.host.yml
-  (Docker, mode hôte), go.mod
+  packaging/               Paquet .deb (deb/), Docker en mode hôte
+                           (docker/docker-compose.host.yml), passage depuis une
+                           version Python (python-bridge/)
+  Dockerfile, docker-compose.yml (Docker, autonome), go.mod
 
 /opt/frp-manager/          Panel installé (script) ; /usr/bin/frp-manager (paquet .deb)
 /etc/frp-manager/          Configuration du panel + certificats SSL

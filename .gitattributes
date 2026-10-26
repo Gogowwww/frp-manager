@@ -1,29 +1,13 @@
-# Force LF line endings for shell scripts (sinon bash plante sur "set -euo pipefail\r")
-*.sh        text eol=lf
-*.bash      text eol=lf
-Dockerfile  text eol=lf
-
-# Python et Go — LF aussi
-*.py        text eol=lf
-*.go        text eol=lf
-go.mod      text eol=lf
-go.sum      text eol=lf
-
-# Paquet .deb : scripts de maintenance et fichiers lus sous Linux
-packaging/deb/*  text eol=lf
-
-# Configs serveur — LF (consommées par des outils Linux)
-*.toml      text eol=lf
-*.yml       text eol=lf
-*.yaml      text eol=lf
-*.json      text eol=lf
-
-# Web : LF aussi (par cohérence)
-*.html      text eol=lf
-*.css       text eol=lf
-*.js        text eol=lf
+# Fins de ligne LF pour tous les fichiers texte, quel que soit le système : les
+# scripts shell plantent sur « set -euo pipefail\r », et le reste (Go, YAML,
+# Markdown, interface web, paquet .deb) est lu sous Linux.
+# LF line endings for every text file, whatever the system: shell scripts break
+# on "set -euo pipefail\r", and the rest (Go, YAML, Markdown, web interface,
+# .deb package) is read on Linux.
+*           text=auto eol=lf
 
 # Binaires
+# Binaries
 *.png       binary
 *.zip       binary
 *.tar.gz    binary

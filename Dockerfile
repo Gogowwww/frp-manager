@@ -11,14 +11,15 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS source
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY internal/ internal/
 COPY panel/ panel/
 ARG PANEL_VERSION=unknown
 ENV CGO_ENABLED=0 LDFLAGS="-s -w -X main.buildVersion=${PANEL_VERSION}"
 
 # Tests (release.yml les lance avant toute publication) : docker buildx build --target test .
+# ./panel/... : le panel et ses sous-paquets (panel/netaddr).
+# ./panel/...: the panel and its sub-packages (panel/netaddr).
 FROM source AS test
-RUN go vet ./panel && go test -count=1 ./panel
+RUN go vet ./panel/... && go test -count=1 ./panel/...
 
 # Binaire de l'architecture de l'image
 FROM source AS build
@@ -67,14 +68,16 @@ RUN set -eu; \
 # - autonome (docker-compose.yml) : le panel lance frps et frpc de l'image ;
 #   nftables (pare-feu, capacité NET_ADMIN) et ss (ports écoutés) servent dans
 #   le conteneur ;
-# - hôte (docker-compose.host.yml) : nsenter (util-linux-misc) lance les
-#   commandes sur l'hôte (systemd, journal, nftables) avec pid: host + privileged.
+# - hôte (packaging/docker/docker-compose.host.yml) : nsenter (util-linux-misc)
+#   lance les commandes sur l'hôte (systemd, journal, nftables) avec
+#   pid: host + privileged.
 # Two modes (see docs/installation.md):
 # - standalone (docker-compose.yml): the panel runs the image's frps and frpc;
 #   nftables (firewall, NET_ADMIN capability) and ss (listening ports) are used
 #   inside the container;
-# - host (docker-compose.host.yml): nsenter (util-linux-misc) runs the commands
-#   on the host (systemd, journal, nftables) with pid: host + privileged.
+# - host (packaging/docker/docker-compose.host.yml): nsenter (util-linux-misc)
+#   runs the commands on the host (systemd, journal, nftables) with
+#   pid: host + privileged.
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates util-linux-misc tzdata nftables iproute2-ss
 COPY --from=build /out/frp-manager /usr/local/bin/frp-manager

@@ -24,16 +24,33 @@ state.json
 secrets*
 *.secret
 
-# ── Python ───────────────────────────────────────────────────────────────────
+# ── Construction Go / Go build ───────────────────────────────────────────────
+# Programme construit à la racine (go build -o frp-manager ./panel), sorties
+# de la CI reproduites en local (dist/, ci/), binaires de test et couverture.
+# Program built at the root (go build -o frp-manager ./panel), CI outputs
+# reproduced locally (dist/, ci/), test binaries and coverage.
+/frp-manager
+*.exe
+*.test
+/coverage.out
+/dist/
+/ci/
+
+# ── Python (passerelle packaging/python-bridge) ──────────────────────────────
 __pycache__/
 *.py[cod]
-venv/
-.venv/
-*.egg-info/
+
+# ── Agents de code / Coding agents ───────────────────────────────────────────
+# Consignes locales des agents, hors du dépôt public : docs/CONTRIBUTING.md
+# reste la référence.
+# Local agent instructions, kept out of the public repository:
+# docs/CONTRIBUTING.md remains the reference.
+/AGENTS.md
+/CLAUDE.md
+/.claude/
 
 # ── OS / éditeurs ────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
