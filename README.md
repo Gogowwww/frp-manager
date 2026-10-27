@@ -13,6 +13,8 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 
 ![FRP Manager dashboard](.github/img/dashboard-en.png)
 
+**Try it without installing:** the [live demo](https://frp-manager.org/demo/) (sample data), or the [real panel in your browser](https://killercoda.com/gogow/scenario/try-frp-manager) on a throwaway machine (Killercoda).
+
 ## Quick start
 
 With Docker Compose: the image contains frps and frpc, and the panel runs them itself (standalone mode, nothing to install on the machine):
