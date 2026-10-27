@@ -68,14 +68,14 @@ RUN set -eu; \
 # - autonome (docker-compose.yml) : le panel lance frps et frpc de l'image ;
 #   nftables (pare-feu, capacité NET_ADMIN) et ss (ports écoutés) servent dans
 #   le conteneur ;
-# - hôte (packaging/docker/docker-compose.host.yml) : nsenter (util-linux-misc)
-#   lance les commandes sur l'hôte (systemd, journal, nftables) avec
-#   pid: host + privileged.
+# - hôte (FRP_MANAGER_MODE=host, anciennes stacks seulement) : nsenter
+#   (util-linux-misc) lance les commandes sur l'hôte (systemd, journal,
+#   nftables) avec pid: host + privileged.
 # Two modes (see frp-manager.org/docs/installation/):
 # - standalone (docker-compose.yml): the panel runs the image's frps and frpc;
 #   nftables (firewall, NET_ADMIN capability) and ss (listening ports) are used
 #   inside the container;
-# - host (packaging/docker/docker-compose.host.yml): nsenter (util-linux-misc)
+# - host (FRP_MANAGER_MODE=host, old stacks only): nsenter (util-linux-misc)
 #   runs the commands on the host (systemd, journal, nftables) with
 #   pid: host + privileged.
 FROM alpine:3.22

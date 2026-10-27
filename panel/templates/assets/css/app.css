@@ -605,6 +605,12 @@ legend.fieldset-title + * { clear: both; }
 @keyframes flow { to { background-position: 9px 0; } }
 .row-flags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .route-end .route-text { max-width: 100%; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Adresse publique copiable : le texte garde sa troncature, l'icône reste visible */
+/* Copyable public address: the text keeps its truncation, the icon stays visible */
+.route-copy { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 0 2px; margin: 0 -2px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; cursor: copy; }
+.route-copy .icon { width: 13px; height: 13px; color: var(--text-3); }
+.route-copy:hover .mono, .route-copy:focus-visible .mono { text-decoration: underline dotted; text-underline-offset: 3px; }
+.route-copy:hover .icon, .route-copy:focus-visible .icon { color: var(--accent); }
 .row-actions { display: flex; gap: 2px; }
 .row.is-new .row-name::after, .row.is-changed .row-name::after {
   content: attr(data-state); font-size: 11px; font-weight: 550; color: var(--warn-text);
@@ -626,10 +632,12 @@ legend.fieldset-title + * { clear: both; }
 .fw-row { grid-template-columns: minmax(0, 230px) minmax(0, 1fr) 110px auto; }
 .fw-row.is-off .row-name, .fw-row.is-off .fw-detail { opacity: .5; }
 .fw-row .row-actions { align-items: center; gap: 6px; }
-/* Badge « frps introuvable » : passe à la ligne et se coupe, même avec un long nom d'instance */
-/* "frps not found" badge: wraps and truncates, even with a long instance name */
+/* Badge « frps introuvable » : passe sous le nom, et son texte revient à la ligne
+   (coupé au besoin dans un long nom d'instance) plutôt que d'être tronqué */
+/* "frps not found" badge: goes below the name, and its text wraps (broken
+   inside a long instance name if needed) instead of being truncated */
 .fw-row .row-name { flex-wrap: wrap; row-gap: 4px; }
-.fw-orphan { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; line-height: 22px; }
+.fw-orphan { flex: 0 0 auto; height: auto; min-height: 22px; max-width: 100%; padding-block: 2px; line-height: 18px; border-radius: 11px; white-space: normal; overflow-wrap: anywhere; }
 .fw-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
 .fw-detail > span { display: flex; flex-direction: column; min-width: 0; }
 .fw-detail small { font-size: 11.5px; color: var(--text-3); }
@@ -685,6 +693,14 @@ legend.fieldset-title + * { clear: both; }
   .fw-count { grid-area: count; text-align: left; }
   .fw-count:empty { display: none; }
   .fw-table th, .fw-table td { padding: 8px 12px; }
+}
+/* Téléphone étroit : le nom d'une règle (et son badge « frps introuvable ») prend
+   toute la largeur, les boutons passent en bas à droite */
+/* Narrow phone: a rule's name (and its "frps not found" badge) takes the full
+   width, the buttons move to the bottom right */
+@media (max-width: 400px) {
+  .fw-row { grid-template-areas: "name name" "detail detail" "count actions"; }
+  .fw-row .row-actions { justify-self: end; }
 }
 /* Très petit écran : marges de cellule réduites, le tableau des ports tient sans défiler */
 /* Very small screen: tighter cell padding, the ports table fits without scrolling */
