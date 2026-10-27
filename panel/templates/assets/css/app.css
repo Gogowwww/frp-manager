@@ -236,7 +236,11 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .page-title { font-size: 22px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; }
 .page-desc { color: var(--text-2); margin-top: 4px; max-width: 64ch; }
-.page-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* Jamais plus large que l'en-tête : le max-width: 100% du .select-inline se
+   calcule sur cette largeur, sinon un long nom d'instance déborde à 320 px. */
+/* Never wider than the header: the .select-inline max-width: 100% resolves
+   against this width, otherwise a long instance name overflows at 320 px. */
+.page-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; max-width: 100%; }
 
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
 .section-title { font-size: 15px; font-weight: 600; }
@@ -681,6 +685,11 @@ legend.fieldset-title + * { clear: both; }
   .fw-count { grid-area: count; text-align: left; }
   .fw-count:empty { display: none; }
   .fw-table th, .fw-table td { padding: 8px 12px; }
+}
+/* Très petit écran : marges de cellule réduites, le tableau des ports tient sans défiler */
+/* Very small screen: tighter cell padding, the ports table fits without scrolling */
+@media (max-width: 359px) {
+  .fw-table th, .fw-table td { padding-left: var(--space-2); padding-right: var(--space-2); }
 }
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
