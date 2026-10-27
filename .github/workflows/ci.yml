@@ -114,7 +114,7 @@ jobs:
           go test -count=1 ./tools/...
           go run golang.org/x/vuln/cmd/govulncheck@latest ./...
           bash -n panel/install.sh
-          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-apt.sh packaging/deb/publish-pages.sh; do
+          for f in packaging/deb/postinst packaging/deb/prerm packaging/deb/postrm packaging/deb/build-deb.sh packaging/deb/publish-pages.sh; do
             sh -n "$f"
           done
           python3 -m py_compile packaging/python-bridge/app.py
