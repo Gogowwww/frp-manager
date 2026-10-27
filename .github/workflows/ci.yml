@@ -79,13 +79,20 @@ jobs:
           PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
         run: sh packaging/deb/publish-apt.sh dev ci/deb/*.deb
 
-      - name: Dépôt APT sur GitHub Pages (dev)
+      # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
+      # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        with:
+          node-version: 22
+      - name: Dépôt APT sur Cloudflare Pages (dev)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
-          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
+          [ -n "$APT_GPG_KEY" ] && [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "Clé APT ou secrets Cloudflare absents : dépôt Pages ignoré"; exit 0; }
           sh packaging/deb/publish-pages.sh dev ci/deb/*.deb
 
   # Le reste du dépôt (le panel et ses sous-paquets, dont panel/netaddr, sont
@@ -123,14 +130,16 @@ jobs:
           done
           python3 -m py_compile packaging/python-bridge/app.py
 
-  # Installation par apt depuis apt.frp-manager.org (GitHub Pages), comme sur une
-  # vraie machine : clé, source, paquet, panel qui répond, puis désinstallation
-  # complète. Pages met une à deux minutes à servir le paquet qui vient d'être
-  # publié : on attend la version exacte du job go.
-  # Installation with apt from apt.frp-manager.org (GitHub Pages), like on a real
-  # machine: key, source, package, panel answering, then complete uninstall. Pages
-  # takes a minute or two to serve the package that was just published: we wait
-  # for the exact version of the go job.
+  # Installation par apt depuis apt.frp-manager.org (Cloudflare Pages), comme sur
+  # une vraie machine : clé, source, paquet, panel qui répond, puis désinstallation
+  # complète. Pages sert le nouveau déploiement dès la fin de l'envoi
+  # (publish-pages.sh le vérifie) ; on attend tout de même la version exacte du job
+  # go, au cas où un cache se trouverait entre les deux.
+  # Installation with apt from apt.frp-manager.org (Cloudflare Pages), like on a
+  # real machine: key, source, package, panel answering, then complete uninstall.
+  # Pages serves the new deployment as soon as the upload ends (publish-pages.sh
+  # checks it); we still wait for the exact version of the go job, in case a cache
+  # sits in between.
   apt:
     needs: go
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -158,13 +167,15 @@ jobs:
           install -d -m 0755 /etc/apt/keyrings
           curl -fsSL "$APT_URL/repository.key" -o /etc/apt/keyrings/frp-manager.asc
           echo "deb [signed-by=/etc/apt/keyrings/frp-manager.asc] $APT_URL dev main" > /etc/apt/sources.list.d/frp-manager.list
-          # Attendre que Pages serve la version qui vient d'être publiée (7 minutes au plus)
-          # Wait for Pages to serve the version that was just published (7 minutes at most)
+          # Attendre que apt.frp-manager.org serve la version qui vient d'être publiée
+          # (2 minutes au plus : Pages la sert normalement au premier essai)
+          # Wait for apt.frp-manager.org to serve the version that was just published
+          # (2 minutes at most: Pages normally serves it on the first try)
           found=""
-          for i in $(seq 1 21); do
+          for i in $(seq 1 12); do
             apt-get update -qq || true
             if apt-cache madison frp-manager | grep -qF "$DEB_VERSION"; then found=1; break; fi
-            echo "version $DEB_VERSION pas encore servie (essai $i)"; sleep 20
+            echo "version $DEB_VERSION pas encore servie (essai $i)"; sleep 10
           done
           apt-cache policy frp-manager
           [ -n "$found" ] || { echo "version $DEB_VERSION jamais servie par $APT_URL"; exit 1; }

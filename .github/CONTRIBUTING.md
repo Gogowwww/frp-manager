@@ -71,8 +71,9 @@ All continuous integration, releases and publishing run on GitHub Actions
 (`.github/workflows/`), including the [Plumber](https://getplumber.io) scan,
 which only reads `.github/workflows` and only publishes the README score from
 GitHub. The apt repository is `apt.frp-manager.org`, a static repository
-signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` in
-`Gogowwww/frp-manager-apt` (GitHub Pages, `APT_DEPLOY_KEY` secret). The Forgejo
+signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` to the
+`frp-manager-apt` Cloudflare Pages project (direct upload with wrangler,
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets). The Forgejo
 still hosts the old apt repository, kept up to date for machines that have not
 moved yet; the `FORGEJO_PACKAGES_TOKEN` secret gives GitHub access to it. The
 website is built from a private repository and deployed to Cloudflare Pages;
