@@ -13,8 +13,6 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 
 ![Tableau de bord de FRP Manager](.github/img/dashboard-fr.png)
 
-**Essayer sans installer :** la [démo en ligne](https://frp-manager.org/demo/) (données fictives), ou le [vrai panel dans votre navigateur](https://killercoda.com/gogow/scenario/essayer-frp-manager) sur une machine jetable (Killercoda).
-
 ## Démarrage rapide
 
 Avec Docker Compose : l'image contient frps et frpc, et le panel les lance lui-même (mode autonome, rien à installer sur la machine) :
