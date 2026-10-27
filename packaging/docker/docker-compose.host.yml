@@ -1,3 +1,10 @@
+# ANCIEN MODE, non documenté et non recommandé : conservé seulement pour les
+# stacks déjà déployées avec. Pour une nouvelle installation, utilisez le
+# docker-compose.yml de la racine (mode autonome).
+# OLD MODE, not documented and not recommended: kept only for stacks already
+# deployed with it. For a new installation, use the docker-compose.yml at the
+# root (standalone mode).
+#
 # Mode hôte : le panel pilote frps/frpc installés SUR L'HÔTE (services systemd,
 # journal, programmes de /usr/local/bin, nftables) avec nsenter. C'est la
 # configuration des installations faites avant le mode autonome ; le

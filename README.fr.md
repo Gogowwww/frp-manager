@@ -85,7 +85,7 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 - **Durcissement système** : aucune commande shell construite à partir d'une saisie, noms de services et de conteneurs sur liste blanche, configurations confinées aux dossiers de frp, extraction d'archives sécurisée.
 - **Chaîne d'approvisionnement** : archives frp et mises à jour du panel vérifiées par leur somme SHA-256 publiée ; miroirs tiers (ghproxy, ghfast, gh-proxy) désactivables et jamais utilisés sans somme de contrôle.
 
-> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Le mode hôte (`packaging/docker/docker-compose.host.yml`) utilise `pid: host`, `privileged: true` et `nsenter` pour piloter le systemd de l'hôte, ainsi que le socket Docker : **c'est un accès équivalent à root sur l'hôte**, qui contrôle le panel contrôle la machine. Lisez [la section Docker du guide d'installation](https://frp-manager.org/fr/docs/installation/#docker-et-portainer) avant de le déployer.
+> **Avertissement Docker** : le mode autonome (`docker-compose.yml`) n'ajoute que la capacité `NET_ADMIN`, pour le pare-feu : qui contrôle le panel peut modifier les règles réseau de la machine. Rien de l'hôte n'est monté, et il n'y a ni mode `privileged` ni socket Docker. Lisez [la section Docker du guide d'installation](https://frp-manager.org/fr/docs/installation/#docker-et-portainer) avant de le déployer.
 
 Modèle de menace et signalement des vulnérabilités : [SECURITY.md](.github/SECURITY.md) (en anglais).
 

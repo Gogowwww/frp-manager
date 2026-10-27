@@ -1,12 +1,9 @@
 # Mode autonome : frps et frpc font partie de l'image et sont lancés par le
 # panel, dans le conteneur. Pas de privileged, pas de pid: host, pas de socket
-# Docker : tout ce qui doit durer est dans le volume /data. Pour piloter plutôt
-# le frp installé sur l'hôte (systemd) :
-# packaging/docker/docker-compose.host.yml.
+# Docker : tout ce qui doit durer est dans le volume /data.
 # Standalone mode: frps and frpc are part of the image and run by the panel,
 # inside the container. No privileged, no pid: host, no Docker socket:
-# everything that must last is in the /data volume. To drive the frp installed
-# on the host instead (systemd): packaging/docker/docker-compose.host.yml.
+# everything that must last is in the /data volume.
 #
 #   docker compose up -d
 
