@@ -310,3 +310,70 @@ func TestFirewallRulePerFrps(t *testing.T) {
 		t.Fatalf("%s", nft)
 	}
 }
+
+// Règle liée à un frps supprimé : refusée si elle est nouvelle ou modifiée,
+// acceptée telle quelle (ou seulement activée / désactivée) pour que le reste du
+// pare-feu reste enregistrable.
+// Rule bound to a deleted frps: rejected when new or changed, accepted as is
+// (or only switched on / off) so the rest of the firewall can still be saved.
+func TestFirewallOrphanRuleFrps(t *testing.T) {
+	setup(t)
+	norm := func(raw map[string]any) J {
+		t.Helper()
+		r, err := FR.fwNormalizeRule(raw, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	orphan := map[string]any{"id": "aa11", "name": "Scanners", "mode": "block", "ports": "25565", "frps": "frps-b",
+		"sources": []any{map[string]any{"cidr": "203.0.113.4", "note": "scan"}}, "enabled": true}
+	// Forme relue depuis la configuration (JSON) / Form read back from the configuration (JSON)
+	var saved J
+	b, _ := json.Marshal(norm(orphan))
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatal(err)
+	}
+	frps := []string{"frps"}
+	clone := func(edit func(m map[string]any)) J {
+		m := map[string]any{}
+		for k, v := range orphan {
+			m[k] = v
+		}
+		edit(m)
+		return norm(m)
+	}
+
+	ok := map[string][]J{
+		"inchangée":           {norm(orphan)},
+		"désactivée":          {clone(func(m map[string]any) { m["enabled"] = false })},
+		"réassignée":          {clone(func(m map[string]any) { m["frps"] = "frps" })},
+		"vers tous les frps":  {clone(func(m map[string]any) { delete(m, "frps") })},
+		"supprimée":           {},
+		"autre règle ajoutée": {norm(orphan), norm(map[string]any{"id": "bb22", "mode": "allow", "ports": "*", "frps": "frps"})},
+	}
+	for name, rules := range ok {
+		if err := FR.fwCheckRuleFrps(rules, []J{saved}, frps); err != nil {
+			t.Errorf("%s : refusée à tort : %v", name, err)
+		}
+	}
+	bad := map[string][]J{
+		"nouvelle":             {norm(map[string]any{"id": "cc33", "mode": "allow", "ports": "*", "frps": "frps-c"})},
+		"sources changées":     {clone(func(m map[string]any) { m["sources"] = []any{map[string]any{"cidr": "198.51.100.7"}} })},
+		"ports changés":        {clone(func(m map[string]any) { m["ports"] = "25566" })},
+		"vers un autre absent": {clone(func(m map[string]any) { m["frps"] = "frps-c" })},
+	}
+	for name, rules := range bad {
+		err := EN.fwCheckRuleFrps(rules, []J{saved}, frps)
+		if err == nil {
+			t.Errorf("%s : acceptée à tort", name)
+		} else if !strings.Contains(err.Error(), "does not exist") {
+			t.Errorf("%s : message %q", name, err)
+		}
+	}
+	// Sans règle enregistrée, un frps absent est toujours refusé
+	// With no saved rule, a missing frps is always rejected
+	if err := FR.fwCheckRuleFrps([]J{norm(orphan)}, nil, frps); err == nil || !strings.Contains(err.Error(), "« Scanners »") {
+		t.Fatalf("règle orpheline sans historique : %v", err)
+	}
+}

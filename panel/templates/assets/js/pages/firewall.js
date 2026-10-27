@@ -12,7 +12,7 @@ import {
 const POLL_MS = 5000;          // repli sans WebSocket
 const AGO_MS = 5000;           // rafraîchit « il y a … » sans rien redemander
 const WS_MAX_FAILS = 3;        // WebSocket jamais ouvert (proxy) : on reste en repli
-import { navigate } from '../router.js';
+import { navigate, replaceParams } from '../router.js';
 import { can, displayName } from '../store.js';
 
 // Dernier frps choisi en haut de la page / Last frps chosen at the top of the page
@@ -41,6 +41,12 @@ const snapshotOf = () => JSON.stringify([S.enabled, S.rules]);
 // Rule or port of the chosen frps; a rule without frps (created before this
 // choice) or a port with no known frps applies to all of them.
 const ofFrps = (x) => !x.frps || x.frps === S.frps;
+// Règle liée à un frps qui n'existe plus (instance supprimée) : elle reste appliquée
+// par nftables, donc elle doit rester visible et modifiable dans toutes les vues.
+// Rule bound to a frps that no longer exists (deleted instance): nftables still
+// applies it, so it must stay visible and editable in every view.
+const orphan = (x) => !!x.frps && !(S.data.frps || []).includes(x.frps);
+const shownRule = (x) => ofFrps(x) || orphan(x);
 // Lecture seule (pas de firewall.manage) : jamais de modification à enregistrer
 const isDirty = () => can('firewall.manage') && S.snapshot !== '' && snapshotOf() !== S.snapshot;
 
@@ -53,8 +59,11 @@ export default {
   title: () => t('nav.firewall'),
   perm: 'firewall.view',
 
-  async mount(view) {
+  async mount(view, params) {
     S.snapshot = '';
+    // frps demandé par l'adresse (bouton « Pare-feu » d'une carte frps)
+    // frps requested by the address (“Firewall” button of a frps card)
+    S.frps = (params && params.iid) || '';
     window.addEventListener('beforeunload', beforeUnload);
     S.els.root = h('div', { class: 'page' },
       pageHeader({ title: t('firewall.title'), description: t('firewall.description') }),
@@ -91,7 +100,15 @@ async function load() {
   const list = S.data.frps || [];
   let saved = '';
   try { saved = localStorage.getItem(FRPS_KEY) || ''; } catch { /* stockage indisponible */ }
-  S.frps = list.includes(saved) ? saved : list[0] || '';
+  if (list.includes(S.frps)) {
+    // Choisi par l'adresse ou déjà affiché (rechargement après application) :
+    // c'est le dernier choix, comme avec la liste du haut de la page.
+    // Chosen by the address or already shown (reload after applying): it is
+    // the last choice, as with the list at the top of the page.
+    try { localStorage.setItem(FRPS_KEY, S.frps); } catch { /* stockage indisponible */ }
+  } else {
+    S.frps = list.includes(saved) ? saved : list[0] || '';
+  }
   build();
 }
 
@@ -122,6 +139,9 @@ function frpsPicker() {
   sel.addEventListener('change', () => {
     S.frps = sel.value;
     try { localStorage.setItem(FRPS_KEY, S.frps); } catch { /* stockage indisponible */ }
+    // L'adresse suit le frps affiché, comme Journaux et Ports
+    // The address follows the frps shown, like Logs and Ports
+    replaceParams({ iid: S.frps });
     if (S.els.testOut) S.els.testOut.replaceChildren();
     render();
   });
@@ -198,7 +218,7 @@ function render() {
 
 function renderStatus() {
   const d = S.data;
-  const activeRules = S.rules.filter((r) => r.enabled && ofFrps(r)).length;
+  const activeRules = S.rules.filter((r) => r.enabled && shownRule(r)).length;
   let state;
   if (isDirty()) state = badge(t('firewall.state.pending'), 'warn');
   else if (S.enabled && d.active) state = badge(t('firewall.state.on', { count: activeRules }), 'success');
@@ -207,7 +227,7 @@ function renderStatus() {
 
   const master = switchRow({
     label: t('firewall.enable'),
-    description: t('firewall.enableHint'),
+    description: t(S.enabled ? 'firewall.enableHintOn' : 'firewall.enableHint'),
     checked: S.enabled,
     onChange: (on) => { S.enabled = on; render(); },
   });
@@ -251,7 +271,7 @@ function ruleTitle(rule) {
 
 function renderRules() {
   const host = S.els.rules;
-  const shown = S.rules.filter(ofFrps);
+  const shown = S.rules.filter(shownRule);
   const several = (S.data.frps || []).length > 1;
   if (!shown.length) {
     host.replaceChildren(emptyState({
@@ -277,7 +297,10 @@ function renderRules() {
       tabindex: '0', onClick: open, onKeydown: (e) => { if (e.key === 'Enter') open(); },
     },
     h('div', { class: 'row-name' }, h('span', null, ruleTitle(rule)),
-      badge(t(`firewall.mode.${rule.mode}`), rule.mode === 'allow' ? 'success' : 'danger')),
+      badge(t(`firewall.mode.${rule.mode}`), rule.mode === 'allow' ? 'success' : 'danger'),
+      orphan(rule) ? badge(t('firewall.orphanBadge', { frps: rule.frps }), 'warn', {
+        class: 'badge badge-warn fw-orphan', title: `${t('firewall.orphanBadge', { frps: rule.frps })}\n${t('firewall.orphanHint')}`,
+      }) : null),
     h('div', { class: 'fw-detail' },
       h('span', null, h('small', null, t('firewall.portsLabel')),
         rule.ports !== '*' ? h('span', { class: 'mono' }, rule.ports)
@@ -781,6 +804,27 @@ async function editRule(existing) {
       });
       syncMode();
 
+      // frps de la règle : choisi ici dès qu'il y en a plusieurs, ou pour rattacher
+      // une règle orpheline à un frps existant (ou à tous).
+      // frps of the rule: chosen here as soon as there are several, or to attach
+      // an orphan rule to an existing frps (or to all of them).
+      const frpsList = S.data.frps || [];
+      const frpsHint = h('p', { class: 'field-hint' });
+      let frpsSel = null;
+      if (frpsList.length > 1 || orphan(draft)) {
+        frpsSel = select([
+          ...frpsList.map((id) => ({ value: id, label: displayName(id) })),
+          { value: '', label: t('firewall.allFrps') },
+          ...(orphan(draft) ? [{ value: draft.frps, label: t('firewall.orphanBadge', { frps: draft.frps }) }] : []),
+        ], draft.frps || '', { id: 'fw-frps' });
+        const syncFrps = () => {
+          const v = frpsSel.value;
+          frpsHint.textContent = t(v && !frpsList.includes(v) ? 'firewall.orphanHint' : v ? 'firewall.frpsHint' : 'firewall.frpsHintAll');
+        };
+        frpsSel.addEventListener('change', syncFrps);
+        syncFrps();
+      }
+
       const subscribed = draft.list ? callout({
         type: 'info', iconName: 'globe', compact: true,
         title: t('firewall.lists.ruleUses', { name: listText(draft.list) }),
@@ -792,18 +836,22 @@ async function editRule(existing) {
 
       const submit = (e) => {
         e.preventDefault();
-        close({
+        const next = {
           ...draft,
           name: name.value.trim(),
           mode: mode.value,
           ports: scope.value === 'all' ? '*' : ports.value.trim(),
           sources: textToSources(sources.value),
-        });
+        };
+        if (frpsSel) next.frps = frpsSel.value;
+        close(next);
       };
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: submit },
           field({ label: t('firewall.name'), optional: true, control: name }),
           h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('firewall.action')), mode, modeHint),
+          frpsSel ? h('div', { class: 'field' },
+            h('label', { class: 'field-label', for: 'fw-frps' }, t('firewall.frpsLabel')), frpsSel, frpsHint) : null,
           h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('firewall.portsLabel')), scope, portsBox,
             h('p', { class: 'field-hint' }, t('firewall.portsHint', { port: S.data.panel_port }))),
           subscribed,
@@ -823,6 +871,9 @@ async function editRule(existing) {
   }).result;
   if (!result) return;
   if (!result.list) delete result.list;
+  // « Tous les frps » : pas de clé frps, comme les règles d'avant ce choix
+  // "All frps": no frps key, like the rules from before this choice
+  if (!result.frps) delete result.frps;
   if (result.mode === 'block' && !result.sources.length && !result.list) {
     toast(t('firewall.blockNeedsSource'), 'error');
     return;
@@ -835,6 +886,9 @@ async function editRule(existing) {
   }
   else S.rules.push({ ...result, id: Math.random().toString(16).slice(2, 10) });
   render();
+  // Rattachée à un autre frps que celui affiché : elle quitte la liste, on le dit
+  // Attached to another frps than the one shown: it leaves the list, say so
+  if (!shownRule(result)) toast(t('firewall.movedTo', { frps: displayName(result.frps) }), 'info', 6000);
 }
 
 async function removeRule(rule) {

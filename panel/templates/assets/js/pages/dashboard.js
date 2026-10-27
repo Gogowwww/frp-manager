@@ -202,7 +202,7 @@ function serviceCard(iid) {
   if (inst.type === 'frpc' && can('config.read')) {
     actions.push(button(t('nav.tunnels'), { variant: 'ghost', size: 'sm', iconName: 'tunnels', onClick: () => navigate('ports', { iid }) }));
   } else if (inst.type === 'frps' && can('firewall.view')) {
-    actions.push(button(t('nav.firewall'), { variant: 'ghost', size: 'sm', iconName: 'shield', onClick: () => navigate('firewall') }));
+    actions.push(button(t('nav.firewall'), { variant: 'ghost', size: 'sm', iconName: 'shield', onClick: () => navigate('firewall', { iid }) }));
   }
 
   // Menu limité à ce que le compte connecté a le droit de faire
@@ -377,6 +377,9 @@ async function newInstance() {
       const copySelect = select([], '');
       const copyHint = h('p', { class: 'field-hint' });
       const errorBox = h('div', { hidden: true });
+      // Fichier déposé à la main : son nom suit le type choisi (frpc-nom.toml ou frps-nom.toml)
+      // File dropped by hand: its name follows the chosen type (frpc-name.toml or frps-name.toml)
+      const manualBox = h('div');
       const suffix = () => nameInput.value.trim().toLowerCase();
       const refresh = () => {
         // Aperçu des fichiers créés, seulement pour un nom valide (ou l'exemple)
@@ -394,6 +397,7 @@ async function newInstance() {
           ...sources.map((iid) => h('option', { value: iid }, t('dashboard.new.copyFrom', { name: displayName(iid) }))));
         copySelect.value = sources.includes(previous) ? previous : '';
         copyHint.textContent = t(copySelect.value ? `dashboard.new.copyHint.${type}` : `dashboard.new.defaultHint.${type}`);
+        manualBox.replaceChildren(callout({ type: 'neutral', compact: true, text: t(standalone ? 'dashboard.new.manualStandalone' : 'dashboard.new.manual', { type }) }));
       };
       const typeControl = segmented(['frpc', 'frps'].map((v) => ({
         value: v, label: t(`instance.type.${v}`), icon: v === 'frps' ? 'server' : 'laptop',
@@ -425,7 +429,7 @@ async function newInstance() {
           h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('dashboard.new.type')), typeControl),
           h('div', null, field({ label: t('dashboard.new.name'), hint: t('dashboard.new.nameHint'), control: nameInput }), preview),
           h('div', null, field({ label: t('dashboard.new.copy'), control: copySelect }), copyHint),
-          callout({ type: 'neutral', compact: true, text: t(standalone ? 'dashboard.new.manualStandalone' : 'dashboard.new.manual') }),
+          manualBox,
           errorBox)],
         foot: [button(t('common.cancel'), { onClick: () => close(undefined) }), createBtn],
       };

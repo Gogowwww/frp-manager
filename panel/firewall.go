@@ -1676,6 +1676,54 @@ func (c *Ctx) parseRules(data map[string]any) ([]J, error) {
 	return rules, nil
 }
 
+// fwCheckRuleFrps : refuse une règle nouvelle ou modifiée liée à un frps qui
+// n'existe pas. Une règle orpheline déjà enregistrée (son frps a été supprimé)
+// passe si elle n'a pas changé, activée ou non : sinon plus rien ne pourrait
+// être enregistré tant qu'elle reste dans la liste.
+// fwCheckRuleFrps: rejects a new or changed rule bound to a frps that does not
+// exist. An orphan rule already saved (its frps was deleted) passes if it has
+// not changed, enabled or not: otherwise nothing could be saved while it stays
+// in the list.
+func (l Lang) fwCheckRuleFrps(rules, saved []J, frpsIDs []string) error {
+	exists := map[string]bool{}
+	for _, id := range frpsIDs {
+		exists[id] = true
+	}
+	// Forme comparable d'une règle : normalisée, sans l'interrupteur
+	// Comparable form of a rule: normalized, without the switch
+	comparable := func(r J, i int) string {
+		n, err := l.fwNormalizeRule(r, i)
+		if err != nil {
+			return ""
+		}
+		delete(n, "enabled")
+		b, _ := json.Marshal(n)
+		return string(b)
+	}
+	before := map[string]string{}
+	for i, r := range saved {
+		if id := str(r, "id", ""); id != "" {
+			before[id] = comparable(r, i)
+		}
+	}
+	for i, r := range rules {
+		frps := str(r, "frps", "")
+		if frps == "" || exists[frps] {
+			continue
+		}
+		if prev, ok := before[str(r, "id", "")]; ok && prev != "" && prev == comparable(r, i) {
+			continue
+		}
+		where := l.M(fmt.Sprintf("Règle %d", i+1), fmt.Sprintf("Rule %d", i+1))
+		if name := str(r, "name", ""); name != "" {
+			where = l.M("Règle « "+name+" »", "Rule “"+name+"”")
+		}
+		return &RuleError{l.M(where+" : le frps « "+frps+" » n'existe pas (instance supprimée ?). Choisissez un frps existant ou « Tous les frps », ou supprimez la règle.",
+			where+": the frps “"+frps+"” does not exist (deleted instance?). Choose an existing frps or “All frps”, or delete the rule.")}
+	}
+	return nil
+}
+
 func init() {
 	route("GET /api/firewall", "api_firewall_get", perm(P("firewall.view"), func(c *Ctx) {
 		detectFrp(false)
@@ -1790,6 +1838,14 @@ func init() {
 		data := c.Body()
 		rules, err := c.parseRules(data)
 		if err != nil {
+			c.Fail(http.StatusBadRequest, err.Error())
+			return
+		}
+		frpsIDs := []string{}
+		for _, inst := range frpsInstances() {
+			frpsIDs = append(frpsIDs, inst.ID)
+		}
+		if err := c.Lang.fwCheckRuleFrps(rules, fwCfg().Rules, frpsIDs); err != nil {
 			c.Fail(http.StatusBadRequest, err.Error())
 			return
 		}
