@@ -100,12 +100,27 @@ jobs:
           ls deb/*.deb >/dev/null 2>&1 || { echo "Aucun paquet .deb dans la release $TAG (version Python ?)"; exit 0; }
           sh packaging/deb/publish-apt.sh stable deb/*.deb
 
-      - name: Dépôt APT sur GitHub Pages (stable)
+      # Le script Pages vient du commit du workflow (main), pas du tag : un tag
+      # antérieur à Cloudflare Pages porte encore l'ancien script (GitHub Pages).
+      # The Pages script comes from the workflow's commit (main), not from the tag:
+      # a tag older than Cloudflare Pages still carries the old script (GitHub Pages).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: courant
+          sparse-checkout: packaging/deb
+      # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
+      # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Dépôt APT sur Cloudflare Pages (stable)
         env:
           APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
-          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes : dépôt Pages ignoré"; exit 0; }
-          [ -f packaging/deb/publish-pages.sh ] || { echo "Tag antérieur au dépôt Pages : ignoré"; exit 0; }
+          [ -n "$APT_GPG_KEY" ] && [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "Clé APT ou secrets Cloudflare absents : dépôt Pages ignoré"; exit 0; }
           ls deb/*.deb >/dev/null 2>&1 || exit 0
-          sh packaging/deb/publish-pages.sh stable deb/*.deb
+          sh courant/packaging/deb/publish-pages.sh stable deb/*.deb

@@ -13,10 +13,30 @@
 # rebuild). Useful to catch up on versions released before the repository, or
 # after an incident; release.yml and promote.yml then publish each new version.
 
+#
+# Le dépôt est servi par Cloudflare Pages (projet frp-manager-apt) ; chaque envoi
+# repart du déploiement de production. « source » permet de repartir d'ailleurs :
+# « - » pour un dépôt vide (projet neuf ou perdu ; dev revient au push suivant sur
+# main), ou l'adresse d'un dépôt apt à relire.
+# The repository is served by Cloudflare Pages (frp-manager-apt project); each
+# upload starts from the production deployment. "source" starts from elsewhere:
+# "-" for an empty repository (new or lost project; dev comes back with the next
+# push to main), or the address of an apt repository to read back.
+#
+# Prérequis : secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN (Cloudflare Pages : Edit)
+# et CLOUDFLARE_ACCOUNT_ID.
+# Requirements: secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN (Cloudflare Pages: Edit)
+# and CLOUDFLARE_ACCOUNT_ID.
+
 name: Synchroniser le dépôt apt
 
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Dépôt de départ (vide : le dépôt Pages actuel ; « - » : dépôt vide ; ou une URL)"
+        required: false
+        default: ""
 
 permissions: {}
 
@@ -32,14 +52,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
+      # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       - name: Publier testing et stable
         env:
           GH_TOKEN: ${{ github.token }}
           APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
-          APT_DEPLOY_KEY: ${{ secrets.APT_DEPLOY_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SOURCE: ${{ inputs.source }}
         run: |
           set -eu
-          [ -n "$APT_GPG_KEY" ] && [ -n "$APT_DEPLOY_KEY" ] || { echo "Clés APT absentes"; exit 1; }
+          [ -n "$APT_GPG_KEY" ] && [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "Clé APT ou secrets Cloudflare absents"; exit 1; }
           publish() {
             dist="$1"; tag="$2"
             [ -n "$tag" ] || { echo "Aucune release pour $dist"; return 0; }
@@ -47,7 +74,14 @@ jobs:
             gh release download "$tag" --repo "${{ github.repository }}" --pattern '*.deb' --dir "deb-$dist" || true
             ls "deb-$dist"/*.deb >/dev/null 2>&1 || { echo "Pas de .deb dans $tag : $dist ignoré"; return 0; }
             echo "$dist ← $tag"
-            sh packaging/deb/publish-pages.sh "$dist" "deb-$dist"/*.deb
+            # « source » ne sert qu'au premier envoi ; le suivant repart de celui-ci
+            # "source" only applies to the first upload; the next one starts from it
+            if [ -n "$SOURCE" ]; then
+              APT_SOURCE_URL="$SOURCE" sh packaging/deb/publish-pages.sh "$dist" "deb-$dist"/*.deb
+              SOURCE=""
+            else
+              sh packaging/deb/publish-pages.sh "$dist" "deb-$dist"/*.deb
+            fi
           }
           # La plus récente de toutes, puis la plus récente des définitives
           testing=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')
