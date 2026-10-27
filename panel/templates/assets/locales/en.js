@@ -192,6 +192,7 @@ export default {
     noClientText: 'Ports are opened from the machine that hosts your services, where frpc runs.',
     server: 'server',
     randomPort: 'port assigned by the server',
+    copyAddress: 'Copy the address {addr}',
     randomPortNoAdmin: 'A port opened without a number gets a port from the server that changes each time frpc starts. To see it, the panel asks frpc on its local dashboard (127.0.0.1 only, random password).',
     showAssigned: 'Show the assigned port',
     admin: {

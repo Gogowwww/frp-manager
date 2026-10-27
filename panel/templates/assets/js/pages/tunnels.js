@@ -265,9 +265,45 @@ function publicEndpoint(p) {
   return t('tunnels.privateOnly');
 }
 
-function route(fromLabel, from, toLabel, to, fromIsText = false) {
+/** Adresse publique à copier : seulement une vraie adresse (« IP:port » ou un
+ *  domaine unique), jamais un texte de remplacement, une plage ou une liste.
+ *  Public address to copy: only a real address ("IP:port" or a single
+ *  domain), never a placeholder text, a range or a list. */
+function publicCopyValue(p) {
+  if (hasRemotePort(p.type)) {
+    if (isRanged(p)) return '';
+    if (p.remotePort) return S.serverAddr ? `${S.serverAddr}:${p.remotePort}` : '';
+    // frpc peut rendre « :port » sans hôte : on y ajoute l'adresse du serveur
+    // frpc may return ":port" without a host: the server address is added
+    const live = S.status?.proxies?.[p.name]?.remote_addr || '';
+    if (live.startsWith(':')) return S.serverAddr ? `${S.serverAddr}${live}` : '';
+    return live;
+  }
+  if (hasDomains(p.type) && p.domains && !p.domains.includes(',')) return p.domains;
+  return '';
+}
+
+/** Adresse cliquable qui la copie ; Entrée et clic ne doivent pas ouvrir la
+ *  ligne (le dialogue d'édition) en plus.
+ *  Clickable address that copies it; Enter and click must not also open the
+ *  row (the edit dialog). */
+function copyAddress(text) {
+  const label = t('tunnels.copyAddress', { addr: text });
+  return h('button', {
+    type: 'button', class: 'route-copy', title: label, 'aria-label': label,
+    onClick: async (e) => {
+      e.stopPropagation();
+      try { await navigator.clipboard.writeText(text); toast(t('common.copied'), 'success', 1800); }
+      catch { toast(t('errors.clipboard'), 'error'); }
+    },
+    onKeydown: (e) => e.stopPropagation(),
+  }, h('span', { class: 'mono' }, text), icon('copy'));
+}
+
+function route(fromLabel, from, toLabel, to, fromIsText = false, fromCopy = '') {
   return h('div', { class: 'route' },
-    h('span', { class: 'route-end' }, h('small', null, fromLabel), h('span', { class: fromIsText ? 'route-text' : 'mono', title: from }, from)),
+    h('span', { class: 'route-end' }, h('small', null, fromLabel),
+      fromCopy ? copyAddress(fromCopy) : h('span', { class: fromIsText ? 'route-text' : 'mono', title: from }, from)),
     h('span', { class: 'route-line', 'aria-hidden': 'true' }),
     h('span', { class: 'route-end' }, h('small', null, toLabel), h('span', { class: 'mono' }, to)));
 }
@@ -300,7 +336,7 @@ function proxyRow(p) {
     h('span', { title: halves.length > 1 ? halves.map((x) => x.name).join(', ') : null }, p.name || t('tunnels.unnamed')),
     halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase()))),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
-    hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains)),
+    hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains), publicCopyValue(p)),
   h('div', { class: 'row-flags' }, flags),
   h('div', { class: 'row-actions' },
     button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
