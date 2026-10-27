@@ -6,12 +6,12 @@
 # Pré-release : pré-release GitHub (un panel installé en pré-release suit les
 # pré-releases) ; image :X.Y.Z et :dev (:latest ne bouge pas) pour amd64, arm64
 # et armv7 ; paquets .deb joints à la release et publiés dans le canal
-# « testing » du dépôt APT (hébergé par le Forgejo). promote.yml la rend
+# « testing » du dépôt APT (apt.frp-manager.org). promote.yml la rend
 # ensuite définitive telle quelle, sans reconstruire.
 # Pre-release: GitHub pre-release (a panel installed as pre-release follows
 # pre-releases); image :X.Y.Z and :dev (:latest does not move) for amd64, arm64
 # and armv7; .deb packages attached to the release and published in the
-# "testing" channel of the APT repository (hosted by Forgejo). promote.yml then
+# "testing" channel of the APT repository (apt.frp-manager.org). promote.yml then
 # makes it final as is, without rebuilding.
 #
 # Fichiers joints : frp-manager.zip, sa somme frp-manager.zip.sha256 (vérifiée
@@ -19,12 +19,12 @@
 # Attached files: frp-manager.zip, its sum frp-manager.zip.sha256 (checked by
 # the panel update), and the .deb files.
 #
-# Prérequis : secret FORGEJO_PACKAGES_TOKEN (jeton Forgejo, portée write:package) ;
-# le package ghcr.io doit autoriser ce dépôt en écriture (Package settings →
-# Manage Actions access).
-# Requirements: secret FORGEJO_PACKAGES_TOKEN (Forgejo token, write:package
-# scope); the ghcr.io package must allow this repository to write (Package
+# Prérequis : secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID et
+# SITE_TOKEN ; le package ghcr.io doit autoriser ce dépôt en écriture (Package
 # settings → Manage Actions access).
+# Requirements: secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+# and SITE_TOKEN; the ghcr.io package must allow this repository to write
+# (Package settings → Manage Actions access).
 
 name: Release
 
@@ -37,8 +37,6 @@ permissions: {}
 env:
   IMAGE: ghcr.io/gogowwww/frp-manager
   PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
-  FORGEJO_URL: https://forgejo.gogow.fr
-  APT_OWNER: administrator
 
 jobs:
   release:
@@ -160,11 +158,6 @@ jobs:
           gh release create "$TAG" --verify-tag --prerelease --latest=false \
             --title "$(jq -r .name notes.json)" --notes-file notes.md \
             dist/frp-manager.zip dist/frp-manager.zip.sha256 dist/deb/*.deb
-
-      - name: Dépôt APT (testing)
-        env:
-          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
-        run: sh packaging/deb/publish-apt.sh testing dist/deb/*.deb
 
       # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
       # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later

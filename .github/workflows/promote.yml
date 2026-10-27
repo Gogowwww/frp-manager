@@ -20,8 +20,10 @@
 # panels); .deb packages of the release copied into the "stable" distribution
 # of the APT repository.
 #
-# Prérequis : pré-release créée par release.yml, secret FORGEJO_PACKAGES_TOKEN.
-# Requirements: pre-release created by release.yml, secret FORGEJO_PACKAGES_TOKEN.
+# Prérequis : pré-release créée par release.yml, secrets APT_GPG_KEY,
+# CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID.
+# Requirements: pre-release created by release.yml, secrets APT_GPG_KEY,
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
 
 name: Promote
 
@@ -36,8 +38,6 @@ permissions: {}
 
 env:
   IMAGE: ghcr.io/gogowwww/frp-manager
-  FORGEJO_URL: https://forgejo.gogow.fr
-  APT_OWNER: administrator
 
 jobs:
   promote:
@@ -89,16 +89,13 @@ jobs:
           gh release edit "$TAG" --prerelease=false --latest
           gh release view "$TAG" --json url --jq '"Release publiée : " + .url'
 
-      - name: Dépôt APT (stable)
-        env:
-          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
+      - name: Récupérer les paquets .deb de la release
         run: |
           set -eu
           # Les .deb de la pré-release, tels quels (pas de rebuild)
           mkdir -p deb
           gh release download "$TAG" --pattern '*.deb' --dir deb || true
-          ls deb/*.deb >/dev/null 2>&1 || { echo "Aucun paquet .deb dans la release $TAG (version Python ?)"; exit 0; }
-          sh packaging/deb/publish-apt.sh stable deb/*.deb
+          ls deb/*.deb >/dev/null 2>&1 || echo "Aucun paquet .deb dans la release $TAG (version Python ?)"
 
       # Le script Pages vient du commit du workflow (main), pas du tag : un tag
       # antérieur à Cloudflare Pages porte encore l'ancien script (GitHub Pages).

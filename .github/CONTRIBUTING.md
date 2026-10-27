@@ -73,9 +73,7 @@ which only reads `.github/workflows` and only publishes the README score from
 GitHub. The apt repository is `apt.frp-manager.org`, a static repository
 signed with the `APT_GPG_KEY` secret and published by `publish-pages.sh` to the
 `frp-manager-apt` Cloudflare Pages project (direct upload with wrangler,
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets). The Forgejo
-still hosts the old apt repository, kept up to date for machines that have not
-moved yet; the `FORGEJO_PACKAGES_TOKEN` secret gives GitHub access to it. The
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets). The
 website is built from a private repository and deployed to Cloudflare Pages;
 `site-notify.yml` tells it when the README, `.github/` or the interface change.
 

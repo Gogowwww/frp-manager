@@ -7,16 +7,14 @@
 # scripts.
 #
 # Sur main seulement : les paquets partent dans le canal « dev » du dépôt APT
-# (hébergé par le Forgejo, pour que l'adresse des machines déjà installées ne
-# change pas), puis s'installent par apt dans des conteneurs Debian 12 et
-# Ubuntu 24.04 neufs.
+# (apt.frp-manager.org, servi par Cloudflare Pages), puis s'installent par apt
+# dans des conteneurs Debian 12 et Ubuntu 24.04 neufs.
 # On main only: the packages go to the "dev" channel of the APT repository
-# (hosted by Forgejo, so that the address of already installed machines does
-# not change), then are installed with apt in fresh Debian 12 and Ubuntu 24.04
-# containers.
+# (apt.frp-manager.org, served by Cloudflare Pages), then are installed with apt
+# in fresh Debian 12 and Ubuntu 24.04 containers.
 #
-# Prérequis : secret FORGEJO_PACKAGES_TOKEN (jeton Forgejo, portée write:package).
-# Requirements: secret FORGEJO_PACKAGES_TOKEN (Forgejo token, write:package scope).
+# Prérequis : secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID.
+# Requirements: secrets APT_GPG_KEY, CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
 
 name: CI
 
@@ -27,9 +25,6 @@ on:
 
 permissions: {}
 
-env:
-  FORGEJO_URL: https://forgejo.gogow.fr
-  APT_OWNER: administrator
 
 jobs:
   go:
@@ -73,12 +68,6 @@ jobs:
           for f in ci/deb/*.deb; do
             dpkg-deb --field "$f" Package Version Architecture | tr '\n' ' '; echo
           done
-      - name: Dépôt APT, canal dev
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          PACKAGES_TOKEN: ${{ secrets.FORGEJO_PACKAGES_TOKEN }}
-        run: sh packaging/deb/publish-apt.sh dev ci/deb/*.deb
-
       # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
       # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
