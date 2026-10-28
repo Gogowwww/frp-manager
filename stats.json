@@ -1,21 +1,54 @@
 {
-  "generated_at": "2026-10-27T10:40:48Z",
+  "generated_at": "2026-10-28T11:25:05Z",
   "repo": "Gogowwww/frp-manager",
   "stars": 5,
   "forks": 2,
   "watchers": 0,
   "open_issues": 0,
-  "total_downloads": 178,
+  "total_downloads": 197,
   "releases": [
+    {
+      "tag": "v0.8.0",
+      "prerelease": false,
+      "published": "2026-10-28T00:03:29Z",
+      "downloads": 6,
+      "by_kind": {
+        "deb": 3,
+        "sha256": 1,
+        "zip": 2
+      }
+    },
+    {
+      "tag": "v0.7.2",
+      "prerelease": false,
+      "published": "2026-10-27T22:20:42Z",
+      "downloads": 5,
+      "by_kind": {
+        "deb": 3,
+        "sha256": 1,
+        "zip": 1
+      }
+    },
+    {
+      "tag": "v0.7.1",
+      "prerelease": true,
+      "published": "2026-10-27T14:06:13Z",
+      "downloads": 0,
+      "by_kind": {
+        "deb": 0,
+        "sha256": 0,
+        "zip": 0
+      }
+    },
     {
       "tag": "v0.7.0",
       "prerelease": false,
       "published": "2026-10-26T21:59:36Z",
-      "downloads": 3,
+      "downloads": 11,
       "by_kind": {
-        "deb": 3,
-        "sha256": 0,
-        "zip": 0
+        "deb": 9,
+        "sha256": 1,
+        "zip": 1
       }
     },
     {
