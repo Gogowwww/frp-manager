@@ -116,7 +116,7 @@ func webhookEmitFull(event string, title, text [2]string, subject, instance stri
 	select {
 	case webhookQueue <- item:
 	default:
-		log.Printf("[WARN] Webhooks : file pleine, notification abandonnée")
+		log.Printf("[WARN] %s", systemLang().M("Webhooks : file pleine, notification abandonnée", "Webhooks: queue full, notification dropped"))
 	}
 }
 
@@ -314,7 +314,7 @@ func webhookRecord(hook map[string]any, item webhookItem, ok bool, status int, m
 	}
 	webhookMu.Unlock()
 	if !ok {
-		log.Printf("[WARN] Webhook « %s » : %s", str(hook, "name", ""), msg)
+		log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Webhook « %s » : %s", str(hook, "name", ""), msg), fmt.Sprintf("Webhook \"%s\": %s", str(hook, "name", ""), msg)))
 	}
 }
 
@@ -366,7 +366,7 @@ func webhookWorker() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[WARN] Webhooks : %v", r)
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Webhooks : %v", r), fmt.Sprintf("Webhooks: %v", r)))
 				}
 			}()
 			for _, hook := range webhooksActive() {
@@ -486,7 +486,7 @@ func webhookMonitorLoop() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[WARN] Webhooks : %v", r)
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Webhooks : %v", r), fmt.Sprintf("Webhooks: %v", r)))
 				}
 			}()
 			if len(webhooksActive()) > 0 {

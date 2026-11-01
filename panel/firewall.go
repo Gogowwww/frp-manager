@@ -273,7 +273,7 @@ func listsFetch() (*listsCache, error) {
 	if b, err := json.Marshal(c); err == nil {
 		os.MkdirAll(filepath.Dir(fwListsFile), 0o755)
 		if err := os.WriteFile(fwListsFile, b, 0o644); err != nil {
-			log.Printf("[WARN] Catalogue des listes non enregistré : %v", err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Catalogue des listes non enregistré : %v", err), fmt.Sprintf("List catalog not saved: %v", err)))
 		}
 	}
 	return c, nil
@@ -444,7 +444,7 @@ func asnStore(asn int, e *asnEntry) {
 	asnMu.Unlock()
 	os.MkdirAll(filepath.Dir(fwASNFile), 0o755)
 	if err := os.WriteFile(fwASNFile, b, 0o644); err != nil {
-		log.Printf("[WARN] Cache des AS non enregistré : %v", err)
+		log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Cache des AS non enregistré : %v", err), fmt.Sprintf("AS cache not saved: %v", err)))
 	}
 }
 
@@ -1303,7 +1303,7 @@ func fwApply(c *fwConfig) (bool, string) {
 			fwSeenOKMu.Lock()
 			fwSeenOK = false
 			fwSeenOKMu.Unlock()
-			log.Printf("[WARN] Pare-feu : ensembles dynamiques refusés par nftables, liste des blocages désactivée")
+			log.Printf("[WARN] %s", systemLang().M("Pare-feu : ensembles dynamiques refusés par nftables, liste des blocages désactivée", "Firewall: dynamic sets rejected by nftables, blocked connections list disabled"))
 		}
 	}
 	if ok {
@@ -1568,7 +1568,7 @@ func fwSyncLoop() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[WARN] Pare-feu : %v", r)
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : %v", r), fmt.Sprintf("Firewall: %v", r)))
 				}
 			}()
 			c := fwCfg()
@@ -1578,7 +1578,7 @@ func fwSyncLoop() {
 			for _, r := range c.Rules {
 				if truthy(r["list"]) && ruleEnabled(r) {
 					if _, err := listsGet(fwListsMaxAge); err != "" {
-						log.Printf("[WARN] Pare-feu : catalogue des listes communautaires non rafraîchi (%s)", err)
+						log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : catalogue des listes communautaires non rafraîchi (%s)", err), fmt.Sprintf("Firewall: community list catalog not refreshed (%s)", err)))
 					}
 					break
 				}
@@ -1586,7 +1586,7 @@ func fwSyncLoop() {
 			for _, asn := range fwRuleASNs(c.Rules) {
 				if e := asnLookup(asn); e == nil || time.Now().Unix()-e.Fetched > fwASNMaxAge {
 					if _, err := asnFetch(asn); err != nil {
-						log.Printf("[WARN] Pare-feu : préfixes de AS%d non rafraîchis (%v)", asn, err)
+						log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : préfixes de AS%d non rafraîchis (%v)", asn, err), fmt.Sprintf("Firewall: AS%d prefixes not refreshed (%v)", asn, err)))
 					}
 				}
 			}
@@ -1598,7 +1598,7 @@ func fwSyncLoop() {
 			fwMu.Unlock()
 			if text != applied || (expect && !fwTablePresent()) {
 				if ok, msg := fwApply(&c); !ok {
-					log.Printf("[WARN] Pare-feu : application impossible (%s)", msg)
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : application impossible (%s)", msg), fmt.Sprintf("Firewall: cannot apply the rules (%s)", msg)))
 				}
 			}
 		}()

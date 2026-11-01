@@ -570,7 +570,7 @@ func init() {
 		oc := oidcConfig()
 		meta, err := oidcDiscover(str(oc, "issuer", ""), false)
 		if err != nil {
-			log.Printf("[WARN] Connexion OIDC : %v", err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Connexion OIDC : %v", err), fmt.Sprintf("OIDC sign-in: %v", err)))
 			c.oidcFail("provider")
 			return
 		}
@@ -622,7 +622,7 @@ func init() {
 			return
 		}
 		if e := c.Query("error"); e != "" {
-			log.Printf("[WARN] Connexion OIDC refusée par le fournisseur : %s", short(e, 80))
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Connexion OIDC refusée par le fournisseur : %s", short(e, 80)), fmt.Sprintf("OIDC sign-in rejected by the provider: %s", short(e, 80))))
 			c.oidcFail("denied")
 			return
 		}
@@ -645,7 +645,7 @@ func init() {
 			}
 		}
 		if err != nil {
-			log.Printf("[WARN] Connexion OIDC refusée : %v", err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Connexion OIDC refusée : %v", err), fmt.Sprintf("OIDC sign-in rejected: %v", err)))
 			codeErr := "provider"
 			if oe, isOE := err.(*OidcError); isOE {
 				codeErr = oe.Code

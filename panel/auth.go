@@ -671,9 +671,9 @@ func init() {
 		if rehash {
 			// Ancien hash (SHA-256 sans sel, scrypt, ou argon2 aux anciens réglages)
 			if err := setPasswordHash(uid, hashPassword(pw)); err != nil {
-				log.Printf("[WARN] Rehachage du mot de passe non enregistré : %v", err)
+				log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Rehachage du mot de passe non enregistré : %v", err), fmt.Sprintf("Password rehash not saved: %v", err)))
 			} else {
-				log.Printf("[INFO] Mot de passe rehaché avec argon2id")
+				log.Printf("[INFO] %s", systemLang().M("Mot de passe rehaché avec argon2id", "Password rehashed with argon2id"))
 			}
 		}
 		c.startSession(uid)
@@ -773,7 +773,7 @@ func recordLogin(uid string) {
 			u["last_login"] = nowISO()
 		}
 	}); err != nil {
-		log.Printf("[WARN] Dernière connexion non enregistrée : %v", err)
+		log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Dernière connexion non enregistrée : %v", err), fmt.Sprintf("Last sign-in not saved: %v", err)))
 	}
 }
 

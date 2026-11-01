@@ -746,7 +746,7 @@ func init() {
 		}
 		pk, err := c.passkeyRegistration(cred, challenge)
 		if err != nil {
-			log.Printf("[WARN] Passkey refusée (%s) : %v", str(u, "username", ""), err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Passkey refusée (%s) : %v", str(u, "username", ""), err), fmt.Sprintf("Passkey rejected (%s): %v", str(u, "username", ""), err)))
 			c.Fail(http.StatusBadRequest, c.M("Passkey refusée : ", "Passkey rejected: ")+err.Error())
 			return
 		}
@@ -780,7 +780,7 @@ func init() {
 			c.Fail(http.StatusInternalServerError, saveErr.Error())
 			return
 		}
-		log.Printf("[INFO] Passkey « %s » ajoutée au compte %s", name, str(u, "username", ""))
+		log.Printf("[INFO] %s", systemLang().M(fmt.Sprintf("Passkey « %s » ajoutée au compte %s", name, str(u, "username", "")), fmt.Sprintf("Passkey \"%s\" added to account %s", name, str(u, "username", ""))))
 		c.JSON(J{"ok": true, "passkey": passkeyView(pk), "msg": c.M("Passkey ajoutée.", "Passkey added.")})
 	}))
 
@@ -863,7 +863,7 @@ func init() {
 		}
 		user, pk, ad, err := passkeyAssertion(cred, challenge)
 		if err != nil {
-			log.Printf("[WARN] Connexion par passkey refusée depuis %s : %v", ip, err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Connexion par passkey refusée depuis %s : %v", ip, err), fmt.Sprintf("Passkey sign-in rejected from %s: %v", ip, err)))
 			c.loginRejected(ip, c.M("Passkey refusée.", "Passkey rejected."))
 			return
 		}
@@ -879,7 +879,7 @@ func init() {
 			}
 			return list
 		}); err != nil {
-			log.Printf("[WARN] Passkey : compteur non enregistré : %v", err)
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Passkey : compteur non enregistré : %v", err), fmt.Sprintf("Passkey: counter not saved: %v", err)))
 		}
 		c.startSession(uid)
 		c.sess.set("pk", pid)
