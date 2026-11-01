@@ -1404,14 +1404,7 @@ func extractPortsFromConfig(content, binType string) []J {
 		for _, line := range splitLines(content) {
 			s := strings.TrimSpace(line)
 			if m := frpRangeLineRe.FindStringSubmatch(s); m != nil {
-				pendingRange = nil
-				first, err1 := frpPortRange(m[1])
-				second, err2 := frpPortRange(m[2])
-				if err1 == nil && err2 == nil && len(first) == len(second) {
-					for i := range first {
-						pendingRange = append(pendingRange, [2]int{first[i], second[i]})
-					}
-				}
+				pendingRange = frpRangePairs(m)
 				continue
 			}
 			if s == "[[proxies]]" {
@@ -1420,7 +1413,9 @@ func extractPortsFromConfig(content, binType string) []J {
 				continue
 			}
 			if strings.HasPrefix(s, "[") && !strings.HasPrefix(s, "[[proxies]]") {
-				inProxy = false
+				// La ligne « range » d'un [[visitors]] n'est pas pour le tunnel suivant
+				// The "range" line of a [[visitors]] is not for the next tunnel
+				inProxy, pendingRange = false, nil
 				continue
 			}
 			if inProxy {
@@ -1456,21 +1451,38 @@ func extractPortsFromConfig(content, binType string) []J {
 		// bindPort de chaque [[visitors]] (écoute LOCALE côté frpc), seulement
 		// si bindAddr n'est pas une adresse de bouclage.
 		inVisitor, visName, visAddr, visPort := false, "", "127.0.0.1", 0
+		// Plage de ports d'un visiteur : un visiteur par port local, « nom-<port> »
+		// Visitor port range: one visitor per local port, "name-<port>"
+		var visPending, visRange [][2]int
+		visRanged := false
 		flush := func() {
-			if visPort != 0 && visAddr != "127.0.0.1" && visAddr != "::1" && visAddr != "localhost" {
+			if visAddr == "127.0.0.1" || visAddr == "::1" || visAddr == "localhost" {
+				return
+			}
+			if visRanged {
+				for _, pair := range visRange {
+					label := frpFirstRe.ReplaceAllString(visName, strconv.Itoa(pair[0]))
+					ports = append(ports, J{"port": pair[0], "proto": "tcp", "label": strings.TrimSpace("Visiteur " + label + " (bindPort)")})
+				}
+			} else if visPort != 0 {
 				ports = append(ports, J{"port": visPort, "proto": "tcp", "label": strings.TrimSpace("Visiteur " + visName + " (bindPort)")})
 			}
 		}
 		for _, line := range splitLines(content) {
 			s := strings.TrimSpace(line)
+			if m := frpRangeLineRe.FindStringSubmatch(s); m != nil {
+				visPending = frpRangePairs(m)
+				continue
+			}
 			if s == "[[visitors]]" {
 				flush()
-				inVisitor, visName, visAddr, visPort = true, "", "127.0.0.1", 0
+				inVisitor, visName, visAddr, visPort, visRanged = true, "", "127.0.0.1", 0, false
+				visRange, visPending = visPending, nil
 				continue
 			}
 			if strings.HasPrefix(s, "[") && s != "[[visitors]]" {
 				flush()
-				inVisitor, visPort = false, 0
+				inVisitor, visPort, visRanged, visPending = false, 0, false, nil
 				continue
 			}
 			if inVisitor {
@@ -1482,6 +1494,9 @@ func extractPortsFromConfig(content, binType string) []J {
 				}
 				if m := bindPortLineRe.FindStringSubmatch(s); m != nil {
 					visPort = atoi(m[1])
+				}
+				if frpBindFirstRe.MatchString(s) {
+					visRanged = true
 				}
 			}
 		}

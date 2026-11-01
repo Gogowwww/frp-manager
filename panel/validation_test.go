@@ -86,10 +86,26 @@ func TestTOMLValidation(t *testing.T) {
 const rangeTOML = "{{- range $_, $v := parseNumberRangePair \"30000-30002\" \"40000-40001,40005\" }}\n[[proxies]]\n" +
 	"name = \"jeu-{{ $v.First }}\"\ntype = \"udp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {{ $v.First }}\nremotePort = {{ $v.Second }}\n{{- end }}\n"
 
+// Plages des autres types, telles que les écrit la page Ports : une seule plage
+// (parseNumberRange) pour stcp/xtcp et http/https, {port} des domaines compris ;
+// un visiteur par port, qui rejoint le tunnel de même rang
+// Ranges of the other types, as written by the Ports page: a single range
+// (parseNumberRange) for stcp/xtcp and http/https, {port} of the domains
+// included; one visitor per port, which joins the tunnel of the same rank
+const (
+	stcpRangeTOML = "{{- range $_, $v := parseNumberRange \"6000-6002\" }}\n[[proxies]]\n" +
+		"name = \"db-{{ $v }}\"\ntype = \"stcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {{ $v }}\nsecretKey = \"s\"\n{{- end }}\n"
+	httpRangeTOML = "{{- range $_, $v := parseNumberRange \"8080-8081\" }}\n[[proxies]]\n" +
+		"name = \"web-{{ $v }}\"\ntype = \"http\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {{ $v }}\ncustomDomains = [\"app-{{ $v }}.example.com\"]\n{{- end }}\n"
+	visitorRangeTOML = "{{- range $_, $v := parseNumberRangePair \"16000-16002\" \"6000-6002\" }}\n[[visitors]]\n" +
+		"name = \"acc-{{ $v.First }}\"\ntype = \"stcp\"\nserverName = \"db-{{ $v.Second }}\"\nsecretKey = \"s\"\nbindAddr = \"0.0.0.0\"\nbindPort = {{ $v.First }}\n{{- end }}\n"
+)
+
 func TestFrpTemplateValidation(t *testing.T) {
 	for _, good := range []string{
 		validTOML + "\n" + rangeTOML,
 		rangeTOML,
+		validTOML + "\n" + stcpRangeTOML + "\n" + httpRangeTOML + "\n" + visitorRangeTOML,
 		"serverAddr = \"{{ .Envs.FRP_SERVER }}\"\nserverPort = {{ .Envs.FRP_PORT }}\n",
 	} {
 		if err := FR.validateConfigContent("/etc/frp/frpc.toml", good); err != nil {
@@ -107,6 +123,11 @@ func TestFrpTemplateValidation(t *testing.T) {
 		strings.Replace(rangeTOML, "{{- end }}\n", "", 1),
 		strings.Replace(rangeTOML, "parseNumberRangePair", "inconnue", 1),
 		"token = \"a{{b\"\n",
+		// Une seule plage invalide, plages d'un visiteur de tailles différentes
+		// An invalid single range, visitor ranges of different sizes
+		strings.Replace(stcpRangeTOML, "6000-6002", "6002-6000", 1),
+		strings.Replace(httpRangeTOML, "8080-8081", "70000", 1),
+		strings.Replace(visitorRangeTOML, "6000-6002", "6000", 1),
 	} {
 		if err := FR.validateConfigContent("/etc/frp/frpc.toml", bad); err == nil {
 			t.Errorf("accepté : %q", truncRunes(bad, 80))
@@ -553,6 +574,26 @@ func TestExtractPorts(t *testing.T) {
 		"Tunnel jeu-30000 (remotePort):udp:40000", "Tunnel jeu-30001 (remotePort):udp:40001", "Tunnel jeu-30002 (remotePort):udp:40005"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v", got)
+	}
+	// Plage stcp ou http : aucun port côté serveur ; visiteur en plage ouvert au
+	// réseau : un port par visiteur. La ligne « range » d'un visiteur ne passe pas
+	// au tunnel suivant.
+	// stcp or http range: no port on the server side; range visitor open to the
+	// network: one port per visitor. A visitor's "range" line does not pass to the
+	// next tunnel.
+	got = nil
+	conf := validTOML + "\n" + stcpRangeTOML + "\n" + httpRangeTOML + "\n" + visitorRangeTOML +
+		"\n[[proxies]]\nname = \"web\"\ntype = \"tcp\"\nlocalPort = 80\nremotePort = 8000\n"
+	for _, p := range extractPortsFromConfig(conf, "frpc") {
+		got = append(got, p["label"].(string)+":"+p["proto"].(string)+":"+strings.TrimSpace(pyStr(float64(p["port"].(int)))))
+	}
+	want = []string{"Connexion serveur:tcp:7000", "Tunnel ssh (remotePort):tcp:6000", "Tunnel web (remotePort):tcp:8000",
+		"Visiteur acc-16000 (bindPort):tcp:16000", "Visiteur acc-16001 (bindPort):tcp:16001", "Visiteur acc-16002 (bindPort):tcp:16002"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%v", got)
+	}
+	if ports := extractPortsFromConfig(strings.Replace(visitorRangeTOML, "0.0.0.0", "127.0.0.1", 1), "frpc"); len(ports) != 0 {
+		t.Fatalf("visiteur local listé : %v", ports)
 	}
 	frps := "bindPort = 7000\nkcpBindPort = 7000\nvhostHTTPPort = 80\n"
 	if n := len(extractPortsFromConfig(frps, "frps")); n != 3 {

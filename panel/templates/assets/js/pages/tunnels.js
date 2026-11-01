@@ -13,7 +13,7 @@ import {
 import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
-  portSpecCount, isPortRange, isRanged, frpcNames, MAX_RANGE_PORTS,
+  portSpecCount, isPortRange, isRanged, isVisitorRanged, frpcNames, visitorNames, MAX_RANGE_PORTS, PORT_TOKEN,
   TCP_UDP, pairProxies, splitPair,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
@@ -270,8 +270,10 @@ function publicEndpoint(p) {
  *  Public address to copy: only a real address ("IP:port" or a single
  *  domain), never a placeholder text, a range or a list. */
 function publicCopyValue(p) {
+  // Plage, quel que soit le type : plusieurs adresses (ou un domaine à {port})
+  // Range, whatever the type: several addresses (or a domain with {port})
+  if (isRanged(p)) return '';
   if (hasRemotePort(p.type)) {
-    if (isRanged(p)) return '';
     if (p.remotePort) return S.serverAddr ? `${S.serverAddr}:${p.remotePort}` : '';
     // frpc peut rendre « :port » sans hôte : on y ajoute l'adresse du serveur
     // frpc may return ":port" without a host: the server address is added
@@ -359,7 +361,8 @@ function renderVisitors() {
     },
     h('div', { class: 'row-name' }, h('span', null, v.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, v.type.toUpperCase())),
     route(t('visitors.shared'), v.serverName || '?', t('visitors.here'), `${v.bindAddr || '127.0.0.1'}:${v.bindPort || '?'}`),
-    h('div', { class: 'row-flags' }),
+    h('div', { class: 'row-flags' },
+      isVisitorRanged(v) ? badge(t('tunnels.flags.range', { count: portSpecCount(v.bindPort) }), '') : null),
     h('div', { class: 'row-actions' },
       button('', { variant: 'ghost', size: 'sm', iconName: 'edit', title: t('common.edit'), onClick: (e) => { e.stopPropagation(); open(); } }),
       button('', { variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'), onClick: (e) => { e.stopPropagation(); removeVisitor(v); } })));
@@ -408,21 +411,46 @@ const BOTH = TCP_UDP;
  * ports (frpc pairs the 1st with the 1st, the 2nd with the 2nd…).
  */
 function portErrors(kind, local, remote) {
-  if (!hasRemotePort(kind) || !(isPortRange(local) || isPortRange(remote))) {
+  if (!isRanged({ type: kind, localPort: local, remotePort: remote })) {
     return {
       local: validPort(local) ? '' : t('validation.port'),
       remote: !hasRemotePort(kind) || !remote || validPort(remote) ? '' : t('validation.port'),
     };
   }
   const nl = portSpecCount(local);
+  const localError = !nl ? t('validation.portSpec') : nl > MAX_RANGE_PORTS ? t('validation.rangeTooBig', { max: MAX_RANGE_PORTS }) : '';
+  // http, https, stcp, xtcp : la plage n'est que sur le port local
+  // http, https, stcp, xtcp: the range is only on the local port
+  if (!hasRemotePort(kind)) return { local: localError, remote: '' };
   const nr = portSpecCount(remote);
   return {
-    local: !nl ? t('validation.portSpec') : nl > MAX_RANGE_PORTS ? t('validation.rangeTooBig', { max: MAX_RANGE_PORTS }) : '',
+    local: localError,
     remote: !remote ? t('validation.rangeRemote')
       : !nr ? t('validation.portSpec')
         : nl && nr !== nl ? t('validation.rangeCount', { local: nl, remote: nr }) : '',
   };
 }
+
+/**
+ * Erreur des domaines http/https : une plage exige {port} dans chaque domaine
+ * (sinon tous ses tunnels auraient le même et frps refuserait les suivants) ; un
+ * port seul n'en veut pas.
+ * Error of the http/https domains: a range requires {port} in each domain
+ * (otherwise all its tunnels would share it and frps would refuse the next
+ * ones); a single port does not want it.
+ */
+function domainError(kind, ranged, text) {
+  if (!hasDomains(kind)) return '';
+  const list = text.split(',').map((s) => s.trim()).filter(Boolean);
+  if (ranged && !list.length) return t('validation.required');
+  if (ranged) return list.some((d) => !d.includes(PORT_TOKEN)) ? t('validation.domainPort', { token: PORT_TOKEN }) : '';
+  return list.some((d) => d.includes(PORT_TOKEN)) ? t('validation.domainPortSingle', { token: PORT_TOKEN }) : '';
+}
+
+/** Aide sous le port local : ce qu'une plage crée pour ce type de tunnel.
+ *  Hint under the local port: what a range creates for this type of tunnel. */
+const rangeHintKey = (kind) => (hasRemotePort(kind) ? 'tunnels.fields.rangeHint'
+  : hasDomains(kind) ? 'tunnels.fields.rangeHintDomains' : 'tunnels.fields.rangeHintPrivate');
 
 function editProxy(existing) {
   const draft = existing ? { ...existing, extras: existing.extras } : newProxy();
@@ -446,7 +474,7 @@ function editProxy(existing) {
       const localIP = input({ value: draft.localIP, placeholder: '127.0.0.1', mono: true });
       const localPort = input({ value: draft.localPort, placeholder: '8080', mono: true });
       const remotePort = input({ value: draft.remotePort, placeholder: '8080', mono: true });
-      const rangeHint = h('p', { class: 'field-hint' }, t('tunnels.fields.rangeHint'));
+      const rangeHint = h('p', { class: 'field-hint' });
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
 
@@ -480,11 +508,23 @@ function editProxy(existing) {
         remoteField.querySelector('.field-hint').textContent = tp === BOTH
           ? t('tunnels.fields.remotePortHintBoth', { server })
           : t('tunnels.fields.remotePortHint', { server });
-        rangeHint.hidden = !hasRemotePort(kind);
+        // Plage pour tous les types : l'aide dit ce qu'elle crée pour celui-ci
+        // Range for all types: the hint says what it creates for this one
+        rangeHint.textContent = t(rangeHintKey(kind), { token: PORT_TOKEN });
         domainsField.hidden = !hasDomains(kind);
         secretField.hidden = !hasSecret(kind);
         syncNameHint();
+        syncDomainsHint();
       }
+      // http/https en plage : l'aide des domaines rappelle {port}
+      // http/https range: the domains hint recalls {port}
+      function syncDomainsHint() {
+        const ranged = isRanged({ type: kindOf(type.value), localPort: localPort.value, remotePort: remotePort.value });
+        domainsField.querySelector('.field-hint').textContent = ranged
+          ? t('tunnels.fields.domainsHintRange', { token: PORT_TOKEN })
+          : t('tunnels.fields.domainsHint');
+      }
+      localPort.addEventListener('input', syncDomainsHint);
       // TCP + UDP : l'aide du nom donne les deux noms que frpc utilisera
       // TCP + UDP: the name hint gives the two names frpc will use
       function syncNameHint() {
@@ -525,6 +565,7 @@ function editProxy(existing) {
         // TCP + UDP sans port public : le serveur en tirerait un différent pour chacun
         // TCP + UDP without a public port: the server would pick a different one for each
         check(remotePort, tp === BOTH && !values.remotePort ? t('validation.bothRemote') : ports.remote);
+        check(domains, domainError(kind, isRanged({ ...values, type: kind }), domains.value));
         if (!ok) { draftDialogFocusError(); return; }
 
         // TCP + UDP reste une seule entrée : splitPair écrit ses deux tunnels
@@ -593,21 +634,49 @@ function editVisitor(existing) {
       const serverName = input({ value: draft.serverName, placeholder: 'service-partage', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
       const bindAddr = input({ value: draft.bindAddr, placeholder: '127.0.0.1', mono: true });
-      const bindPort = input({ value: draft.bindPort, placeholder: '9001', inputmode: 'numeric', mono: true });
+      // Pas de clavier numérique : une plage s'écrit avec « - » et « , »
+      // No numeric keyboard: a range is written with "-" and ","
+      const bindPort = input({ value: draft.bindPort, placeholder: '9001', mono: true });
+      // Plage : ports du tunnel visé, s'ils diffèrent des ports locaux
+      // Range: ports of the target tunnel, if they differ from the local ports
+      const serverPorts = input({ value: draft.serverPorts, placeholder: t('visitors.fields.serverPortsPlaceholder'), mono: true });
+      const serverPortsField = field({ label: t('visitors.fields.serverPorts'), hint: t('visitors.fields.serverPortsHint'), optional: true, control: serverPorts });
+      const syncRange = () => { serverPortsField.hidden = !isPortRange(bindPort.value); };
+      bindPort.addEventListener('input', syncRange);
+      syncRange();
 
       function submit(e) {
         e.preventDefault();
         let ok = true;
         const check = (ctrl, msg) => { setFieldError(ctrl, msg); if (msg) ok = false; };
         const nm = name.value.trim();
+        const bp = bindPort.value.replace(/\s+/g, '');
+        const ranged = isPortRange(bp);
+        const sp = ranged ? serverPorts.value.replace(/\s+/g, '') : '';
+        // Noms réels côté frpc (« nom-<port> » pour une plage) : aucun en double
+        // Real names on the frpc side ("name-<port>" for a range): no duplicates
+        const taken = new Set(S.visitors.filter((v) => v.uid !== draft.uid).flatMap((v) => [v.name, ...visitorNames(v)]));
+        const clash = [nm, ...visitorNames({ name: nm, bindPort: bp })].find((n) => taken.has(n));
         check(name, !nm ? t('validation.required')
-          : S.visitors.some((v) => v.uid !== draft.uid && v.name === nm) ? t('validation.nameTaken') : '');
+          : clash === nm ? t('validation.nameTaken')
+            : clash ? t('validation.visitorNameClash', { name: clash }) : '');
         check(serverName, !serverName.value.trim() ? t('validation.required') : '');
-        check(bindPort, !validPort(bindPort.value.trim()) ? t('validation.port') : '');
+        // Plage : autant de ports pour le tunnel visé que pour l'écoute locale
+        // Range: as many ports for the target tunnel as for the local listener
+        const nb = ranged ? portSpecCount(bp) : 0;
+        const ns = sp ? portSpecCount(sp) : nb;
+        check(bindPort, !ranged ? (validPort(bp) ? '' : t('validation.port'))
+          : !nb ? t('validation.portSpec')
+            : nb > MAX_RANGE_PORTS ? t('validation.rangeTooBig', { max: MAX_RANGE_PORTS }) : '');
+        // Champ facultatif : vide, il reprend les ports locaux, déjà vérifiés
+        // Optional field: when empty it reuses the local ports, already checked
+        check(serverPorts, !ranged || !sp ? ''
+          : !ns ? t('validation.portSpec')
+            : nb && ns !== nb ? t('validation.rangeCountVisitor', { local: nb, remote: ns }) : '');
         if (!ok) { draftDialogFocusError(); return; }
         Object.assign(draft, {
           name: nm, type: type.value, serverName: serverName.value.trim(), secretKey: secret.input.value,
-          bindAddr: bindAddr.value.trim(), bindPort: bindPort.value.trim(),
+          bindAddr: bindAddr.value.trim(), bindPort: bp, serverPorts: sp === bp ? '' : sp,
         });
         if (existing) S.visitors = S.visitors.map((v) => (v.uid === draft.uid ? draft : v));
         else S.visitors = [...S.visitors, draft];
@@ -625,7 +694,9 @@ function editVisitor(existing) {
           h('div', { class: 'form-grid-2' },
             field({ label: t('visitors.fields.bindAddr'), tomlKey: 'bindAddr', control: bindAddr }),
             field({ label: t('visitors.fields.bindPort'), tomlKey: 'bindPort', control: bindPort })),
-          h('p', { class: 'field-hint' }, t('visitors.fields.bindHint')))],
+          h('p', { class: 'field-hint' }, t('visitors.fields.bindHint')),
+          h('p', { class: 'field-hint' }, t('visitors.fields.rangeHint')),
+          serverPortsField)],
         foot: [
           button(t('common.cancel'), { onClick: () => close(false) }),
           button(existing ? t('tunnels.apply') : t('tunnels.addToList'), { variant: 'primary', type: 'submit', form: formId }),

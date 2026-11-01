@@ -8,7 +8,15 @@
 // (voir generateProxy) : elle part avec lui, pas avec la partie connexion.
 // A block may be preceded by the "range" line of a port-range template (see
 // generateProxy): it goes with the block, not with the connection part.
-const RANGE_LINE = String.raw`\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"\s*-?\}\}`;
+// Deux formes : parseNumberRangePair (deux plages, $v.First et $v.Second) ou
+// parseNumberRange (une seule plage, $v est le port).
+// Two forms: parseNumberRangePair (two ranges, $v.First and $v.Second) or
+// parseNumberRange (a single range, $v is the port).
+const RANGE_LINE = String.raw`\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"|parseNumberRange\s+"([^"]*)")\s*-?\}\}`;
+// Port de la boucle dans le bloc : « {{ $v }} », ou « {{ $v.First }} » / « {{ $v.Second }} »
+// Loop port inside the block: "{{ $v }}", or "{{ $v.First }}" / "{{ $v.Second }}"
+const LOOP_FIRST = String.raw`\{\{\s*\$v(?:\.First)?\s*\}\}`;
+const LOOP_SECOND = String.raw`\{\{\s*\$v(?:\.Second)?\s*\}\}`;
 const BLOCK_RE = new RegExp(String.raw`^(?:${RANGE_LINE}[ \t]*\r?\n)?\[\[(proxies|visitors)\]\]`, 'm');
 const RANGE_RE = new RegExp(`^${RANGE_LINE}$`);
 const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
@@ -60,12 +68,14 @@ export function parseToml(text) {
     // Modèle de plage de ports : « range » devant le bloc, « end » derrière
     // Port-range template: "range" in front of the block, "end" behind it
     const rm = RANGE_RE.exec(line);
-    if (rm) { pendingRange = { local: rm[1], remote: rm[2] }; continue; }
+    // Une seule plage (parseNumberRange) : pas de second côté
+    // A single range (parseNumberRange): no second side
+    if (rm) { pendingRange = rm[3] !== undefined ? { local: rm[3], remote: '' } : { local: rm[1], remote: rm[2] }; continue; }
     if (END_RE.test(line)) continue;
 
     if (line === '[[proxies]]' || line === '[[visitors]]') {
       block = { values: {}, raw: {}, order: [] };
-      if (pendingRange && line === '[[proxies]]') block.range = pendingRange;
+      if (pendingRange) block.range = pendingRange;
       pendingRange = null;
       out[line === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
       prefix = '';
@@ -227,13 +237,36 @@ export function portSpecCount(spec) {
  *  A range (or list) of ports rather than a single port? */
 export const isPortRange = (spec) => /[-,]/.test(String(spec || ''));
 
-/** Tunnel écrit en modèle de plage (voir generateProxy) ?
- *  Tunnel written as a range template (see generateProxy)? */
-export const isRanged = (p) => hasRemotePort(p.type) && (isPortRange(p.localPort) || isPortRange(p.remotePort));
+/** Tunnel écrit en modèle de plage (voir generateProxy) ? Tous les types : plage
+ *  sur le port local, et sur le port public pour tcp et udp.
+ *  Tunnel written as a range template (see generateProxy)? All types: range on
+ *  the local port, and on the public port for tcp and udp. */
+export const isRanged = (p) => isPortRange(p.localPort) || (hasRemotePort(p.type) && isPortRange(p.remotePort));
+
+/** Visiteur écrit en modèle de plage (voir generateVisitor) : plage sur le port local.
+ *  Visitor written as a range template (see generateVisitor): range on the local port. */
+export const isVisitorRanged = (v) => isPortRange(v.bindPort);
 
 /** Plus grand nombre de ports d'une plage : au-delà, frpc crée trop de tunnels.
  *  Largest number of ports in a range: beyond it, frpc creates too many tunnels. */
 export const MAX_RANGE_PORTS = 1000;
+
+/** Repère du port dans un domaine d'une plage http/https (« app-{port}.example.com ») :
+ *  chaque tunnel a besoin de son propre domaine.
+ *  Port marker in a domain of an http/https range ("app-{port}.example.com"):
+ *  each tunnel needs its own domain. */
+export const PORT_TOKEN = '{port}';
+
+/** « nom-<port> » pour chaque port d'une saisie (« 6000-6002,6007 »).
+ *  "name-<port>" for each port of an entry ("6000-6002,6007"). */
+function rangeNames(base, spec) {
+  const names = [];
+  for (const part of String(spec).replace(/\s+/g, '').split(',')) {
+    const [a, b = a] = part.split('-').map(Number);
+    for (let port = a; port <= b && names.length < 65535; port += 1) names.push(`${base}-${port}`);
+  }
+  return names;
+}
 
 /**
  * Noms des tunnels que frpc créera pour cette entrée : son nom, ou « nom-<port
@@ -245,13 +278,15 @@ export const MAX_RANGE_PORTS = 1000;
  */
 export function frpcNames(p) {
   if (p.type === TCP_UDP) return splitPair(p).flatMap(frpcNames);
-  if (!isRanged(p)) return [p.name];
-  const names = [];
-  for (const part of String(p.localPort).replace(/\s+/g, '').split(',')) {
-    const [a, b = a] = part.split('-').map(Number);
-    for (let port = a; port <= b && names.length < 65535; port += 1) names.push(`${p.name}-${port}`);
-  }
-  return names;
+  return isRanged(p) ? rangeNames(p.name, p.localPort) : [p.name];
+}
+
+/** Noms des visiteurs que frpc créera : son nom, ou « nom-<port local> » par port
+ *  d'une plage ; frpc refuse deux visiteurs du même nom.
+ *  Names of the visitors frpc will create: its name, or "name-<local port>" per
+ *  port of a range; frpc refuses two visitors with the same name. */
+export function visitorNames(v) {
+  return isVisitorRanged(v) ? rangeNames(v.name, v.bindPort) : [v.name];
 }
 
 let uidSeq = 0;
@@ -267,16 +302,19 @@ export function proxyFromBlock(block) {
   // perd son suffixe « -{{ $v.First }} »
   // Block of a range template: the ports are those of the "range" line, the name
   // loses its "-{{ $v.First }}" suffix
+  // (« -{{ $v }} » pour une seule plage) ; dans les domaines, le port redevient {port}
+  // ("-{{ $v }}" for a single range); in the domains, the port becomes {port} again
   const range = block.range || null;
+  const domains = (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', ');
   return {
     uid: uid(),
-    name: range ? (v.name || '').replace(/-?\{\{\s*\$v\.First\s*\}\}$/, '') : v.name || '',
+    name: range ? (v.name || '').replace(new RegExp(`-?${LOOP_FIRST}$`), '') : v.name || '',
     type: PROXY_TYPES.includes(v.type) ? v.type : (v.type || 'tcp'),
     localIP: v.localIP || '127.0.0.1',
     localPort: range ? range.local : String(v.localPort || ''),
     // remotePort = 0 : port attribué par le serveur, comme s'il était absent
     remotePort: range ? range.remote : Number(v.remotePort) ? String(v.remotePort) : '',
-    domains: (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', '),
+    domains: range ? domains.replace(new RegExp(LOOP_FIRST, 'g'), PORT_TOKEN) : domains,
     secretKey: v.secretKey || '',
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',
     compression: v['transport.useCompression'] === 'true',
@@ -343,20 +381,27 @@ export function newProxy() {
 
 export function visitorFromBlock(block) {
   const v = block.values;
+  // Bloc d'un modèle de plage : ports locaux et ports du tunnel visé (vides
+  // s'ils sont les mêmes) lus sur la ligne « range », noms sans leur suffixe
+  // Block of a range template: local ports and ports of the target tunnel
+  // (empty when they are the same) read from the "range" line, names without
+  // their suffix
+  const range = block.range || null;
   return {
     uid: uid(),
-    name: v.name || '',
+    name: range ? (v.name || '').replace(new RegExp(`-?${LOOP_FIRST}$`), '') : v.name || '',
     type: v.type || 'stcp',
-    serverName: v.serverName || '',
+    serverName: range ? (v.serverName || '').replace(new RegExp(`-?${LOOP_SECOND}$`), '') : v.serverName || '',
     secretKey: v.secretKey || '',
     bindAddr: v.bindAddr || '127.0.0.1',
-    bindPort: v.bindPort || '',
+    bindPort: range ? range.local : v.bindPort || '',
+    serverPorts: range && range.remote && range.remote !== range.local ? range.remote : '',
     extras: extrasOf(block, VISITOR_KEYS),
   };
 }
 
 export function newVisitor() {
-  return { uid: uid(), name: '', type: 'stcp', serverName: '', secretKey: '', bindAddr: '127.0.0.1', bindPort: '', extras: [] };
+  return { uid: uid(), name: '', type: 'stcp', serverName: '', secretKey: '', bindAddr: '127.0.0.1', bindPort: '', serverPorts: '', extras: [] };
 }
 
 export function generateProxy(p) {
@@ -364,19 +409,28 @@ export function generateProxy(p) {
   // port, nommé « nom-<port> ». Les deux plages ont le même nombre de ports.
   // Port range: an frpc template (parseNumberRangePair) that creates one tunnel
   // per port, named "name-<port>". Both ranges have the same number of ports.
+  // Sans port public (http, https, stcp, xtcp), une seule plage : parseNumberRange,
+  // et {port} dans un domaine devient le port de chaque tunnel.
+  // Without a public port (http, https, stcp, xtcp), a single range:
+  // parseNumberRange, and {port} in a domain becomes each tunnel's port.
   const ranged = isRanged(p);
+  const pair = ranged && hasRemotePort(p.type);
+  const port = pair ? '{{ $v.First }}' : '{{ $v }}';
+  const head = pair
+    ? `{{- range $_, $v := parseNumberRangePair "${p.localPort}" "${p.remotePort}" }}`
+    : `{{- range $_, $v := parseNumberRange "${p.localPort}" }}`;
   const L = ranged
-    ? [`{{- range $_, $v := parseNumberRangePair "${p.localPort}" "${p.remotePort}" }}`, '[[proxies]]',
-      `name = ${str(`${p.name}-{{ $v.First }}`)}`, `type = ${str(p.type)}`]
+    ? [head, '[[proxies]]', `name = ${str(`${p.name}-${port}`)}`, `type = ${str(p.type)}`]
     : ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
   if (p.localIP) L.push(`localIP = ${str(p.localIP)}`);
-  if (ranged) L.push('localPort = {{ $v.First }}');
+  if (ranged) L.push(`localPort = ${port}`);
   else if (p.localPort) L.push(`localPort = ${p.localPort}`);
-  if (ranged) L.push('remotePort = {{ $v.Second }}');
+  if (pair) L.push('remotePort = {{ $v.Second }}');
   else if (hasRemotePort(p.type) && p.remotePort) L.push(`remotePort = ${p.remotePort}`);
   if (hasDomains(p.type) && p.domains) {
-    const list = p.domains.split(',').map((s) => s.trim()).filter(Boolean);
-    L.push(`customDomains = [${list.map(str).join(', ')}]`);
+    const list = p.domains.split(',').map((s) => s.trim()).filter(Boolean)
+      .map((d) => (ranged ? str(d).split(PORT_TOKEN).join(port) : str(d)));
+    L.push(`customDomains = [${list.join(', ')}]`);
   }
   if (hasSecret(p.type) && p.secretKey) L.push(`secretKey = ${str(p.secretKey)}`);
   if (p.compression) L.push('transport.useCompression = true');
@@ -388,12 +442,24 @@ export function generateProxy(p) {
 }
 
 export function generateVisitor(v) {
-  const L = ['[[visitors]]', `name = ${str(v.name)}`, `type = ${str(v.type)}`];
-  if (v.serverName) L.push(`serverName = ${str(v.serverName)}`);
+  // Plage de ports : un visiteur par port local, nommé « nom-<port> », qui
+  // rejoint « tunnel-<port> », le tunnel de même rang d'une plage stcp/xtcp
+  // (ports du tunnel visé : les mêmes, sauf s'ils sont donnés).
+  // Port range: one visitor per local port, named "name-<port>", which joins
+  // "tunnel-<port>", the tunnel of the same rank in an stcp/xtcp range (ports of
+  // the target tunnel: the same, unless they are given).
+  const ranged = isVisitorRanged(v);
+  const L = ranged
+    ? [`{{- range $_, $v := parseNumberRangePair "${v.bindPort}" "${v.serverPorts || v.bindPort}" }}`, '[[visitors]]',
+      `name = ${str(`${v.name}-{{ $v.First }}`)}`, `type = ${str(v.type)}`]
+    : ['[[visitors]]', `name = ${str(v.name)}`, `type = ${str(v.type)}`];
+  if (v.serverName) L.push(`serverName = ${str(ranged ? `${v.serverName}-{{ $v.Second }}` : v.serverName)}`);
   if (v.secretKey) L.push(`secretKey = ${str(v.secretKey)}`);
   if (v.bindAddr) L.push(`bindAddr = ${str(v.bindAddr)}`);
-  if (v.bindPort) L.push(`bindPort = ${v.bindPort}`);
+  if (ranged) L.push('bindPort = {{ $v.First }}');
+  else if (v.bindPort) L.push(`bindPort = ${v.bindPort}`);
   for (const [k, raw] of v.extras) L.push(`${k} = ${raw}`);
+  if (ranged) L.push('{{- end }}');
   return L.join('\n');
 }
 

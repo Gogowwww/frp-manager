@@ -28,10 +28,16 @@ var (
 	// nom « nom-{{ $v.First }} » dans le bloc
 	// Port range written by the Ports page: "range" line in front of the block,
 	// "name-{{ $v.First }}" name inside the block
-	frpRangeLineRe = regexp.MustCompile(`^\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"\s*-?\}\}$`)
-	frpRangePairRe = regexp.MustCompile(`parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"`)
-	frpFirstRe     = regexp.MustCompile(`\{\{\s*\$v\.First\s*\}\}`)
-	frpSecondRe    = regexp.MustCompile(`^remotePort\s*=\s*\{\{\s*\$v\.Second\s*\}\}`)
+	// Types sans port public : une seule plage (parseNumberRange, groupe 3) et
+	// « nom-{{ $v }} » ; visiteurs : « bindPort = {{ $v.First }} »
+	// Types without a public port: a single range (parseNumberRange, group 3)
+	// and "name-{{ $v }}"; visitors: "bindPort = {{ $v.First }}"
+	frpRangeLineRe   = regexp.MustCompile(`^\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"|parseNumberRange\s+"([^"]*)")\s*-?\}\}$`)
+	frpRangePairRe   = regexp.MustCompile(`parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"`)
+	frpRangeSingleRe = regexp.MustCompile(`parseNumberRange\s+"([^"]*)"`)
+	frpFirstRe       = regexp.MustCompile(`\{\{\s*\$v(?:\.First)?\s*\}\}`)
+	frpSecondRe      = regexp.MustCompile(`^remotePort\s*=\s*\{\{\s*\$v\.Second\s*\}\}`)
+	frpBindFirstRe   = regexp.MustCompile(`^bindPort\s*=\s*\{\{\s*\$v(?:\.First)?\s*\}\}`)
 )
 
 // frpTOML : la config lisible en TOML. Les lignes faites seulement d'actions
@@ -83,6 +89,27 @@ func frpPortRange(spec string) ([]int, error) {
 	return ports, nil
 }
 
+// frpRangePairs : paires de ports d'une ligne « range » (frpRangeLineRe), dans
+// l'ordre ; une seule plage donne (port, port). Rien si une plage est invalide.
+// frpRangePairs: port pairs of a "range" line (frpRangeLineRe), in order; a
+// single range gives (port, port). Nothing if a range is invalid.
+func frpRangePairs(m []string) [][2]int {
+	firstSpec, secondSpec := m[1], m[2]
+	if m[3] != "" {
+		firstSpec, secondSpec = m[3], m[3]
+	}
+	first, err1 := frpPortRange(firstSpec)
+	second, err2 := frpPortRange(secondSpec)
+	if err1 != nil || err2 != nil || len(first) != len(second) {
+		return nil
+	}
+	pairs := make([][2]int, len(first))
+	for i := range first {
+		pairs[i] = [2]int{first[i], second[i]}
+	}
+	return pairs
+}
+
 // checkFrpTemplate : erreur si frp refuserait le modèle de la config : syntaxe,
 // fonction inconnue, plages de ports invalides ou de tailles différentes.
 // checkFrpTemplate: error if frp would reject the config's template: syntax,
@@ -111,6 +138,13 @@ func checkFrpTemplate(content string) error {
 		}
 		if len(first) != len(second) {
 			return fmt.Errorf("parseNumberRangePair %q %q: %d and %d ports, not in pairs", m[1], m[2], len(first), len(second))
+		}
+	}
+	// Une seule plage (« Pair » suit le nom de l'autre fonction : pas d'espace)
+	// A single range ("Pair" follows the other function's name: no space)
+	for _, m := range frpRangeSingleRe.FindAllStringSubmatch(content, -1) {
+		if _, err := frpPortRange(m[1]); err != nil {
+			return err
 		}
 	}
 	return nil
