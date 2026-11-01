@@ -299,7 +299,22 @@ function copyAddress(text) {
       catch { toast(t('errors.clipboard'), 'error'); }
     },
     onKeydown: (e) => e.stopPropagation(),
-  }, h('span', { class: 'mono' }, text), icon('copy'));
+  }, h('span', { class: 'mono' }, breakable(text)), icon('copy'));
+}
+
+/** Adresse découpée pour un retour à la ligne propre : avant « :port », et dans
+ *  un nom de domaine après « . », « - » ou « , » ; une IP reste d'un seul tenant.
+ *  Address split for a clean line break: before ":port", and in a domain name
+ *  after ".", "-" or ","; an IP stays in one piece. */
+function breakable(text) {
+  const i = text.lastIndexOf(':');
+  const hasPort = i > 0 && /^[\d,-]+$/.test(text.slice(i + 1));
+  const host = hasPort ? text.slice(0, i) : text;
+  const isIP = /^[\d.]+$/.test(host) || host.startsWith('[') || host.includes(':');
+  const parts = isIP ? [host] : host.split(/(?<=[.,-])/);
+  const out = parts.flatMap((s, k) => (k ? [h('wbr'), s] : [s]));
+  if (hasPort) out.push(h('wbr'), text.slice(i));
+  return out;
 }
 
 // .route mesure la place disponible (requête de conteneur) : trop étroite, les
@@ -309,9 +324,9 @@ function copyAddress(text) {
 function route(fromLabel, from, toLabel, to, fromIsText = false, fromCopy = '') {
   return h('div', { class: 'route' }, h('div', { class: 'route-in' },
     h('span', { class: 'route-end' }, h('small', null, fromLabel),
-      fromCopy ? copyAddress(fromCopy) : h('span', { class: fromIsText ? 'route-text' : 'mono', title: from }, from)),
+      fromCopy ? copyAddress(fromCopy) : h('span', { class: fromIsText ? 'route-text' : 'mono', title: from }, fromIsText ? from : breakable(from))),
     h('span', { class: 'route-line', 'aria-hidden': 'true' }),
-    h('span', { class: 'route-end' }, h('small', null, toLabel), h('span', { class: 'mono', title: to }, to))));
+    h('span', { class: 'route-end' }, h('small', null, toLabel), h('span', { class: 'mono', title: to }, breakable(to)))));
 }
 
 function proxyRow(p) {

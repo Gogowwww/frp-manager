@@ -611,9 +611,25 @@ func handleShutdown() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-ch
-	log.Printf("[INFO] %s", systemLang().M(fmt.Sprintf("%v : arrêt de frps et frpc", sig), fmt.Sprintf("%v: stopping frps and frpc", sig)))
+	l := systemLang()
+	name := l.signalName(sig)
+	log.Printf("[INFO] %s", l.M(fmt.Sprintf("%s : arrêt de frps et frpc", name), fmt.Sprintf("%s: stopping frps and frpc", name)))
 	stopAllProcs()
 	os.Exit(0)
+}
+
+// signalName : nom du signal dans la langue l (Go l'écrit en anglais : « terminated »),
+// le nom brut pour un signal non traduit.
+// signalName: name of the signal in the l language (Go writes it in English:
+// "terminated"), the raw name for an untranslated signal.
+func (l Lang) signalName(sig os.Signal) string {
+	switch sig {
+	case syscall.SIGTERM:
+		return l.M("terminé", "terminated")
+	case syscall.SIGINT:
+		return l.M("interrompu", "interrupt")
+	}
+	return sig.String()
 }
 
 func stopAllProcs() {

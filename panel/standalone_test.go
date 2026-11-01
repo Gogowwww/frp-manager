@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -63,6 +64,24 @@ func TestStandaloneIDs(t *testing.T) {
 	}
 	if got := strings.Join(serversFirst([]string{"frpc", "frps-b", "frpc2", "frps"}), ","); got != "frps,frps-b,frpc,frpc2" {
 		t.Errorf("ordre de lancement : %s", got)
+	}
+}
+
+// Nom du signal de docker stop dans la langue du journal, nom brut sinon
+// Name of the docker stop signal in the log language, raw name otherwise
+func TestSignalName(t *testing.T) {
+	for _, c := range []struct {
+		l    Lang
+		sig  os.Signal
+		want string
+	}{
+		{FR, syscall.SIGTERM, "terminé"}, {EN, syscall.SIGTERM, "terminated"},
+		{FR, os.Interrupt, "interrompu"}, {EN, os.Interrupt, "interrupt"},
+		{FR, syscall.SIGHUP, syscall.SIGHUP.String()},
+	} {
+		if got := c.l.signalName(c.sig); got != c.want {
+			t.Errorf("%s %v : %q, attendu %q", c.l, c.sig, got, c.want)
+		}
 	}
 }
 

@@ -446,7 +446,7 @@ func TestFrpcProxyStatus(t *testing.T) {
 func TestEnableFrpcAdmin(t *testing.T) {
 	base := "serverAddr = \"vps.example.com\"\nserverPort = 7000\n\n[[proxies]]\nname = \"ssh\"\ntype = \"tcp\"\nlocalPort = 22\n"
 	for _, c := range []string{base, "serverAddr = \"vps.example.com\"", ""} {
-		out, changed, err := enableFrpcAdmin(c, 7401)
+		out, changed, err := FR.enableFrpcAdmin(c, 7401)
 		if err != nil || !changed {
 			t.Fatal(c, err)
 		}
@@ -462,7 +462,7 @@ func TestEnableFrpcAdmin(t *testing.T) {
 		if c == base && len(listv(conf, "proxies")) != 1 {
 			t.Fatalf("%s", out)
 		}
-		if again, changed, _ := enableFrpcAdmin(out, 7402); changed || again != out {
+		if again, changed, _ := FR.enableFrpcAdmin(out, 7402); changed || again != out {
 			t.Fatal("ajouté deux fois")
 		}
 	}
@@ -470,15 +470,26 @@ func TestEnableFrpcAdmin(t *testing.T) {
 	// « range », pas dans la boucle
 	// Port range right after the connection: the block goes before the "range"
 	// line, not inside the loop
-	out, changed, err := enableFrpcAdmin("serverAddr = \"vps.example.com\"\n\n"+rangeTOML, 7401)
+	out, changed, err := FR.enableFrpcAdmin("serverAddr = \"vps.example.com\"\n\n"+rangeTOML, 7401)
 	if err != nil || !changed || strings.Index(out, "webServer.port") > strings.Index(out, "{{- range") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if err := FR.validateConfigContent("/etc/frp/frpc.toml", out); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := enableFrpcAdmin("[webServer]\naddr = \"127.0.0.1\"\n", 7400); err == nil {
+	if _, _, err := FR.enableFrpcAdmin("[webServer]\naddr = \"127.0.0.1\"\n", 7400); err == nil {
 		t.Fatal("webServer sans port accepté")
+	}
+	// Commentaire dans la langue de l'interface, une seule langue par fichier
+	// Comment in the interface language, a single language per file
+	for _, tc := range []struct {
+		l       Lang
+		in, out string
+	}{{FR, "# Tableau de bord local de frpc", "Local frpc dashboard"}, {EN, "# Local frpc dashboard", "Tableau de bord"}} {
+		out, _, _ := tc.l.enableFrpcAdmin(base, 7401)
+		if !strings.Contains(out, tc.in) || strings.Contains(out, tc.out) {
+			t.Errorf("%s : %s", tc.l, out)
+		}
 	}
 }
 

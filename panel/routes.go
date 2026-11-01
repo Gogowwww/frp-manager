@@ -248,7 +248,7 @@ func init() {
 			c.Fail(http.StatusInternalServerError, err.Error())
 			return
 		}
-		content, changed, err := enableFrpcAdmin(string(b), freeAdminPort(inst.Config))
+		content, changed, err := c.Lang.enableFrpcAdmin(string(b), freeAdminPort(inst.Config))
 		if err != nil {
 			c.Fail(http.StatusBadRequest, c.M("Config illisible : ", "Unreadable config: ")+err.Error())
 			return
@@ -930,7 +930,9 @@ func frpcProxyStatus(content string) (map[string]J, bool, error) {
 // enableFrpcAdmin ajoute à une config frpc un [webServer] local (clés à points,
 // avant la première table pour rester au niveau racine). Rien à faire si un
 // port est déjà configuré ; refus si [webServer] existe sans port.
-func enableFrpcAdmin(content string, port int) (string, bool, error) {
+// Le commentaire écrit au-dessus du bloc suit la langue l (celle de l'interface).
+// The comment written above the block follows the l language (the interface's).
+func (l Lang) enableFrpcAdmin(content string, port int) (string, bool, error) {
 	var conf map[string]any
 	if err := toml.Unmarshal([]byte(frpTOML(content)), &conf); err != nil {
 		return "", false, err
@@ -939,9 +941,10 @@ func enableFrpcAdmin(content string, port int) (string, bool, error) {
 		if tomlInt(mapv(conf, "webServer")["port"]) != 0 {
 			return content, false, nil
 		}
-		return "", false, errors.New("webServer sans port")
+		return "", false, errors.New(l.M("webServer sans port", "webServer without a port"))
 	}
-	block := fmt.Sprintf("# Tableau de bord local de frpc : FRP-Manager y lit les ports attribués par le serveur\n"+
+	block := fmt.Sprintf("# "+l.M("Tableau de bord local de frpc : FRP-Manager y lit les ports attribués par le serveur",
+		"Local frpc dashboard: FRP-Manager reads the ports assigned by the server from it")+"\n"+
 		"webServer.addr = \"127.0.0.1\"\nwebServer.port = %d\nwebServer.user = \"frp-manager\"\nwebServer.password = %q\n\n",
 		port, tokenHex(16))
 	lines := strings.SplitAfter(content, "\n")

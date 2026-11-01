@@ -593,10 +593,18 @@ legend.fieldset-title + * { clear: both; }
 /* Tracé d'un tunnel : accès public ──▶ service local */
 .admin-steps { margin: 10px 0 12px 18px; display: grid; gap: 6px; color: var(--text-2); }
 .route { min-width: 0; container-type: inline-size; }
-.route-in { display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr); align-items: center; min-width: 0; }
+/* Adresse publique plus large que le service local (souvent « 127.0.0.1:port ») :
+   3/5 et 2/5 de la place, mêmes proportions sur chaque ligne pour aligner les flèches */
+/* Public address wider than the local service (often "127.0.0.1:port"): 3/5
+   and 2/5 of the room, same ratios on every row so the arrows line up */
+.route-in { display: grid; grid-template-columns: minmax(0, 3fr) 56px minmax(0, 2fr); align-items: center; min-width: 0; }
 .route-end { display: flex; flex-direction: column; min-width: 0; }
 .route-end small { font-size: 11.5px; color: var(--text-3); }
-.route-end .mono { max-width: 100%; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Adresse jamais tronquée : elle revient à la ligne aux points prévus (<wbr>),
+   et n'importe où seulement si un morceau dépasse encore */
+/* Address never truncated: it wraps at the planned points (<wbr>), and
+   anywhere only if a piece still overflows */
+.route-end .mono { max-width: 100%; min-width: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
 /* Extrémité publique calée à droite : la flèche est centrée entre les deux adresses */
 .route-end:first-child { align-items: flex-end; text-align: right; }
 .route-line { position: relative; height: 2px; margin: 14px 12px 0 10px; background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 9px); opacity: .8; }
@@ -606,17 +614,23 @@ legend.fieldset-title + * { clear: both; }
 @keyframes flow { to { background-position: 9px 0; } }
 .row-flags { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .route-end .route-text { max-width: 100%; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Adresse publique copiable : le texte garde sa troncature, l'icône reste visible */
-/* Copyable public address: the text keeps its truncation, the icon stays visible */
-.route-copy { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 0 2px; margin: 0 -2px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; cursor: copy; }
-.route-copy .icon { width: 13px; height: 13px; color: var(--text-3); }
+/* Adresse publique copiable : le texte revient à la ligne, l'icône reste visible */
+/* Copyable public address: the text wraps, the icon stays visible */
+.route-copy { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 0 2px; margin: 0 -2px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: inherit; cursor: copy; }
+.route-copy .icon { flex: none; width: 13px; height: 13px; color: var(--text-3); }
 .route-copy:hover .mono, .route-copy:focus-visible .mono { text-decoration: underline dotted; text-underline-offset: 3px; }
 .route-copy:hover .icon, .route-copy:focus-visible .icon { color: var(--accent); }
 /* Tracé trop étroit pour « IP:port ──▶ IP:port » (petit écran, colonne serrée) :
    les deux extrémités l'une sous l'autre, flèche vers le bas, adresses entières */
 /* Route too narrow for "IP:port ──▶ IP:port" (small screen, tight column): the
    two ends one below the other, arrow pointing down, whole addresses */
-@container (max-width: 420px) {
+/* Seuil à 480 px : au-dessus, l'adresse publique garde 250 px, assez pour un
+   domaine d'une trentaine de caractères avec son port ; plus long, il revient à
+   la ligne (avant « :port », après « . » ou « - ») */
+/* 480 px threshold: above it, the public address keeps 250 px, enough for a
+   domain of about thirty characters with its port; a longer one wraps (before
+   ":port", after "." or "-") */
+@container (max-width: 480px) {
   .route-in { grid-template-columns: minmax(0, 1fr); }
   .route-end:first-child { align-items: flex-start; text-align: left; }
   .route-line { width: 2px; height: 18px; margin: 6px 0 8px 5px; background: repeating-linear-gradient(180deg, var(--accent) 0 4px, transparent 4px 7px); }
