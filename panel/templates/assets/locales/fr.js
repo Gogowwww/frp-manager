@@ -290,6 +290,8 @@ export default {
     noNftTextDocker: 'Le pare-feu s’appuie sur nftables, sur la machine hôte. Le bouton ci-dessous l’installe sur l’hôte, ou à la main : apt install nftables ({detail})',
     noNftTitleStandalone: 'Le conteneur ne peut pas filtrer',
     noNftTextStandalone: 'nftables fait partie de l’image, mais le conteneur n’a pas la capacité NET_ADMIN. Ajoutez cap_add: [NET_ADMIN] dans docker-compose.yml (avec network_mode: host pour filtrer le trafic de la machine), puis recréez le conteneur. ({detail})',
+    noNetfilterTitle: 'Le noyau ne permet pas de filtrer',
+    noNetfilterText: 'nftables est présent, mais le noyau, ou l’émulation (QEMU pour une autre architecture, par exemple), ne prend pas en charge netfilter : la capacité NET_ADMIN n’y changerait rien. Le pare-feu fonctionne sur une machine dont le noyau prend en charge nftables. ({detail})',
     installNft: 'Installer nftables',
     statusTitle: 'État du filtrage',
     enable: 'Filtrer les connexions',
@@ -481,6 +483,7 @@ export default {
 
   config: {
     title: 'Configuration',
+    generatedBy: 'généré par FRP Manager',
     randomPort: 'Aléatoire',
     randomPortHint: 'Tirer un port au hasard (10000–32767)',
     readOnly: 'Votre compte peut consulter cette configuration, pas la modifier.',

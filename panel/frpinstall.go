@@ -455,6 +455,31 @@ func stopRunningFrpServices(bins []string) []string {
 	return running
 }
 
+// frpServiceAlive : le service frp svc tourne encore (ou démarre).
+// frpServiceAlive: the frp service svc is still running (or starting).
+func frpServiceAlive(svc string) bool {
+	if standalone {
+		return procFor(svc).status(false)["running"] == true
+	}
+	_, out, _ := runCmd([]string{"systemctl", "is-active", svc})
+	s := strings.TrimSpace(out)
+	return s == "active" || s == "activating"
+}
+
+// frpServicePort : port de contrôle du frps lancé par le service svc, 0 si inconnu.
+// frpServicePort: control port of the frps run by the svc service, 0 if unknown.
+func frpServicePort(svc string) int {
+	if standalone {
+		return frpsControlPort(standaloneInstances()[svc])
+	}
+	for _, inst := range instancesSnapshot() {
+		if inst.Source == "systemd" && inst.Service == svc {
+			return frpsControlPort(inst)
+		}
+	}
+	return 0
+}
+
 // posixParts : composants d'un chemin d'archive (sans « . » ni vides).
 func posixParts(name string) []string {
 	var parts []string
@@ -596,7 +621,9 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 		if len(running) > 0 {
 			list := strings.Join(running, ", ")
 			logf(l.M("[INFO] Redémarrage : "+list+" …", "[INFO] Restarting: "+list+"…"))
-			for _, svc := range running {
+			// frps d'abord, et frpc seulement une fois frps à l'écoute
+			// frps first, and frpc only once frps is listening
+			start := func(svc string) (bool, string) {
 				var ok bool
 				var e string
 				if standalone {
@@ -605,11 +632,12 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 					ok, _, e = runCmd([]string{"systemctl", "start", svc})
 				}
 				if ok {
-					logf("[OK] " + svc)
-				} else {
-					logf("[WARN] " + svc + " : " + e)
+					return true, svc
 				}
+				return false, svc + " : " + e
 			}
+			startServersFirst(l, running, start, frpServiceAlive, frpServicePort,
+				func(level, msg string) { logf(level + " " + msg) })
 		}
 	}()
 	logf(l.M("[INFO] Extraction …", "[INFO] Extracting…"))

@@ -69,15 +69,18 @@ func tlsConfig() *tls.Config {
 	if !boolv(cfg(), "ssl_enabled", true) {
 		return nil
 	}
+	l := systemLang()
 	if !fileExists(sslCertFile) || !fileExists(sslKeyFile) {
 		if err := generateSelfSignedCert(); err != nil {
-			log.Printf("[WARN] Impossible de générer le certificat SSL — démarrage en HTTP (%v)", err)
+			log.Printf("[WARN] %s", l.M(fmt.Sprintf("Impossible de générer le certificat SSL — démarrage en HTTP (%v)", err),
+				fmt.Sprintf("Cannot generate the SSL certificate — starting over HTTP (%v)", err)))
 			return nil
 		}
 	}
 	cert, err := tls.LoadX509KeyPair(sslCertFile, sslKeyFile)
 	if err != nil {
-		log.Printf("[WARN] Certificat SSL invalide (%v) — démarrage en HTTP", err)
+		log.Printf("[WARN] %s", l.M(fmt.Sprintf("Certificat SSL invalide (%v) — démarrage en HTTP", err),
+			fmt.Sprintf("Invalid SSL certificate (%v) — starting over HTTP", err)))
 		return nil
 	}
 	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
@@ -116,20 +119,28 @@ func main() {
 		proto = "https"
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	log.Printf("[INFO] FRP Manager %s démarré sur %s://%s", panelVersion, proto, addr)
+	// Journal de démarrage dans une seule langue : celle du système (LANG),
+	// anglais par défaut, comme les messages des tâches de fond
+	// Startup log in a single language: the system's (LANG), English by
+	// default, like the background task messages
+	l := systemLang()
+	log.Printf("[INFO] %s", l.M(fmt.Sprintf("FRP Manager %s démarré sur %s://%s", panelVersion, proto, addr),
+		fmt.Sprintf("FRP Manager %s started on %s://%s", panelVersion, proto, addr)))
 	if needsSetup() {
-		log.Printf("[INFO] Aucun mot de passe : ouvrez le panel pour créer l'identifiant administrateur.")
+		log.Printf("[INFO] %s", l.M("Aucun mot de passe : ouvrez le panel pour créer l'identifiant administrateur.",
+			"No password: open the panel to create the administrator login."))
 		if host != "127.0.0.1" && host != "::1" && host != "localhost" {
-			log.Printf("[WARN] Le panel écoute sur %s sans mot de passe : la première personne qui l'ouvre choisit les identifiants. Configurez-le sans attendre.", host)
+			log.Printf("[WARN] %s", l.M("Le panel écoute sur "+host+" sans mot de passe : la première personne qui l'ouvre choisit les identifiants. Configurez-le sans attendre.",
+				"The panel listens on "+host+" without a password: the first person who opens it chooses the login. Set it up right away."))
 		}
 	}
 	if !mirrorsAllowed() {
-		log.Printf("[INFO] Miroirs de téléchargement tiers désactivés")
+		log.Printf("[INFO] %s", l.M("Miroirs de téléchargement tiers désactivés", "Third-party download mirrors disabled"))
 	}
 	if standalone {
 		// Conteneur autonome : le panel lance frps et frpc, et les arrête avec lui
 		// Standalone container: the panel runs frps and frpc, and stops them with it
-		log.Printf("[INFO] Mode autonome : frps et frpc lancés par le panel")
+		log.Printf("[INFO] %s", l.M("Mode autonome : frps et frpc lancés par le panel", "Standalone mode: frps and frpc run by the panel"))
 		go handleShutdown()
 		go standaloneBoot()
 	}

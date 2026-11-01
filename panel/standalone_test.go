@@ -503,3 +503,35 @@ func TestStandaloneFirewall(t *testing.T) {
 		t.Fatalf("installation : %d %s", r.code, r.text())
 	}
 }
+
+// Noyau ou émulation (QEMU) sans netfilter : ni NET_ADMIN conseillé, ni installation
+// Kernel or emulation (QEMU) without netfilter: neither NET_ADMIN advised, nor installation
+func TestStandaloneFirewallNoNetfilter(t *testing.T) {
+	mode := "run"
+	e := standaloneEnv(t, &mode)
+	os.WriteFile(filepath.Join(frpConfDir, "frps.toml"), []byte(defaultFrpsConfig), 0o600)
+	netfilter := "Error: Unable to initialize Netlink socket: Protocol not supported"
+	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
+		switch {
+		case args[0] == "nft" && args[1] == "--version":
+			return true, "nftables v1.1.3", ""
+		case args[0] == "nft":
+			return false, "", netfilter
+		}
+		return false, "", args[0] + ": command not found"
+	}
+	c := e.owner()
+	d := c.get("/api/firewall").json()
+	if d["available"] != false || d["no_netfilter"] != true {
+		t.Fatalf("sans netfilter : %v", d)
+	}
+	if r := c.post("/api/firewall/install", nil); r.code != 400 || strings.Contains(r.text(), "NET_ADMIN") || !strings.Contains(r.text(), "netfilter") {
+		t.Fatalf("installation sans netfilter : %d %s", r.code, r.text())
+	}
+	// Capacité manquante : no_netfilter reste faux
+	// Missing capability: no_netfilter stays false
+	netfilter = "Error: Could not process rule: Operation not permitted"
+	if d := c.get("/api/firewall").json(); d["available"] != false || d["no_netfilter"] != false {
+		t.Fatalf("sans NET_ADMIN : %v", d)
+	}
+}

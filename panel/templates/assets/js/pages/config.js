@@ -354,7 +354,10 @@ function sectionBlock(section, cfg) {
 async function save(restart) {
   const v = values();
   try {
-    const content = S.type === 'frps' ? generateServer(v, S.iid) : await withExistingBlocks(generateClient(v, S.iid));
+    // En-tête du fichier dans la langue de l'interface
+    // File header in the interface language
+    const by = t('config.generatedBy');
+    const content = S.type === 'frps' ? generateServer(v, S.iid, by) : await withExistingBlocks(generateClient(v, S.iid, by));
     const d = await post(`/api/config/${encodeURIComponent(S.iid)}`, { content });
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
     S.snapshot = JSON.stringify(values());

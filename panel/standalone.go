@@ -532,18 +532,22 @@ func standaloneBoot() {
 	ensureStandaloneConfigs(l)
 	detectFrp(true)
 	insts := standaloneInstances()
-	for _, id := range serversFirst(sortedKeys(autostartIDs())) {
-		inst := insts[id]
-		if inst == nil {
-			continue
+	var ids []string
+	for _, id := range sortedKeys(autostartIDs()) {
+		if insts[id] != nil {
+			ids = append(ids, id)
 		}
-		ok, msg := procFor(id).start(l, inst)
-		level := "[INFO]"
-		if !ok {
-			level = "[WARN]"
+	}
+	// frps d'abord ; les frpc attendent qu'il écoute
+	// frps first; the frpc wait for it to listen
+	start := func(id string) (bool, string) { return procFor(id).start(l, insts[id]) }
+	port := func(id string) int { return frpsControlPort(insts[id]) }
+	startServersFirst(l, ids, start, frpServiceAlive, port, func(level, msg string) {
+		if level == "[OK]" {
+			level = "[INFO]"
 		}
 		log.Printf("%s %s", level, msg)
-	}
+	})
 	invalidateCache(false)
 }
 
@@ -607,7 +611,7 @@ func handleShutdown() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-ch
-	log.Printf("[INFO] %v : arrêt de frps et frpc", sig)
+	log.Printf("[INFO] %s", systemLang().M(fmt.Sprintf("%v : arrêt de frps et frpc", sig), fmt.Sprintf("%v: stopping frps and frpc", sig)))
 	stopAllProcs()
 	os.Exit(0)
 }

@@ -161,6 +161,15 @@ function build() {
     })));
     return;
   }
+  if (!d.available && d.no_netfilter) {
+    // Noyau ou émulation (QEMU) sans netfilter : NET_ADMIN n'y changerait rien
+    // Kernel or emulation (QEMU) without netfilter: NET_ADMIN would change nothing
+    root.replaceChildren(head, callout({
+      type: 'warn', iconName: 'shield', title: t('firewall.noNetfilterTitle'),
+      text: t('firewall.noNetfilterText', { detail: d.nft }),
+    }));
+    return;
+  }
   if (!d.available && d.standalone) {
     // nft est dans l'image : il manque la capacité NET_ADMIN, rien à installer
     // nft is in the image: the NET_ADMIN capability is missing, nothing to install

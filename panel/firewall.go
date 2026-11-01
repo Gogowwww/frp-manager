@@ -1724,6 +1724,19 @@ func (l Lang) fwCheckRuleFrps(rules, saved []J, frpsIDs []string) error {
 	return nil
 }
 
+// nftNetfilterMissing : l'erreur de nft vient du noyau, ou de l'émulation (QEMU
+// pour une autre architecture), qui ne prend pas en charge netfilter (« Unable
+// to initialize Netlink socket: Protocol not supported ») : la capacité
+// NET_ADMIN n'y changerait rien, au contraire de « Operation not permitted ».
+// nftNetfilterMissing: the nft error comes from the kernel, or the emulation
+// (QEMU for another architecture), not supporting netfilter ("Unable to
+// initialize Netlink socket: Protocol not supported"): the NET_ADMIN capability
+// would change nothing, unlike "Operation not permitted".
+func nftNetfilterMissing(e string) bool {
+	s := strings.ToLower(e)
+	return strings.Contains(s, "protocol not supported") || strings.Contains(s, "address family not supported")
+}
+
 func init() {
 	route("GET /api/firewall", "api_firewall_get", perm(P("firewall.view"), func(c *Ctx) {
 		detectFrp(false)
@@ -1770,8 +1783,8 @@ func init() {
 		}
 		c.JSON(J{
 			"ok": true, "has_frps": hasFrps, "frps": frpsIDs, "available": ok, "nft": nft,
-			"enabled": fc.Enabled, "rules": rules, "ports": c.Lang.withPortLabels(known),
-			"active": ok && fwTablePresent(), "counters": counters,
+			"no_netfilter": !ok && nftNetfilterMissing(e), "enabled": fc.Enabled, "rules": rules,
+			"ports": c.Lang.withPortLabels(known), "active": ok && fwTablePresent(), "counters": counters,
 			"asns": asnInfo(fwRuleASNs(fc.Rules)), "lists": listsInfo(fc.Rules),
 			"client_ip": nullable(client), "client_verdicts": verdicts,
 			"panel_port": fwPanelPort(), "in_docker": inDocker, "standalone": standalone,
@@ -1783,6 +1796,13 @@ func init() {
 		if standalone {
 			// L'image contient déjà nftables ; un paquet ajouté ici disparaîtrait avec le conteneur
 			// The image already contains nftables; a package added here would vanish with the container
+			if _, _, le := runHost([]string{"nft", "list", "tables"}, 15*time.Second, nil); nftNetfilterMissing(le) {
+				// Noyau ou émulation sans netfilter : NET_ADMIN n'y changerait rien
+				// Kernel or emulation without netfilter: NET_ADMIN would change nothing
+				c.Fail(http.StatusBadRequest, c.M("Le noyau (ou l'émulation) ne prend pas en charge netfilter : nftables ne peut pas filtrer dans ce conteneur.",
+					"The kernel (or the emulation) does not support netfilter: nftables cannot filter in this container."))
+				return
+			}
 			c.Fail(http.StatusBadRequest, c.M("En mode autonome, nftables fait partie de l'image : donnez au conteneur la capacité NET_ADMIN.",
 				"In standalone mode, nftables is part of the image: give the container the NET_ADMIN capability."))
 			return

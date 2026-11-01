@@ -162,7 +162,7 @@ func cfgUpdateLocked(patch Cfg) (Cfg, error) {
 func ensureManagerConfig() {
 	data, err := readConfigFile()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Printf("[WARN] %s illisible : laissé tel quel", mgrConfFile)
+		log.Printf("[WARN] %s", systemLang().M(mgrConfFile+" illisible : laissé tel quel", mgrConfFile+" unreadable: left as is"))
 		return
 	}
 	exists := err == nil
@@ -186,7 +186,7 @@ func ensureManagerConfig() {
 		c["bind_host"] = "0.0.0.0"
 	}
 	if err := saveManagerConfig(c); err != nil {
-		log.Printf("[WARN] Configuration non enregistrée : %v", err)
+		log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Configuration non enregistrée : %v", err), fmt.Sprintf("Configuration not saved: %v", err)))
 	}
 	setCfg(c)
 }
