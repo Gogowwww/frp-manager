@@ -320,7 +320,9 @@ function breakable(text) {
   const parts = isV6 ? host.split(/(?<=:)(?=[^:])/)
     : /^[\d.]+$/.test(host) ? [host] : host.split(/(?<=[.,-])/);
   const out = parts.flatMap((s, k) => (k ? [h('wbr'), s] : [s]));
-  if (hasPort) out.push(h('wbr'), text.slice(i));
+  // Le port ou la plage de ports reste d'un seul tenant (pas de coupure après le tiret)
+  // The port or port range stays in one piece (no break after the hyphen)
+  if (hasPort) out.push(h('wbr'), h('span', { class: 'route-port' }, text.slice(i)));
   return out;
 }
 

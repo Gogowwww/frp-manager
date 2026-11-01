@@ -617,6 +617,7 @@ legend.fieldset-title + * { clear: both; }
 /* Adresse publique copiable : le texte revient à la ligne, l'icône reste visible */
 /* Copyable public address: the text wraps, the icon stays visible */
 .route-copy { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; padding: 0 2px; margin: 0 -2px; border: 0; border-radius: 4px; background: none; color: inherit; font: inherit; text-align: inherit; cursor: copy; }
+.route-port { white-space: nowrap; }
 .route-copy .icon { flex: none; width: 13px; height: 13px; color: var(--text-3); }
 .route-copy:hover .mono, .route-copy:focus-visible .mono { text-decoration: underline dotted; text-underline-offset: 3px; }
 .route-copy:hover .icon, .route-copy:focus-visible .icon { color: var(--accent); }
