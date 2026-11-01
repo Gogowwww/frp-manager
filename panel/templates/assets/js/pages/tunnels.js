@@ -302,12 +302,16 @@ function copyAddress(text) {
   }, h('span', { class: 'mono' }, text), icon('copy'));
 }
 
+// .route mesure la place disponible (requête de conteneur) : trop étroite, les
+// deux extrémités passent l'une sous l'autre au lieu d'être tronquées.
+// .route measures the available room (container query): when too narrow, the
+// two ends go one below the other instead of being truncated.
 function route(fromLabel, from, toLabel, to, fromIsText = false, fromCopy = '') {
-  return h('div', { class: 'route' },
+  return h('div', { class: 'route' }, h('div', { class: 'route-in' },
     h('span', { class: 'route-end' }, h('small', null, fromLabel),
       fromCopy ? copyAddress(fromCopy) : h('span', { class: fromIsText ? 'route-text' : 'mono', title: from }, from)),
     h('span', { class: 'route-line', 'aria-hidden': 'true' }),
-    h('span', { class: 'route-end' }, h('small', null, toLabel), h('span', { class: 'mono' }, to)));
+    h('span', { class: 'route-end' }, h('small', null, toLabel), h('span', { class: 'mono', title: to }, to))));
 }
 
 function proxyRow(p) {
