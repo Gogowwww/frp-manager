@@ -215,6 +215,27 @@ const PROXY_KEYS = new Set([
 ]);
 const VISITOR_KEYS = new Set(['name', 'type', 'serverName', 'secretKey', 'bindAddr', 'bindPort']);
 
+/** « hôte:port » utilisable tel quel : une IPv6 (avec ou sans zone, « fe80::1%eth0 »)
+ *  va entre crochets, sauf si elle y est déjà ; IPv4 et noms de domaine inchangés.
+ *  "host:port" usable as is: an IPv6 (with or without a zone, "fe80::1%eth0")
+ *  goes between brackets, unless it already is; IPv4 and domain names unchanged. */
+export function joinHostPort(host, port) {
+  const text = String(host);
+  return text.includes(':') && !text.startsWith('[') ? `[${text}]:${port}` : `${text}:${port}`;
+}
+
+/** Adresse « hôte:port » rendue par frpc : il colle l'adresse du serveur devant
+ *  « :port », sans crochets pour une IPv6 (« 2001:db8::1:6000 »). Plusieurs « : »
+ *  sans crochet, c'est une IPv6 suivie du port : on les ajoute.
+ *  "host:port" address returned by frpc: it puts the server address before
+ *  ":port", without brackets for an IPv6 ("2001:db8::1:6000"). Several ":"
+ *  without a bracket means an IPv6 followed by the port: they are added. */
+export function fixHostPort(addr) {
+  const text = String(addr || '');
+  const m = /^([^[\]]*:[^[\]]*):(\d+)$/.exec(text);
+  return m && m[1] ? joinHostPort(m[1], m[2]) : text;
+}
+
 /** Un port (« 8080 ») ou une liste de ports et de plages (« 6000-6006,6007 »).
  *  A port ("8080") or a list of ports and ranges ("6000-6006,6007"). */
 const PORT_SPEC_RE = /^\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*$/;

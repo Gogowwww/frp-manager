@@ -14,7 +14,7 @@ import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
   portSpecCount, isPortRange, isRanged, isVisitorRanged, frpcNames, visitorNames, MAX_RANGE_PORTS, PORT_TOKEN,
-  TCP_UDP, pairProxies, splitPair,
+  TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -258,8 +258,8 @@ async function restartFrpc() {
 
 function publicEndpoint(p) {
   if (hasRemotePort(p.type)) {
-    if (p.remotePort) return `${S.serverAddr || t('tunnels.server')}:${p.remotePort}`;
-    return S.status?.proxies?.[p.name]?.remote_addr || t('tunnels.randomPort');
+    if (p.remotePort) return joinHostPort(S.serverAddr || t('tunnels.server'), p.remotePort);
+    return fixHostPort(S.status?.proxies?.[p.name]?.remote_addr) || t('tunnels.randomPort');
   }
   if (hasDomains(p.type)) return p.domains || t('tunnels.noDomain');
   return t('tunnels.privateOnly');
@@ -274,12 +274,14 @@ function publicCopyValue(p) {
   // Range, whatever the type: several addresses (or a domain with {port})
   if (isRanged(p)) return '';
   if (hasRemotePort(p.type)) {
-    if (p.remotePort) return S.serverAddr ? `${S.serverAddr}:${p.remotePort}` : '';
+    if (p.remotePort) return S.serverAddr ? joinHostPort(S.serverAddr, p.remotePort) : '';
     // frpc peut rendre « :port » sans hôte : on y ajoute l'adresse du serveur
     // frpc may return ":port" without a host: the server address is added
     const live = S.status?.proxies?.[p.name]?.remote_addr || '';
-    if (live.startsWith(':')) return S.serverAddr ? `${S.serverAddr}${live}` : '';
-    return live;
+    // « ::1:6000 » commence aussi par « : » : seul « :port » seul est complété
+    // "::1:6000" also starts with ":": only a bare ":port" is completed
+    if (/^:\d+$/.test(live)) return S.serverAddr ? joinHostPort(S.serverAddr, live.slice(1)) : '';
+    return fixHostPort(live);
   }
   if (hasDomains(p.type) && p.domains && !p.domains.includes(',')) return p.domains;
   return '';
@@ -303,15 +305,20 @@ function copyAddress(text) {
 }
 
 /** Adresse découpée pour un retour à la ligne propre : avant « :port », et dans
- *  un nom de domaine après « . », « - » ou « , » ; une IP reste d'un seul tenant.
- *  Address split for a clean line break: before ":port", and in a domain name
- *  after ".", "-" or ","; an IP stays in one piece. */
+ *  un nom de domaine après « . », « - » ou « , », dans une IPv6 entre deux
+ *  groupes ; une IPv4 reste d'un seul tenant.
+ *  Address split for a clean line break: before ":port", in a domain name
+ *  after ".", "-" or ",", in an IPv6 between two groups; an IPv4 stays in one
+ *  piece. */
 function breakable(text) {
   const i = text.lastIndexOf(':');
   const hasPort = i > 0 && /^[\d,-]+$/.test(text.slice(i + 1));
   const host = hasPort ? text.slice(0, i) : text;
-  const isIP = /^[\d.]+$/.test(host) || host.startsWith('[') || host.includes(':');
-  const parts = isIP ? [host] : host.split(/(?<=[.,-])/);
+  // IPv6 : coupure possible seulement entre deux groupes, après « : » ou « :: »
+  // IPv6: a break is only possible between two groups, after ":" or "::"
+  const isV6 = host.startsWith('[') || host.includes(':');
+  const parts = isV6 ? host.split(/(?<=:)(?=[^:])/)
+    : /^[\d.]+$/.test(host) ? [host] : host.split(/(?<=[.,-])/);
   const out = parts.flatMap((s, k) => (k ? [h('wbr'), s] : [s]));
   if (hasPort) out.push(h('wbr'), text.slice(i));
   return out;
@@ -356,7 +363,7 @@ function proxyRow(p) {
   h('div', { class: 'row-name' },
     h('span', { title: halves.length > 1 ? halves.map((x) => x.name).join(', ') : null }, p.name || t('tunnels.unnamed')),
     halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase()))),
-  route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), `${p.localIP || '127.0.0.1'}:${p.localPort || '?'}`,
+  route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), joinHostPort(p.localIP || '127.0.0.1', p.localPort || '?'),
     hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains), publicCopyValue(p)),
   h('div', { class: 'row-flags' }, flags),
   h('div', { class: 'row-actions' },
@@ -379,7 +386,7 @@ function renderVisitors() {
       tabindex: '0', onClick: open, onKeydown: (e) => { if (e.key === 'Enter') open(); },
     },
     h('div', { class: 'row-name' }, h('span', null, v.name || t('tunnels.unnamed')), h('span', { class: 'badge badge-mono badge-outline' }, v.type.toUpperCase())),
-    route(t('visitors.shared'), v.serverName || '?', t('visitors.here'), `${v.bindAddr || '127.0.0.1'}:${v.bindPort || '?'}`),
+    route(t('visitors.shared'), v.serverName || '?', t('visitors.here'), joinHostPort(v.bindAddr || '127.0.0.1', v.bindPort || '?')),
     h('div', { class: 'row-flags' },
       isVisitorRanged(v) ? badge(t('tunnels.flags.range', { count: portSpecCount(v.bindPort) }), '') : null),
     h('div', { class: 'row-actions' },
