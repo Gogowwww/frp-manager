@@ -28,7 +28,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -60,7 +59,7 @@ type cborDecoder struct {
 	depth int
 }
 
-var errCBOR = errors.New("CBOR invalide")
+var errCBOR = langErr("CBOR invalide", "invalid CBOR")
 
 // cborDecode : première valeur de b → (valeur, octets lus). Entiers en int64,
 // tables en map[any]any (clés int64 ou string).
@@ -216,7 +215,7 @@ func parseCOSEKey(raw []byte) (*coseKey, error) {
 	}
 	i64 := func(k int64) int64 { x, _ := m[k].(int64); return x }
 	bs := func(k int64) []byte { x, _ := m[k].([]byte); return x }
-	bad := errors.New("clé publique non prise en charge")
+	bad := langErr("clé publique non prise en charge", "unsupported public key")
 	alg := i64(3)
 	switch alg {
 	case coseES256:
@@ -285,7 +284,7 @@ type authData struct {
 }
 
 func parseAuthData(b []byte) (*authData, error) {
-	bad := errors.New("données d'authentificateur invalides")
+	bad := langErr("données d'authentificateur invalides", "invalid authenticator data")
 	if len(b) < 37 {
 		return nil, bad
 	}
@@ -353,16 +352,16 @@ func passkeyOriginHost(origin string) string {
 func parseClientData(raw []byte, typ, challenge string) (*clientData, error) {
 	var cd clientData
 	if err := json.Unmarshal(raw, &cd); err != nil {
-		return nil, errors.New("clientDataJSON illisible")
+		return nil, langErr("clientDataJSON illisible", "unreadable clientDataJSON")
 	}
 	if cd.Type != typ {
-		return nil, errors.New("type de cérémonie inattendu")
+		return nil, langErr("type de cérémonie inattendu", "unexpected ceremony type")
 	}
 	if challenge == "" || subtle.ConstantTimeCompare([]byte(cd.Challenge), []byte(challenge)) != 1 {
-		return nil, errors.New("défi inconnu ou expiré")
+		return nil, langErr("défi inconnu ou expiré", "unknown or expired challenge")
 	}
 	if cd.CrossOrigin {
-		return nil, errors.New("demande venue d'un cadre d'un autre site")
+		return nil, langErr("demande venue d'un cadre d'un autre site", "request from a frame of another site")
 	}
 	return &cd, nil
 }
@@ -508,7 +507,7 @@ func (c *Ctx) passkeyRegistration(cred map[string]any, challenge string) (map[st
 	cdRaw, ok1 := b64field(resp, "clientDataJSON", 4096)
 	attRaw, ok2 := b64field(resp, "attestationObject", 16384)
 	if !ok1 || !ok2 {
-		return nil, errors.New("réponse incomplète")
+		return nil, langErr("réponse incomplète", "incomplete response")
 	}
 	cd, err := parseClientData(cdRaw, "webauthn.create", challenge)
 	if err != nil {
@@ -516,15 +515,15 @@ func (c *Ctx) passkeyRegistration(cred map[string]any, challenge string) (map[st
 	}
 	rpID := passkeyOriginHost(cd.Origin)
 	if rpID == "" {
-		return nil, errors.New("origine refusée : " + cd.Origin)
+		return nil, langErr("origine refusée : "+cd.Origin, "origin rejected: "+cd.Origin)
 	}
 	if !c.sameHost(cd.Origin) {
-		return nil, errors.New("origine différente de l'adresse du panel : " + cd.Origin)
+		return nil, langErr("origine différente de l'adresse du panel : "+cd.Origin, "origin differs from the panel address: "+cd.Origin)
 	}
 	v, n, err := cborDecode(attRaw)
 	att, isMap := v.(map[any]any)
 	if err != nil || !isMap || n != len(attRaw) {
-		return nil, errors.New("attestationObject illisible")
+		return nil, langErr("attestationObject illisible", "unreadable attestationObject")
 	}
 	adRaw, _ := att["authData"].([]byte)
 	ad, err := parseAuthData(adRaw)
@@ -533,13 +532,13 @@ func (c *Ctx) passkeyRegistration(cred map[string]any, challenge string) (map[st
 	}
 	want := sha256.Sum256([]byte(rpID))
 	if subtle.ConstantTimeCompare(ad.rpIDHash, want[:]) != 1 {
-		return nil, errors.New("passkey créée pour un autre domaine")
+		return nil, langErr("passkey créée pour un autre domaine", "passkey created for another domain")
 	}
 	if ad.flags&flagUP == 0 || ad.flags&flagUV == 0 {
-		return nil, errors.New("utilisateur non vérifié par l'appareil")
+		return nil, langErr("utilisateur non vérifié par l'appareil", "user not verified by the device")
 	}
 	if ad.flags&flagAT == 0 {
-		return nil, errors.New("aucune clé dans la réponse")
+		return nil, langErr("aucune clé dans la réponse", "no key in the response")
 	}
 	key, err := parseCOSEKey(ad.credKey)
 	if err != nil {
@@ -547,7 +546,7 @@ func (c *Ctx) passkeyRegistration(cred map[string]any, challenge string) (map[st
 	}
 	credID := base64.RawURLEncoding.EncodeToString(ad.credID)
 	if id, _ := cred["id"].(string); id != credID {
-		return nil, errors.New("identifiant de passkey incohérent")
+		return nil, langErr("identifiant de passkey incohérent", "inconsistent passkey ID")
 	}
 	var transports []any
 	if list, ok := resp["transports"].([]any); ok && len(list) <= 8 {
@@ -589,7 +588,7 @@ func passkeyAssertion(cred map[string]any, challenge string) (User, map[string]a
 	sig, ok3 := b64field(resp, "signature", 1024)
 	rawID, ok4 := b64field(cred, "rawId", 1023)
 	if !ok1 || !ok2 || !ok3 || !ok4 || len(rawID) == 0 {
-		return nil, nil, nil, errors.New("réponse incomplète")
+		return nil, nil, nil, langErr("réponse incomplète", "incomplete response")
 	}
 	cd, err := parseClientData(cdRaw, "webauthn.get", challenge)
 	if err != nil {
@@ -605,20 +604,20 @@ func passkeyAssertion(cred map[string]any, challenge string) (User, map[string]a
 		}
 	}
 	if pk == nil {
-		return nil, nil, nil, errors.New("passkey inconnue")
+		return nil, nil, nil, langErr("passkey inconnue", "unknown passkey")
 	}
 	if user["source"] != "local" || !boolv(user, "enabled", true) {
-		return nil, nil, nil, errors.New("compte désactivé")
+		return nil, nil, nil, langErr("compte désactivé", "account disabled")
 	}
 	if uh, ok := resp["userHandle"].(string); ok && uh != "" {
 		got, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(uh, "="))
 		if err != nil || subtle.ConstantTimeCompare(got, []byte(str(user, "id", ""))) != 1 {
-			return nil, nil, nil, errors.New("passkey d'un autre compte")
+			return nil, nil, nil, langErr("passkey d'un autre compte", "passkey of another account")
 		}
 	}
 	rpID := str(pk, "rp_id", "")
 	if host := passkeyOriginHost(cd.Origin); host == "" || host != rpID {
-		return nil, nil, nil, errors.New("origine refusée : " + cd.Origin)
+		return nil, nil, nil, langErr("origine refusée : "+cd.Origin, "origin rejected: "+cd.Origin)
 	}
 	ad, err := parseAuthData(adRaw)
 	if err != nil {
@@ -626,10 +625,10 @@ func passkeyAssertion(cred map[string]any, challenge string) (User, map[string]a
 	}
 	want := sha256.Sum256([]byte(rpID))
 	if subtle.ConstantTimeCompare(ad.rpIDHash, want[:]) != 1 {
-		return nil, nil, nil, errors.New("signature faite pour un autre domaine")
+		return nil, nil, nil, langErr("signature faite pour un autre domaine", "signature made for another domain")
 	}
 	if ad.flags&flagUP == 0 || ad.flags&flagUV == 0 {
-		return nil, nil, nil, errors.New("utilisateur non vérifié par l'appareil")
+		return nil, nil, nil, langErr("utilisateur non vérifié par l'appareil", "user not verified by the device")
 	}
 	pub, err := base64.RawURLEncoding.DecodeString(str(pk, "public_key", ""))
 	if err != nil {
@@ -641,12 +640,13 @@ func passkeyAssertion(cred map[string]any, challenge string) (User, map[string]a
 	}
 	cdHash := sha256.Sum256(cdRaw)
 	if !key.verify(append(bytes.Clone(adRaw), cdHash[:]...), sig) {
-		return nil, nil, nil, errors.New("signature invalide")
+		return nil, nil, nil, langErr("signature invalide", "invalid signature")
 	}
 	// Compteur : s'il est tenu, il doit avancer (sinon, authentificateur cloné)
 	stored := uint32(num(pk, "sign_count", 0))
 	if (stored != 0 || ad.signCount != 0) && ad.signCount <= stored {
-		return nil, nil, nil, fmt.Errorf("compteur de signatures en arrière (%d ≤ %d) : passkey peut-être copiée", ad.signCount, stored)
+		return nil, nil, nil, langErr(fmt.Sprintf("compteur de signatures en arrière (%d ≤ %d) : passkey peut-être copiée", ad.signCount, stored),
+			fmt.Sprintf("signature counter went backwards (%d ≤ %d): passkey possibly copied", ad.signCount, stored))
 	}
 	return user, pk, ad, nil
 }
@@ -747,7 +747,7 @@ func init() {
 		pk, err := c.passkeyRegistration(cred, challenge)
 		if err != nil {
 			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Passkey refusée (%s) : %v", str(u, "username", ""), err), fmt.Sprintf("Passkey rejected (%s): %v", str(u, "username", ""), err)))
-			c.Fail(http.StatusBadRequest, c.M("Passkey refusée : ", "Passkey rejected: ")+err.Error())
+			c.Fail(http.StatusBadRequest, c.M("Passkey refusée : ", "Passkey rejected: ")+errIn(err, c.Lang))
 			return
 		}
 		if name == "" {

@@ -62,15 +62,23 @@ type oidcMetaEntry struct {
 
 // OidcError : code (une des oidcErrors, affichée sur la page de connexion) ; le
 // détail ne va que dans le journal.
-type OidcError struct{ Code, Detail string }
+// Le détail est rédigé dans les deux langues : Error() suit la langue du système
+// (journal), In(l) celle de la requête (test du fournisseur dans les Réglages).
+// The detail is written in both languages: Error() follows the system language
+// (log), In(l) the request's (provider test in Settings).
+type OidcError struct{ Code, fr, en string }
 
-func (e *OidcError) Error() string { return e.Detail }
+func (e *OidcError) Error() string    { return e.In(systemLang()) }
+func (e *OidcError) In(l Lang) string { return l.M(e.fr, e.en) }
 
-func oidcErr(code, detail string) *OidcError {
-	if detail == "" {
-		detail = code
+func oidcErr(code, fr, en string) *OidcError {
+	if fr == "" {
+		fr = code
 	}
-	return &OidcError{code, detail}
+	if en == "" {
+		en = code
+	}
+	return &OidcError{code, fr, en}
 }
 
 func oidcConfig() map[string]any {
@@ -115,23 +123,23 @@ func oidcDiscover(issuer string, fresh bool) (map[string]any, error) {
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, oidcErr("provider", "découverte impossible : "+short(err.Error(), 160))
+		return nil, oidcErr("provider", "découverte impossible : "+short(err.Error(), 160), "discovery failed: "+short(err.Error(), 160))
 	}
 	defer resp.Body.Close()
 	var meta map[string]any
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 400 {
-		return nil, oidcErr("provider", fmt.Sprintf("découverte impossible : HTTP %d", resp.StatusCode))
+		return nil, oidcErr("provider", fmt.Sprintf("découverte impossible : HTTP %d", resp.StatusCode), fmt.Sprintf("discovery failed: HTTP %d", resp.StatusCode))
 	}
 	if err := json.Unmarshal(body, &meta); err != nil || meta == nil {
-		return nil, oidcErr("provider", "découverte impossible : réponse illisible")
+		return nil, oidcErr("provider", "découverte impossible : réponse illisible", "discovery failed: unreadable response")
 	}
 	if strings.TrimRight(str(meta, "issuer", ""), "/") != issuer {
-		return nil, oidcErr("provider", "l'émetteur annoncé ne correspond pas à l'adresse configurée")
+		return nil, oidcErr("provider", "l'émetteur annoncé ne correspond pas à l'adresse configurée", "the announced issuer does not match the configured address")
 	}
 	for _, key := range []string{"authorization_endpoint", "token_endpoint"} {
 		if !oidcURLOK(meta[key]) {
-			return nil, oidcErr("provider", key+" absent ou non sécurisé")
+			return nil, oidcErr("provider", key+" absent ou non sécurisé", key+" missing or not secure")
 		}
 	}
 	if !oidcURLOK(meta["userinfo_endpoint"]) {
@@ -174,15 +182,15 @@ type oidcFlow struct {
 func jwtClaims(token string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return nil, oidcErr("claims", "jeton d'identité illisible")
+		return nil, oidcErr("claims", "jeton d'identité illisible", "unreadable ID token")
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
 	if err != nil {
-		return nil, oidcErr("claims", "jeton d'identité illisible")
+		return nil, oidcErr("claims", "jeton d'identité illisible", "unreadable ID token")
 	}
 	var claims map[string]any
 	if json.Unmarshal(payload, &claims) != nil || claims == nil {
-		return nil, oidcErr("claims", "jeton d'identité illisible")
+		return nil, oidcErr("claims", "jeton d'identité illisible", "unreadable ID token")
 	}
 	return claims, nil
 }
@@ -221,13 +229,13 @@ func oidcExchange(oc, meta map[string]any, code string, flow oidcFlow) (map[stri
 	}
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return nil, oidcErr("token", "échange du code impossible : "+short(err.Error(), 160))
+		return nil, oidcErr("token", "échange du code impossible : "+short(err.Error(), 160), "code exchange failed: "+short(err.Error(), 160))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	var tok map[string]any
 	if err := json.Unmarshal(body, &tok); err != nil {
-		return nil, oidcErr("token", "échange du code impossible : réponse illisible")
+		return nil, oidcErr("token", "échange du code impossible : réponse illisible", "code exchange failed: unreadable response")
 	}
 	idToken, isStr := tok["id_token"].(string)
 	if resp.StatusCode != http.StatusOK || tok == nil || !isStr {
@@ -235,14 +243,14 @@ func oidcExchange(oc, meta map[string]any, code string, flow oidcFlow) (map[stri
 		if tok != nil && tok["error"] != nil {
 			e = short(pyStr(tok["error"]), 80)
 		}
-		return nil, oidcErr("token", fmt.Sprintf("HTTP %d %s", resp.StatusCode, e))
+		return nil, oidcErr("token", fmt.Sprintf("HTTP %d %s", resp.StatusCode, e), fmt.Sprintf("HTTP %d %s", resp.StatusCode, e))
 	}
 	claims, err := jwtClaims(idToken)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimRight(str(claims, "iss", ""), "/") != strings.TrimRight(str(oc, "issuer", ""), "/") {
-		return nil, oidcErr("claims", "émetteur du jeton inattendu")
+		return nil, oidcErr("claims", "émetteur du jeton inattendu", "unexpected token issuer")
 	}
 	var auds []any
 	if list, ok := claims["aud"].([]any); ok {
@@ -257,18 +265,18 @@ func oidcExchange(oc, meta map[string]any, code string, flow oidcFlow) (map[stri
 		}
 	}
 	if !found || (len(auds) > 1 && claims["azp"] != clientID) {
-		return nil, oidcErr("claims", "audience du jeton inattendue")
+		return nil, oidcErr("claims", "audience du jeton inattendue", "unexpected token audience")
 	}
 	exp, ok := claims["exp"].(float64)
 	if !ok || exp < float64(time.Now().Unix())-60 {
-		return nil, oidcErr("claims", "jeton expiré")
+		return nil, oidcErr("claims", "jeton expiré", "token expired")
 	}
 	if subtle.ConstantTimeCompare([]byte(str(claims, "nonce", "")), []byte(flow.N)) != 1 {
-		return nil, oidcErr("claims", "nonce différent")
+		return nil, oidcErr("claims", "nonce différent", "nonce mismatch")
 	}
 	sub, ok := claims["sub"].(string)
 	if !ok || len(sub) == 0 || len([]rune(sub)) > 255 {
-		return nil, oidcErr("claims", "sujet absent")
+		return nil, oidcErr("claims", "sujet absent", "subject missing")
 	}
 	// E-mail, groupes… : parfois seulement dans userinfo
 	if ui, ok := meta["userinfo_endpoint"].(string); ok {
@@ -359,13 +367,17 @@ func oidcResolveUser(oc, claims map[string]any) (User, error) {
 			uid = pending[0]
 		}
 	}
-	shown := email
-	if shown == "" {
-		shown = "e-mail non vérifié"
+	// shown : l'e-mail, ou sa mention d'absence dans la langue l du message.
+	// shown: the e-mail, or a note of its absence in the message's language l.
+	shown := func(l Lang) string {
+		if email != "" {
+			return email
+		}
+		return l.M("e-mail non vérifié", "e-mail not verified")
 	}
 	if uid == "" {
 		if !boolv(oc, "auto_create", false) {
-			return nil, oidcErr("no_account", fmt.Sprintf("aucun compte pour %s (%s)", sub, shown))
+			return nil, oidcErr("no_account", fmt.Sprintf("aucun compte pour %s (%s)", sub, shown(FR)), fmt.Sprintf("no account for %s (%s)", sub, shown(EN)))
 		}
 		var domains []string
 		for _, d := range stringList(oc["allowed_domains"]) {
@@ -380,11 +392,11 @@ func oidcResolveUser(oc, claims map[string]any) (User, error) {
 				}
 			}
 			if !ok {
-				return nil, oidcErr("domain", fmt.Sprintf("domaine refusé (%s)", shown))
+				return nil, oidcErr("domain", fmt.Sprintf("domaine refusé (%s)", shown(FR)), fmt.Sprintf("domain rejected (%s)", shown(EN)))
 			}
 		}
 		if len(users) >= usersMax {
-			return nil, oidcErr("no_account", "trop de comptes")
+			return nil, oidcErr("no_account", "trop de comptes", "too many accounts")
 		}
 		baseRaw := claims[str(oc, "username_claim", "preferred_username")]
 		base := ""
@@ -414,7 +426,7 @@ func oidcResolveUser(oc, claims map[string]any) (User, error) {
 	}
 	u := users[uid].(map[string]any)
 	if !boolv(u, "enabled", true) {
-		return nil, oidcErr("disabled_user", fmt.Sprintf("compte %s désactivé", str(u, "username", "")))
+		return nil, oidcErr("disabled_user", fmt.Sprintf("compte %s désactivé", str(u, "username", "")), fmt.Sprintf("account %s disabled", str(u, "username", "")))
 	}
 	u["oidc"] = map[string]any{"iss": iss, "sub": sub}
 	if email != "" {
@@ -434,7 +446,7 @@ func oidcResolveUser(oc, claims map[string]any) (User, error) {
 	}
 	u["last_login"] = nowISO()
 	if _, err := cfgUpdateLocked(Cfg{"users": users}); err != nil {
-		return nil, oidcErr("no_account", err.Error())
+		return nil, oidcErr("no_account", errIn(err, FR), errIn(err, EN))
 	}
 	return allUsers()[uid], nil
 }
@@ -712,7 +724,7 @@ func init() {
 		}
 		meta, err := oidcDiscover(issuer, true)
 		if err != nil {
-			detail := err.Error()
+			detail := errIn(err, c.Lang)
 			c.JSON(J{"ok": false, "msg": c.M("Échec : "+detail, "Failed: "+detail)})
 			return
 		}

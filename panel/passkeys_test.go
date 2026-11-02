@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -14,6 +15,9 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"strings"
@@ -431,5 +435,65 @@ func TestCBORDecoderRobust(t *testing.T) {
 		cborDecode(buf)
 		parseAuthData(buf)
 		parseCOSEKey(buf)
+	}
+}
+
+// Refus d'une passkey : la réponse suit la langue de l'interface, le journal
+// celle du système.
+// Passkey rejection: the response follows the UI language, the log the
+// system's.
+func TestPasskeyErrorLanguages(t *testing.T) {
+	e := setup(t)
+	e.setPassword(testPassword, "admin", false)
+	cl := e.client()
+	expectCode(t, cl.login("admin", testPassword), http.StatusOK)
+	var logs bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	noUV := newAuthenticator(t, coseES256)
+	noUV.flags = flagUP
+	for _, c := range []struct{ ui, sys, msg, log string }{
+		{"en", "fr_FR.UTF-8", "Passkey rejected: user not verified by the device", "utilisateur non vérifié par l'appareil"},
+		{"fr", "C.UTF-8", "Passkey refusée : utilisateur non vérifié par l'appareil", "user not verified by the device"},
+	} {
+		t.Setenv("LANG", c.sys)
+		logs.Reset()
+		h := map[string]string{"X-CSRF-Token": cl.token(), "X-Forwarded-Host": "panel.example", "X-Lang": c.ui}
+		r := cl.do("POST", "/api/me/passkeys/options", J{"current_password": testPassword}, h)
+		r = cl.do("POST", "/api/me/passkeys", J{"credential": noUV.create(r.json(), testOrigin)}, h)
+		expectCode(t, r, http.StatusBadRequest)
+		if m := r.json()["msg"]; m != c.msg {
+			t.Fatalf("%s : %v", c.ui, m)
+		}
+		if !strings.Contains(logs.String(), c.log) {
+			t.Fatalf("journal (%s) : %q", c.sys, logs.String())
+		}
+	}
+}
+
+func TestLangErr(t *testing.T) {
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
+	err := fmt.Errorf("contexte : %w", langErr("signature invalide", "invalid signature"))
+	if errIn(err, EN) != "invalid signature" || errIn(err, FR) != "signature invalide" {
+		t.Fatal(errIn(err, EN), errIn(err, FR))
+	}
+	t.Setenv("LANG", "C.UTF-8")
+	if errCBOR.Error() != "invalid CBOR" {
+		t.Fatal(errCBOR.Error())
+	}
+	t.Setenv("LANG", "fr_FR.UTF-8")
+	if errCBOR.Error() != "CBOR invalide" {
+		t.Fatal(errCBOR.Error())
+	}
+	if errIn(errors.New("plain"), EN) != "plain" {
+		t.Fatal("erreur ordinaire")
+	}
+	oe := oidcErr("claims", "jeton expiré", "token expired")
+	if errIn(oe, EN) != "token expired" || oe.Error() != "jeton expiré" {
+		t.Fatal(errIn(oe, EN), oe.Error())
 	}
 }

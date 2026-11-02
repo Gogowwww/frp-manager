@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"regexp"
@@ -26,6 +27,29 @@ func (l Lang) M(fr, en string) string {
 		return en
 	}
 	return fr
+}
+
+// langError : erreur rédigée dans les deux langues. Error() suit la langue du
+// système (journaux) ; In(l) donne celle d'une requête (réponses à l'interface).
+// langError: an error written in both languages. Error() follows the system
+// language (logs); In(l) gives a request's language (responses to the UI).
+type langError struct{ fr, en string }
+
+func langErr(fr, en string) error { return &langError{fr, en} }
+
+func (e *langError) Error() string    { return e.In(systemLang()) }
+func (e *langError) In(l Lang) string { return l.M(e.fr, e.en) }
+
+// errIn : le message de err dans la langue l, si err le connaît dans les deux
+// langues (langError, OidcError) ; sinon Error() tel quel.
+// errIn: err's message in language l, when err knows it in both languages
+// (langError, OidcError); otherwise Error() as is.
+func errIn(err error, l Lang) string {
+	var bi interface{ In(Lang) string }
+	if errors.As(err, &bi) {
+		return bi.In(l)
+	}
+	return err.Error()
 }
 
 func normLang(v string) Lang {

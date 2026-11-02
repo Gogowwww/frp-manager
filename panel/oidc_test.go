@@ -321,3 +321,19 @@ func TestOIDCSettingsValidationAndSecret(t *testing.T) {
 		t.Fatal("test du fournisseur")
 	}
 }
+
+// Échec du test du fournisseur : détail dans la langue de l'interface.
+// Provider test failure: detail in the UI language.
+func TestOIDCTestFailureLanguage(t *testing.T) {
+	e, idp := oidcSetup(t, nil)
+	c := e.client()
+	c.login("admin", testPassword)
+	t.Setenv("LANG", "fr_FR.UTF-8")
+	issuer := idp.issuer + "/absent"
+	for lang, want := range map[string]string{"en": "Failed: discovery failed: HTTP 404", "fr": "Échec : découverte impossible : HTTP 404"} {
+		r := c.do("POST", "/api/oidc/test", J{"issuer": issuer}, map[string]string{"X-CSRF-Token": c.token(), "X-Lang": lang})
+		if m := r.json()["msg"]; m != want {
+			t.Fatalf("%s : %v", lang, m)
+		}
+	}
+}
