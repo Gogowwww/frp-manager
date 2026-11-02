@@ -320,9 +320,17 @@ function breakable(text) {
   const parts = isV6 ? host.split(/(?<=:)(?=[^:])/)
     : /^[\d.]+$/.test(host) ? [host] : host.split(/(?<=[.,-])/);
   const out = parts.flatMap((s, k) => (k ? [h('wbr'), s] : [s]));
-  // Le port ou la plage de ports reste d'un seul tenant (pas de coupure après le tiret)
-  // The port or port range stays in one piece (no break after the hyphen)
-  if (hasPort) out.push(h('wbr'), h('span', { class: 'route-port' }, text.slice(i)));
+  // Chaque plage de ports reste d'un seul tenant (pas de coupure après le tiret),
+  // mais une longue liste peut passer à la ligne après une virgule
+  // Each port range stays in one piece (no break after the hyphen), but a long
+  // list may wrap after a comma
+  if (hasPort) {
+    out.push(h('wbr'));
+    text.slice(i).split(/(?<=,)/).forEach((r, k) => {
+      if (k) out.push(h('wbr'));
+      out.push(h('span', { class: 'route-port' }, r));
+    });
+  }
   return out;
 }
 
