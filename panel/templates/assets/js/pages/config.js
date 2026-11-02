@@ -192,7 +192,7 @@ export default {
     S.els.body.addEventListener('input', updateSaveBar);
     S.els.body.addEventListener('change', updateSaveBar);
     S.els.savebar = saveBar({
-      onDiscard: () => { S.snapshot = ''; load(); },
+      onDiscard: () => { S.snapshot = ''; load(true); },
       onSave: () => save(false),
       onSaveRestart: () => save(true),
     });
@@ -223,7 +223,11 @@ function confirmLeave() {
   return confirmDialog({ title: t('common.leaveTitle'), message: t('common.leaveText'), confirmLabel: t('common.leave'), danger: true });
 }
 
-async function load() {
+// discarded : après « Annuler », la référence est la valeur corrigée affichée,
+// la barre ne revient pas sans modification de l'utilisateur
+// discarded: after "Discard", the reference is the fixed value shown, the bar
+// does not come back without a change by the user
+async function load(discarded = false) {
   const inst = store.instances[S.iid];
   S.type = inst.type === 'frps' ? 'frps' : 'frpc';
   S.controls = {};
@@ -281,7 +285,7 @@ async function load() {
   // corrigée dans le champ, fait apparaître la barre d'enregistrement
   // Reference = the file as it is: a bracketed address, already fixed in the
   // field, makes the save bar appear
-  S.snapshot = JSON.stringify({ ...values(), ...S.bracketed });
+  S.snapshot = JSON.stringify({ ...values(), ...(discarded ? {} : S.bracketed) });
   updateSaveBar();
 }
 

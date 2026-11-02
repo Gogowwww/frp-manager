@@ -14,7 +14,7 @@ import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
   portSpecCount, isPortRange, isRanged, isVisitorRanged, frpcNames, visitorNames, MAX_RANGE_PORTS, PORT_TOKEN,
-  TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort, unbracket,
+  TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort, unbracket, unbracketConnection, stripBlocks,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -22,6 +22,7 @@ const S = {
   iid: '',
   baseText: '',
   serverAddr: '',
+  baseFix: false,
   docker: false,
   proxies: [],
   visitors: [],
@@ -34,7 +35,9 @@ let statusTimer = null;
 
 const snapshotOf = () => JSON.stringify([S.proxies, S.visitors]);
 // Lecture seule (pas de config.write) : jamais de modification à enregistrer
-const isDirty = () => can('config.write') && S.snapshot !== '' && snapshotOf() !== S.snapshot;
+// baseFix : adresse de la connexion entre crochets, corrigée à l'enregistrement
+// baseFix: bracketed connection address, fixed on save
+const isDirty = () => can('config.write') && S.snapshot !== '' && (S.baseFix || snapshotOf() !== S.snapshot);
 
 function beforeUnload(e) {
   if (isDirty()) { e.preventDefault(); e.returnValue = ''; }
@@ -121,25 +124,42 @@ function confirmLeave() {
 
 // ── Chargement ─────────────────────────────────────────────────────────────
 
-async function load() {
+// discarded : après « Annuler », la référence est la config déjà corrigée, pour
+// que la barre ne revienne pas sans modification de l'utilisateur
+// discarded: after "Discard", the reference is the already fixed config, so the
+// bar does not come back without a change by the user
+async function load(discarded = false) {
   S.els.proxies.replaceChildren(h('div', { class: 'skeleton', style: { height: '120px', margin: '16px' } }));
+  S.baseFix = false;
   try {
     const d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
     S.baseText = d.content || '';
     S.docker = !!d.docker;
     const cfg = parseToml(S.baseText);
     S.serverAddr = cfg.values.serverAddr || '';
+    const proxies = cfg.proxies.map(proxyFromBlock);
+    const visitors = cfg.visitors.map(visitorFromBlock);
     // Paires X-tcp / X-udp écrites par « TCP + UDP » : une seule ligne
     // X-tcp / X-udp pairs written by "TCP + UDP": a single row
-    S.proxies = pairProxies(cfg.proxies.map(proxyFromBlock));
-    S.visitors = cfg.visitors.map(visitorFromBlock);
-    S.snapshot = snapshotOf();
+    S.proxies = pairProxies(proxies);
+    S.visitors = visitors;
+    if (!discarded) S.snapshot = snapshotOf();
     // Adresse entre crochets écrite par une ancienne version : corrigée ici, le
     // tunnel apparaît modifié et la barre d'enregistrement s'allume
     // Bracketed address written by an older version: fixed here, the tunnel
     // shows as changed and the save bar lights up
-    for (const p of S.proxies) if (p.localIP) p.localIP = unbracket(p.localIP);
-    for (const v of S.visitors) if (v.bindAddr) v.bindAddr = unbracket(v.bindAddr);
+    // Regroupement après la correction : une paire à moitié entre crochets ne
+    // fait qu'une entrée, comme après l'enregistrement
+    // Grouping after the fix: a pair half between brackets makes a single
+    // entry, as after saving
+    S.proxies = pairProxies(proxies.map((p) => ({ ...p, localIP: p.localIP && unbracket(p.localIP) })));
+    S.visitors = visitors.map((v) => ({ ...v, bindAddr: v.bindAddr && unbracket(v.bindAddr) }));
+    // Même chose pour serverAddr, dnsServer et webServer.addr, que l'écriture
+    // corrige aussi (composeClientConfig)
+    // Same for serverAddr, dnsServer and webServer.addr, which the write also
+    // fixes (composeClientConfig)
+    S.baseFix = !discarded && unbracketConnection(stripBlocks(S.baseText)) !== stripBlocks(S.baseText);
+    if (discarded) S.snapshot = snapshotOf();
   } catch (e) {
     toastError(e);
     S.proxies = [];
@@ -170,7 +190,7 @@ async function loadStatus(retry = true) {
 
 function discard() {
   S.snapshot = '';
-  load();
+  load(true);
 }
 
 // ── Rendu ──────────────────────────────────────────────────────────────────
@@ -216,7 +236,7 @@ function renderStatusHint() {
       hint = callout({ type: 'info', compact: true, text: t('tunnels.randomPortNoAdmin'), actions });
     } else if (!st.reachable) {
       hint = callout({ type: 'warn', compact: true, text: t('tunnels.randomPortUnreachable'),
-        actions: fixable ? [button(t('tunnels.restartFrpc'), { size: 'sm', onClick: (e) => { e.currentTarget.disabled = true; restartFrpc().then(load); } })] : [] });
+        actions: fixable ? [button(t('tunnels.restartFrpc'), { size: 'sm', onClick: (e) => { e.currentTarget.disabled = true; restartFrpc().then(() => load()); } })] : [] });
     }
   }
   host.replaceChildren(...(hint ? [hint] : []));

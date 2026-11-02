@@ -227,6 +227,29 @@ export function unbracket(addr) {
   return m ? m[1] : String(addr);
 }
 
+/** Partie connexion d'une config frpc avec serverAddr, dnsServer et webServer.addr
+ *  sans crochets (fichier écrit par une ancienne version) : seules ces lignes
+ *  changent, le reste du texte (commentaires, ordre, autres clés) reste tel quel.
+ *  Connection part of an frpc config with serverAddr, dnsServer and webServer.addr
+ *  without brackets (file written by an older version): only those lines change,
+ *  the rest of the text (comments, order, other keys) stays as is. */
+export function unbracketConnection(text) {
+  let section = '';
+  return String(text || '').split('\n').map((line) => {
+    const head = line.trim();
+    // Les blocs [[proxies]] / [[visitors]] ne sont pas concernés
+    // The [[proxies]] / [[visitors]] blocks are not concerned
+    if (section === null) return line;
+    if (head.startsWith('[[')) { section = null; return line; }
+    if (head.startsWith('[')) { section = head.replace(/^\[+|\]+.*$/g, '').trim(); return line; }
+    const m = /^(\s*)([\w.]+)(\s*=\s*)(["'])\[([^\]"']*)\]\4([\s\S]*)$/.exec(line);
+    if (!m) return line;
+    const key = section ? `${section}.${m[2]}` : m[2];
+    if (!['serverAddr', 'dnsServer', 'webServer.addr'].includes(key)) return line;
+    return `${m[1]}${m[2]}${m[3]}${m[4]}${m[5]}${m[4]}${m[6]}`;
+  }).join('\n');
+}
+
 /** « hôte:port » utilisable tel quel : une IPv6 (avec ou sans zone, « fe80::1%eth0 »)
  *  va entre crochets, sauf si elle y est déjà ; IPv4 et noms de domaine inchangés.
  *  "host:port" usable as is: an IPv6 (with or without a zone, "fe80::1%eth0")
@@ -506,6 +529,10 @@ export function composeClientConfig(baseText, proxies, visitors) {
     ...proxies.flatMap(splitPair).map((p) => generateProxy(p)),
     ...visitors.filter((v) => v.name).map(generateVisitor),
   ];
-  const base = stripBlocks(baseText);
+  // Adresses de la connexion entre crochets (ancienne version) : frpc ne
+  // démarrerait pas, elles sont corrigées à chaque écriture
+  // Bracketed connection addresses (older version): frpc would not start, they
+  // are fixed on every write
+  const base = unbracketConnection(stripBlocks(baseText));
   return `${[base, ...blocks].filter(Boolean).join('\n\n')}\n`;
 }
