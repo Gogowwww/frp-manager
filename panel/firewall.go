@@ -691,7 +691,12 @@ func frpsActiveProxies(conf map[string]any) []activeProxy {
 	}
 	var found []activeProxy
 	for _, ptype := range []string{"tcp", "udp"} {
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/proxy/%s", netJoin(addr, port), ptype), nil)
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/proxy/%s", netJoin(addr, port), ptype), nil)
+		if err != nil {
+			// Adresse inutilisable : pas de panique, on passe
+			// Unusable address: no panic, skip it
+			continue
+		}
 		if user := str(ws, "user", ""); user != "" {
 			req.SetBasicAuth(user, str(ws, "password", ""))
 		}
@@ -720,6 +725,11 @@ func frpsActiveProxies(conf map[string]any) []activeProxy {
 }
 
 func netJoin(host string, port int) string {
+	// Une IPv6 déjà entre crochets (« [::1] », écrite par une ancienne version)
+	// ne doit pas être entourée une seconde fois.
+	// An IPv6 already between brackets ("[::1]", written by an older version)
+	// must not be wrapped a second time.
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 	if strings.Contains(host, ":") {
 		return "[" + host + "]:" + strconv.Itoa(port)
 	}

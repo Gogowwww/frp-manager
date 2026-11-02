@@ -900,7 +900,12 @@ func frpcProxyStatus(content string) (map[string]J, bool, error) {
 	if addr == "" || addr == "0.0.0.0" || addr == "::" {
 		addr = "127.0.0.1"
 	}
-	req, _ := http.NewRequest(http.MethodGet, "http://"+netJoin(addr, port)+"/api/status", nil)
+	req, err := http.NewRequest(http.MethodGet, "http://"+netJoin(addr, port)+"/api/status", nil)
+	if err != nil {
+		// Adresse inutilisable : pas de panique
+		// Unusable address: no panic
+		return nil, true, err
+	}
 	if user := str(ws, "user", ""); user != "" {
 		req.SetBasicAuth(user, str(ws, "password", ""))
 	}

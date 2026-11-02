@@ -377,3 +377,16 @@ func TestFirewallOrphanRuleFrps(t *testing.T) {
 		t.Fatalf("règle orpheline sans historique : %v", err)
 	}
 }
+
+// netJoin : une IPv6 déjà entre crochets n'est pas entourée deux fois.
+// netJoin: an IPv6 already between brackets is not wrapped twice.
+func TestNetJoinBrackets(t *testing.T) {
+	for in, want := range map[string]string{
+		"127.0.0.1": "127.0.0.1:7500", "::1": "[::1]:7500", "[::1]": "[::1]:7500",
+		"example.org": "example.org:7500",
+	} {
+		if got := netJoin(in, 7500); got != want {
+			t.Errorf("netJoin(%q) = %q, attendu %q", in, got, want)
+		}
+	}
+}
