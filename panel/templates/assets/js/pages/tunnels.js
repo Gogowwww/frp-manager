@@ -14,7 +14,7 @@ import {
   parseToml, composeClientConfig, proxyFromBlock, visitorFromBlock, newProxy, newVisitor,
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
   portSpecCount, isPortRange, isRanged, isVisitorRanged, frpcNames, visitorNames, MAX_RANGE_PORTS, PORT_TOKEN,
-  TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort,
+  TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort, unbracket,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -134,6 +134,12 @@ async function load() {
     S.proxies = pairProxies(cfg.proxies.map(proxyFromBlock));
     S.visitors = cfg.visitors.map(visitorFromBlock);
     S.snapshot = snapshotOf();
+    // Adresse entre crochets écrite par une ancienne version : corrigée ici, le
+    // tunnel apparaît modifié et la barre d'enregistrement s'allume
+    // Bracketed address written by an older version: fixed here, the tunnel
+    // shows as changed and the save bar lights up
+    for (const p of S.proxies) if (p.localIP) p.localIP = unbracket(p.localIP);
+    for (const v of S.visitors) if (v.bindAddr) v.bindAddr = unbracket(v.bindAddr);
   } catch (e) {
     toastError(e);
     S.proxies = [];
@@ -578,7 +584,9 @@ function editProxy(existing) {
         const kind = kindOf(tp);
         const values = {
           name: name.value.trim(),
-          localIP: localIP.value.trim(),
+          // Valeur telle qu'écrite (sans crochets) : « [::1] » ne compte pas comme une modification
+          // Value as written (no brackets): "[::1]" does not count as a change
+          localIP: unbracket(localIP.value.trim()),
           localPort: localPort.value.replace(/\s+/g, ''),
           remotePort: remotePort.value.replace(/\s+/g, ''),
         };
@@ -712,7 +720,7 @@ function editVisitor(existing) {
         if (!ok) { draftDialogFocusError(); return; }
         Object.assign(draft, {
           name: nm, type: type.value, serverName: serverName.value.trim(), secretKey: secret.input.value,
-          bindAddr: bindAddr.value.trim(), bindPort: bp, serverPorts: sp === bp ? '' : sp,
+          bindAddr: unbracket(bindAddr.value.trim()), bindPort: bp, serverPorts: sp === bp ? '' : sp,
         });
         if (existing) S.visitors = S.visitors.map((v) => (v.uid === draft.uid ? draft : v));
         else S.visitors = [...S.visitors, draft];

@@ -9,7 +9,7 @@ import {
   h, icon, button, toast, toastError, confirmDialog, field, input, select, secretInput, switchRow,
   callout, emptyState, card, saveBar,
 } from '../ui.js';
-import { parseToml, generateServer, generateClient, extractBlocks, randomPort } from '../toml.js';
+import { parseToml, generateServer, generateClient, extractBlocks, randomPort, unbracket } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
@@ -18,14 +18,18 @@ const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
 // toggle         : interrupteur de section (activé ⇔ la clé toggle.key existe)
 // optionalToggle : champ précédé d'un interrupteur (la clé n'est écrite que s'il est activé)
 // random         : bouton « Port aléatoire » à côté du champ
+// addr           : adresse seule (sans port) ; les crochets d'une IPv6 sont retirés
+//                  (frp les ajoute lui-même)
+// addr           : address alone (no port); the brackets of an IPv6 are removed
+//                  (frp adds them itself)
 const SCHEMA = {
   frps: [
     {
       id: 'connection',
       fields: [
         { name: 'bindPort', key: 'bindPort', kind: 'number', def: '7000', random: true },
-        { name: 'bindAddr', key: 'bindAddr', kind: 'text', def: '0.0.0.0', placeholder: '0.0.0.0' },
-        { name: 'proxyBindAddr', key: 'proxyBindAddr', kind: 'text', def: '', optional: true, placeholder: '203.0.113.10' },
+        { name: 'bindAddr', key: 'bindAddr', kind: 'text', addr: true, def: '0.0.0.0', placeholder: '0.0.0.0' },
+        { name: 'proxyBindAddr', key: 'proxyBindAddr', kind: 'text', addr: true, def: '', optional: true, placeholder: '203.0.113.10' },
       ],
     },
     {
@@ -40,7 +44,7 @@ const SCHEMA = {
       toggle: { name: 'webEnabled', key: 'webServer.port' },
       fields: [
         { name: 'webPort', key: 'webServer.port', kind: 'number', def: '7500' },
-        { name: 'webAddr', key: 'webServer.addr', kind: 'text', def: '0.0.0.0' },
+        { name: 'webAddr', key: 'webServer.addr', kind: 'text', addr: true, def: '0.0.0.0' },
         { name: 'webUser', key: 'webServer.user', kind: 'text', def: 'admin' },
         { name: 'webPassword', key: 'webServer.password', kind: 'secret', def: '' },
       ],
@@ -85,7 +89,7 @@ const SCHEMA = {
     {
       id: 'server',
       fields: [
-        { name: 'serverAddr', key: 'serverAddr', kind: 'text', def: '', placeholder: 'vps.example.com' },
+        { name: 'serverAddr', key: 'serverAddr', kind: 'text', addr: true, def: '', placeholder: 'vps.example.com' },
         { name: 'serverPort', key: 'serverPort', kind: 'number', def: '7000' },
         { name: 'protocol', key: 'transport.protocol', kind: 'select', options: ['tcp', 'kcp', 'quic', 'websocket', 'wss'], def: 'tcp' },
       ],
@@ -112,7 +116,7 @@ const SCHEMA = {
       toggle: { name: 'webEnabled', key: 'webServer.port' },
       fields: [
         { name: 'webPort', key: 'webServer.port', kind: 'number', def: '7400' },
-        { name: 'webAddr', key: 'webServer.addr', kind: 'text', def: '127.0.0.1' },
+        { name: 'webAddr', key: 'webServer.addr', kind: 'text', addr: true, def: '127.0.0.1' },
         { name: 'webUser', key: 'webServer.user', kind: 'text', def: 'admin' },
         { name: 'webPassword', key: 'webServer.password', kind: 'secret', def: '' },
       ],
@@ -122,7 +126,7 @@ const SCHEMA = {
       fields: [
         { name: 'poolCount', key: 'transport.poolCount', kind: 'number', def: '5' },
         { name: 'heartbeatInterval', key: 'transport.heartbeatInterval', kind: 'number', def: '30' },
-        { name: 'dnsServer', key: 'dnsServer', kind: 'text', def: '', optional: true, placeholder: '1.1.1.1' },
+        { name: 'dnsServer', key: 'dnsServer', kind: 'text', addr: true, def: '', optional: true, placeholder: '1.1.1.1' },
         { name: 'proxyURL', key: 'transport.proxyURL', kind: 'text', def: '', optional: true, placeholder: 'http://proxy:8080' },
       ],
     },
@@ -137,12 +141,17 @@ const SCHEMA = {
   ],
 };
 
-const S = { iid: '', type: '', controls: {}, snapshot: '', els: {} };
+// addrs : noms des champs d'adresse ; bracketed : valeurs lues avec des crochets
+// (fichier écrit par une ancienne version), à corriger en enregistrant
+// addrs: names of the address fields; bracketed: values read with brackets
+// (file written by an older version), to be fixed by saving
+const S = { iid: '', type: '', controls: {}, addrs: new Set(), bracketed: {}, snapshot: '', els: {} };
 
 function values() {
   const v = {};
   for (const [name, ctrl] of Object.entries(S.controls)) {
-    v[name] = ctrl.type === 'checkbox' ? ctrl.checked : ctrl.value.trim();
+    v[name] = ctrl.type === 'checkbox' ? ctrl.checked
+      : S.addrs.has(name) ? unbracket(ctrl.value.trim()) : ctrl.value.trim();
   }
   return v;
 }
@@ -218,6 +227,8 @@ async function load() {
   const inst = store.instances[S.iid];
   S.type = inst.type === 'frps' ? 'frps' : 'frpc';
   S.controls = {};
+  S.addrs = new Set();
+  S.bracketed = {};
   S.els.savebar.hidden = true;
 
   if (isDocker(inst)) {
@@ -266,7 +277,11 @@ async function load() {
     h('div', { class: 'card' }, advanced));
 
   S.els.body.replaceChildren(...top, ...rows, advancedSection);
-  S.snapshot = JSON.stringify(values());
+  // Référence = le fichier tel qu'il est : une adresse entre crochets, déjà
+  // corrigée dans le champ, fait apparaître la barre d'enregistrement
+  // Reference = the file as it is: a bracketed address, already fixed in the
+  // field, makes the save bar appear
+  S.snapshot = JSON.stringify({ ...values(), ...S.bracketed });
   updateSaveBar();
 }
 
@@ -308,7 +323,17 @@ function buildFields(section, cfg) {
       el = secretInput({ value: raw || f.def, placeholder: f.placeholder || '' });
       ctrl = el.input;
     } else {
-      ctrl = input({ value: raw || f.def, placeholder: f.placeholder || '', mono: true, inputmode: f.kind === 'number' ? 'numeric' : null });
+      let value = raw || f.def;
+      if (f.addr) {
+        S.addrs.add(f.name);
+        // Seulement si la clé sera écrite (section activée), sinon la barre
+        // apparaîtrait pour un champ caché
+        // Only if the key will be written (section enabled), otherwise the bar
+        // would appear for a hidden field
+        if (raw && unbracket(raw) !== raw && (!section.toggle || cfg[section.toggle.key])) S.bracketed[f.name] = raw;
+        value = unbracket(value);
+      }
+      ctrl = input({ value, placeholder: f.placeholder || '', mono: true, inputmode: f.kind === 'number' ? 'numeric' : null });
       el = f.random && can('config.write') ? h('div', { class: 'input-group' }, ctrl, button(t('config.randomPort'), {
         iconName: 'refresh', title: t('config.randomPortHint'),
         onClick: () => { ctrl.value = randomPort(); ctrl.dispatchEvent(new Event('input', { bubbles: true })); },
@@ -360,6 +385,10 @@ async function save(restart) {
     const content = S.type === 'frps' ? generateServer(v, S.iid, by) : await withExistingBlocks(generateClient(v, S.iid, by));
     const d = await post(`/api/config/${encodeURIComponent(S.iid)}`, { content });
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
+    // Les champs montrent ce qui est écrit (« [::1] » tapé devient « ::1 »)
+    // The fields show what is written ("[::1]" typed becomes "::1")
+    for (const name of S.addrs) S.controls[name].value = v[name];
+    S.bracketed = {};
     S.snapshot = JSON.stringify(values());
     updateSaveBar();
     toast(t('config.saved'), 'success');
