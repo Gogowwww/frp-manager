@@ -30,7 +30,7 @@ func TestNotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "v0.0.58 — Le panel passe en Go" {
+	if name != "v0.0.58 — Le panel passe en Go / The panel moves to Go" {
 		t.Fatal(name)
 	}
 	order := []string{"Le panel passe en Go.", "## Nouveautés", "- **apt** : dépôt.", "## Changements",

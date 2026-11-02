@@ -179,6 +179,11 @@ func notes(dir, repo, tag string) (name, body string, err error) {
 	name = "v" + version
 	if fr.summary != "" {
 		name += " — " + strings.TrimSuffix(fr.summary, ".")
+		// Titre bilingue : le français, puis l'anglais après « / »
+		// Bilingual title: French, then English after "/"
+		if en.summary != "" {
+			name += " / " + strings.TrimSuffix(en.summary, ".")
+		}
 	}
 	var b strings.Builder
 	if fr.summary != "" {
