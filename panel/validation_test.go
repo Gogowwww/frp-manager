@@ -766,3 +766,19 @@ func TestExtractPortsCommentedHeader(t *testing.T) {
 		}
 	}
 }
+
+// Forme en ligne « proxies = [ { … } ] » : ports lus
+// Inline form "proxies = [ { … } ]": ports read
+func TestExtractPortsInlineForm(t *testing.T) {
+	setup(t)
+	content := "serverAddr = \"x\"\nserverPort = 7000\nproxies = [\n  { name = \"a\", type = \"tcp\", localPort = 22, remotePort = 18801 },\n  { name = \"b\", type = \"udp\", localPort = 53, remotePort = 18802 },\n]\nvisitors = [ { name = \"v\", type = \"stcp\", bindAddr = \"0.0.0.0\", bindPort = 18999 } ]\n\n[webServer] # c\nport = 7500\n"
+	got := map[int]string{}
+	for _, p := range extractPortsFromConfig(content, "frpc") {
+		got[p["port"].(int)] = p["proto"].(string)
+	}
+	for port, proto := range map[int]string{18801: "tcp", 18802: "udp", 18999: "tcp", 7500: "tcp"} {
+		if got[port] != proto {
+			t.Errorf("port %d : proto %q, attendu %q (lus %v)", port, got[port], proto, got)
+		}
+	}
+}

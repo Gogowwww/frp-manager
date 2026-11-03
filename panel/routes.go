@@ -1511,13 +1511,18 @@ func extractPortsFromConfig(content, binType string) []J {
 			}
 		}
 		flush()
+		// Forme en ligne « proxies = [ { … } ] » : lue avec le lecteur TOML
+		// Inline form "proxies = [ { … } ]": read with the TOML reader
+		if inlineFormRe.MatchString(content) {
+			ports = append(ports, inlineFormPorts(content)...)
+		}
 	}
 	// Port du webServer (section [webServer]) : frps et frpc
 	inWS := false
 	for _, line := range splitLines(content) {
 		s := strings.TrimSpace(line)
 		switch {
-		case s == "[webServer]":
+		case tomlHead(s) == "[webServer]":
 			inWS = true
 		case strings.HasPrefix(s, "["):
 			inWS = false
@@ -1751,4 +1756,56 @@ func tomlHead(s string) string {
 		s = s[:i]
 	}
 	return strings.Join(strings.Fields(s), "")
+}
+
+var inlineFormRe = regexp.MustCompile(`(?m)^[ \t]*(proxies|visitors)[ \t]*=[ \t]*\[`)
+
+// inlineFormPorts : ports publics (remotePort) et d'écoute locale (bindPort)
+// des tunnels et visiteurs écrits en forme en ligne.
+// inlineFormPorts: public ports (remotePort) and local listening ports
+// (bindPort) of tunnels and visitors written in inline form.
+func inlineFormPorts(content string) []J {
+	var conf struct {
+		Proxies  []map[string]any `toml:"proxies"`
+		Visitors []map[string]any `toml:"visitors"`
+	}
+	if toml.Unmarshal([]byte(frpTOML(content)), &conf) != nil {
+		return nil
+	}
+	num := func(v any) int {
+		switch n := v.(type) {
+		case int64:
+			return int(n)
+		case float64:
+			return int(n)
+		}
+		return 0
+	}
+	text := func(v any) string { s, _ := v.(string); return s }
+	var out []J
+	for _, p := range conf.Proxies {
+		port := num(p["remotePort"])
+		if port == 0 {
+			continue
+		}
+		proto := "tcp"
+		if text(p["type"]) == "udp" {
+			proto = "udp"
+		}
+		label := text(p["name"])
+		if label == "" {
+			label = text(p["type"])
+		}
+		out = append(out, J{"port": port, "proto": proto, "label": "Tunnel " + label + " (remotePort)"})
+	}
+	for _, v := range conf.Visitors {
+		addr := text(v["bindAddr"])
+		if addr == "" || addr == "127.0.0.1" || addr == "::1" || addr == "localhost" {
+			continue
+		}
+		if port := num(v["bindPort"]); port != 0 {
+			out = append(out, J{"port": port, "proto": "tcp", "label": strings.TrimSpace("Visiteur " + text(v["name"]) + " (bindPort)")})
+		}
+	}
+	return out
 }
