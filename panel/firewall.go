@@ -691,7 +691,7 @@ func frpsActiveProxies(conf map[string]any) []activeProxy {
 	}
 	var found []activeProxy
 	for _, ptype := range []string{"tcp", "udp"} {
-		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/proxy/%s", netJoin(addr, port), ptype), nil)
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/api/proxy/%s", urlHostPort(addr, port), ptype), nil)
 		if err != nil {
 			// Adresse inutilisable : pas de panique, on passe
 			// Unusable address: no panic, skip it
@@ -734,6 +734,33 @@ func netJoin(host string, port int) string {
 		return "[" + host + "]:" + strconv.Itoa(port)
 	}
 	return host + ":" + strconv.Itoa(port)
+}
+
+// urlHostPort : netJoin pour une URL ; la zone d'une IPv6 (« ::1%eth0 ») y
+// s'écrit « %25 » (RFC 6874), sinon l'URL est refusée (« invalid URL escape »).
+// urlHostPort: netJoin for a URL; the zone of an IPv6 ("::1%eth0") is written
+// "%25" there (RFC 6874), otherwise the URL is rejected ("invalid URL escape").
+func urlHostPort(host string, port int) string {
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if ip, zone, ok := strings.Cut(host, "%"); ok && strings.Contains(ip, ":") {
+		host = ip + "%25" + url.PathEscape(zone)
+	}
+	return netJoin(host, port)
+}
+
+// isLoopbackHost : adresse joignable seulement depuis la machine
+// (« localhost », 127.x, « ::1 »), aussi entre crochets ou avec une zone
+// (« [::1] », « ::1%lo »).
+// isLoopbackHost: address reachable only from the machine ("localhost", 127.x,
+// "::1"), also between brackets or with a zone ("[::1]", "::1%lo").
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(host), "["), "]")
+	host, _, _ = strings.Cut(host, "%")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.Unmap().IsLoopback()
 }
 
 var (
@@ -803,7 +830,9 @@ func fwKnownPortsRead() []J {
 		if v, ok := ws["addr"]; ok {
 			wsAddr = pyStr(v)
 		}
-		if p := tomlInt(ws["port"]); p != 0 && wsAddr != "127.0.0.1" && wsAddr != "localhost" && wsAddr != "::1" {
+		// Boucle locale sous toutes ses formes (« [::1] », « ::1%lo »…) : pas public
+		// Loopback in all its forms ("[::1]", "::1%lo"…): not public
+		if p := tomlInt(ws["port"]); p != 0 && !isLoopbackHost(wsAddr) {
 			add(p, p, "tcp", "Tableau de bord frps", "config", nil)
 		}
 		if ranges, ok := conf["allowPorts"].([]any); ok {
@@ -904,8 +933,7 @@ func frpsListeningPorts() []portProto {
 				continue
 			}
 			addr, port := cols[4][:i], cols[4][i+1:]
-			a := strings.Trim(addr, "[]")
-			if a == "127.0.0.1" || a == "::1" || a == "localhost" || strings.HasPrefix(addr, "127.") {
+			if isLoopbackHost(addr) {
 				continue // joignable seulement depuis la machine
 			}
 			if isDigits(port) {

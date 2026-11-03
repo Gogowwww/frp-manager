@@ -152,6 +152,7 @@ export default {
       namePlaceholder: 'home',
       nameHint: 'Lowercase letters, digits, - and _ (32 at most). It follows the type: "home" gives frpc-home or frps-home.',
       nameInvalid: '1 to 32 characters among a-z, 0-9, - and _, starting with a letter or a digit.',
+      nameOtherType: 'This name points at an {other} instance: choose another one.',
       preview: 'Creates {path} and the {service} service, stopped.',
       previewStandalone: 'Creates {path}, run by the panel once started.',
       copy: 'Starting configuration',
@@ -159,7 +160,7 @@ export default {
       copyFrom: 'Copy of {name}',
       copyHint: {
         frpc: 'Keeps the server, the authentication and the settings, without the open ports or the visitors: they would conflict with the original instance’s ones. The log and the local dashboard port change.',
-        frps: 'Keeps the settings and the token. The listening ports (connection, KCP, QUIC, vhost, dashboard) and the log are replaced by free ones.',
+        frps: 'Keeps the settings, with a new token drawn at random. The listening ports (connection, KCP, QUIC, vhost, dashboard) and the log are replaced by free ones.',
       },
       defaultHint: {
         frpc: 'No server: fill it in its configuration before starting it.',
@@ -468,6 +469,7 @@ export default {
     required: 'Required field.',
     nameTaken: 'This name is already in use.',
     nameClash: '“{name}” is already the name of another tunnel.',
+    nameFormat: 'No spaces or control characters, 64 characters at most.',
     visitorNameClash: '“{name}” is already the name of another visitor.',
     port: 'Enter a port between 1 and 65535.',
     portSpec: 'Enter a port (8080), a range (30000-30010) or a list (6000-6006,6007), between 1 and 65535.',

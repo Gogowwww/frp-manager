@@ -15,6 +15,7 @@ import {
   PROXY_TYPES, VISITOR_TYPES, hasRemotePort, hasDomains, hasSecret,
   portSpecCount, isPortRange, isRanged, isVisitorRanged, frpcNames, visitorNames, MAX_RANGE_PORTS, PORT_TOKEN,
   TCP_UDP, pairProxies, splitPair, joinHostPort, fixHostPort, unbracket, unbracketConnection, stripBlocks,
+  tunnelNameOk,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
@@ -621,7 +622,13 @@ function editProxy(existing) {
 
         let ok = true;
         const check = (ctrl, msg) => { setFieldError(ctrl, msg); if (msg) ok = false; };
+        // Forme du nom (l'aide dit « sans espace ») : seulement pour un nom nouveau
+        // ou changé, un ancien nom écrit à la main reste accepté tel quel
+        // Name format (the hint says "no spaces"): only for a new or changed
+        // name, an old name written by hand stays accepted as is
+        const badName = values.name !== existing?.name && !tunnelNameOk(values.name);
         check(name, !values.name ? t('validation.required')
+          : badName ? t('validation.nameFormat')
           : clash === values.name ? t('validation.nameTaken')
             : clash ? t('validation.nameClash', { name: clash }) : '');
         check(localIP, !values.localIP ? t('validation.required') : '');

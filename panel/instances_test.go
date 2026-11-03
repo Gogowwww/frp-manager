@@ -24,10 +24,49 @@ func TestNewInstanceID(t *testing.T) {
 		{"frpc", "a b"}: "", {"frpc", "../x"}: "", {"frpc", "x;reboot"}: "", {"frpc", "x$(id)"}: "",
 		{"frpc", "maison\n"}: "frpc-maison", {"frpc", "é"}: "", {"frpc", strings.Repeat("a", 33)}: "",
 		{"sshd", "x"}: "", {"frp", "x"}: "",
+		// Préfixe du type pas répété, nom de l'autre type refusé
+		// Type prefix not repeated, other type's name rejected
+		{"frps", "frps"}: "frps", {"frps", "FRPS-vps"}: "frps-vps", {"frpc", "frpc-a"}: "frpc-a", {"frpc", "frpc-"}: "", {"frpc", "frpc--x"}: "",
+		{"frps", "frpc"}: "", {"frps", "frpc-x"}: "", {"frps", "frps-frpc"}: "", {"frpc", "frps"}: "",
+		{"frps", "frpsx"}: "frps-frpsx", {"frps", "frpcx"}: "frps-frpcx",
 	} {
 		if got := newInstanceID(in[0], in[1]); got != want {
 			t.Errorf("%q %q : %q, attendu %q", in[0], in[1], got, want)
 		}
+	}
+}
+
+// copyInstanceConfig : frps reçoit un nouveau jeton, sauf modèle frp, oidc ou
+// table en ligne ; frpc garde celui de son serveur.
+// copyInstanceConfig: frps gets a new token, except frp template, oidc or
+// inline table; frpc keeps its server's one.
+func TestCopyInstanceToken(t *testing.T) {
+	setup(t)
+	noPortCheck(t)
+	tokenOf := func(bin, src string) string {
+		out, err := FR.copyInstanceConfig(bin, bin, src, bin+"-b", map[int]bool{})
+		if err != nil {
+			t.Fatalf("%s : %v", src, err)
+		}
+		return str(mapv(must(parseFrpConfig(out)), "auth"), "token", "")
+	}
+	if got := tokenOf("frps", "bindPort = 7000\nauth.token = \"tok\"\n"); got == "tok" || len(got) != 32 {
+		t.Errorf("frps : %q", got)
+	}
+	if got := tokenOf("frps", "bindPort = 7000\n[auth]\nmethod = \"token\"\ntoken = \"tok\"\n"); got == "tok" || len(got) != 32 {
+		t.Errorf("frps [auth] : %q", got)
+	}
+	for _, src := range []string{
+		"bindPort = 7000\nauth.token = \"{{ .Envs.FRP_TOKEN }}\"\n",
+		"bindPort = 7000\nauth = { token = \"tok\" }\n",
+		"bindPort = 7000\nauth.method = \"oidc\"\nauth.token = \"tok\"\n",
+	} {
+		if got := tokenOf("frps", src); got != "tok" && got != "0" {
+			t.Errorf("jeton changé : %q → %q", src, got)
+		}
+	}
+	if got := tokenOf("frpc", "serverAddr = \"x\"\nauth.token = \"tok\"\n"); got != "tok" {
+		t.Errorf("frpc : %q", got)
 	}
 }
 
@@ -146,8 +185,8 @@ func TestCopyRewritesPortsAndLog(t *testing.T) {
 	if to := str(mapv(conf, "log"), "to", ""); filepath.ToSlash(to) != "/var/log/frp/frps-b.log" {
 		t.Errorf("log.to %q", to)
 	}
-	if str(mapv(conf, "auth"), "token", "") != "tok" {
-		t.Error("jeton perdu")
+	if tok := str(mapv(conf, "auth"), "token", ""); tok == "tok" || len(tok) != 32 {
+		t.Errorf("jeton %q : un nouveau était attendu", tok)
 	}
 
 	// frps sans bindPort écoute sur 7000 : la copie reçoit un bindPort
@@ -262,12 +301,22 @@ func TestCreateInstanceSystemd(t *testing.T) {
 		{"type": "frpc", "name": ""}, {"type": "frpc", "name": "../../etc/x"}, {"type": "frpc", "name": "a b"},
 		{"type": "frpc", "name": "x;reboot"}, {"type": "frpc", "name": strings.Repeat("a", 40)}, {"type": "frpc", "name": "a@b"},
 		{"type": "sshd", "name": "x"}, {"type": "frpc"},
+		// Nom qui n'est pas une chaîne, nom de l'autre type
+		// Name that is not a string, other type's name
+		{"type": "frps", "name": 5}, {"type": "frpc", "name": true}, {"type": "frpc", "name": []any{"a"}},
+		{"type": "frps", "name": "frpc"}, {"type": "frps", "name": "frps-frpc-x"},
 	} {
 		expectCode(t, c.post("/api/instance/create", body), 400)
 	}
 	if !reflect.DeepEqual(listDir(frpConfDir), confsBefore) || len(listDir(unitDir)) != 0 || len(*calls) != 0 {
 		t.Fatalf("écrit ou lancé : %v %v %v", listDir(frpConfDir), listDir(unitDir), *calls)
 	}
+	if r := c.post("/api/instance/create", J{"type": "frps", "name": "FRPC"}); !strings.Contains(r.text(), "autre type") {
+		t.Fatalf("message : %s", r.text())
+	}
+	// « frps » existe déjà : pas de frps-frps, l'instance existante est signalée
+	// "frps" already exists: no frps-frps, the existing instance is reported
+	expectCode(t, c.post("/api/instance/create", J{"type": "frps", "name": "frps"}), 409)
 
 	// Nouveau frpc : config par défaut, journal propre, unité arrêtée
 	// New frpc: default config, own log, stopped unit
@@ -306,13 +355,13 @@ func TestCreateInstanceSystemd(t *testing.T) {
 	os.WriteFile(unitDir+"frps-vps.service", []byte("[Unit]\n"), 0o644)
 	expectCode(t, c.post("/api/instance/create", J{"type": "frps", "name": "vps"}), 409)
 
-	// Copie de frps : autres ports, même jeton, journal propre
-	// Copy of frps: other ports, same token, own log
+	// Copie de frps : autres ports, nouveau jeton, journal propre
+	// Copy of frps: other ports, new token, own log
 	r = c.post("/api/instance/create", J{"type": "frps", "name": "b", "copy_from": "frps"})
 	expectCode(t, r, 200)
 	srv := must(parseFrpConfig(string(must(os.ReadFile(filepath.Join(frpConfDir, "frps-b.toml"))))))
 	if bind := tomlInt(srv["bindPort"]); bind == 7000 || tomlInt(srv["kcpBindPort"]) != bind ||
-		tomlInt(mapv(srv, "webServer")["port"]) != 7501 || str(mapv(srv, "auth"), "token", "") != "tok" {
+		tomlInt(mapv(srv, "webServer")["port"]) != 7501 || len(str(mapv(srv, "auth"), "token", "")) != 32 {
 		t.Fatalf("frps-b : %v", srv)
 	}
 	// frps par défaut : port et jeton tirés au hasard

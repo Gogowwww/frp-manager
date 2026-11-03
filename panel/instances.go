@@ -78,7 +78,17 @@ func newInstanceID(bin, suffix string) string {
 		return ""
 	}
 	suffix = strings.ToLower(strings.TrimSpace(suffix))
-	if !instanceSuffixRe.MatchString(suffix) {
+	// « frps-vps » ou « frps » pour un frps : le préfixe n'est pas répété
+	// (frps-vps, frps) ; « frpc » ou « frpc-x » pour un frps : refusé, le nom
+	// désignerait l'autre type.
+	// "frps-vps" or "frps" for an frps: the prefix is not repeated (frps-vps,
+	// frps); "frpc" or "frpc-x" for an frps: rejected, the name would point at
+	// the other type.
+	if suffix == bin {
+		return bin
+	}
+	suffix = strings.TrimPrefix(suffix, bin+"-")
+	if !instanceSuffixRe.MatchString(suffix) || otherTypeName(bin, suffix) {
 		return ""
 	}
 	id := bin + "-" + suffix
@@ -86,6 +96,15 @@ func newInstanceID(bin, suffix string) string {
 		return ""
 	}
 	return id
+}
+
+// otherTypeName : suffix (déjà en minuscules) désigne-t-il l'autre type
+// (« frpc », « frpc-x » pour un frps) ?
+// otherTypeName: does suffix (already lowercase) point at the other type
+// ("frpc", "frpc-x" for an frps)?
+func otherTypeName(bin, suffix string) bool {
+	other := map[string]string{"frps": "frpc", "frpc": "frps"}[bin]
+	return other != "" && (suffix == other || strings.HasPrefix(suffix, other+"-"))
 }
 
 // servicesCreatable : le panel peut-il créer une instance ? Pas dans un
@@ -479,6 +498,28 @@ func (l Lang) copyInstanceConfig(bin, srcID, src, id string, used map[int]bool) 
 		content = "# " + id + ".toml" + strings.TrimPrefix(first, "# "+srcID+".toml") + "\n" + rest
 	}
 	content = setTOMLKey(content, "log.to", tomlString(instanceLogPath(id)))
+	// frps : nouveau jeton, les clients de l'original n'entrent pas dans la copie.
+	// Pas de changement si la config a des modèles frp (le jeton peut venir de
+	// {{ .Envs.X }}), ni pour une autre méthode d'authentification (oidc). frpc
+	// garde celui de son serveur.
+	// frps: new token, the original's clients do not get into the copy. No change
+	// when the config has frp templates (the token may come from
+	// {{ .Envs.X }}), nor for another authentication method (oidc). frpc keeps
+	// its server's one.
+	if bin == "frps" && !strings.Contains(content, "{{") {
+		if conf, err := parseFrpConfig(content); err == nil {
+			auth := mapv(conf, "auth")
+			if tok, ok := auth["token"].(string); ok && tok != "" && str(auth, "method", "token") == "token" {
+				// Réécriture illisible (table en ligne…) : jeton gardé plutôt qu'une copie refusée
+				// Unreadable rewrite (inline table…): token kept rather than a refused copy
+				fresh := tokenHex(16)
+				next := setTOMLKey(content, "auth.token", tomlString(fresh))
+				if nc, err := parseFrpConfig(next); err == nil && str(mapv(nc, "auth"), "token", "") == fresh {
+					content = next
+				}
+			}
+		}
+	}
 	out, err := l.rewriteListenPorts(content, bin, used, true)
 	if err != nil {
 		return "", errors.New(l.M("Copie de "+srcID+" impossible : "+err.Error(), "Cannot copy "+srcID+": "+err.Error()))
@@ -748,7 +789,15 @@ func init() {
 			c.Fail(http.StatusBadRequest, c.M("Programme inconnu (frps ou frpc)", "Unknown program (frps or frpc)"))
 			return
 		}
-		id := newInstanceID(bin, str(data, "name", ""))
+		// Le nom est une chaîne : un nombre JSON (5) n'est pas converti en « 5 »
+		// The name is a string: a JSON number (5) is not turned into "5"
+		name, _ := data["name"].(string)
+		if otherTypeName(bin, strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), bin+"-")) {
+			c.Fail(http.StatusBadRequest, c.M("Nom refusé : il désigne l'autre type d'instance, choisissez-en un autre.",
+				"Name rejected: it points at the other instance type, choose another one."))
+			return
+		}
+		id := newInstanceID(bin, name)
 		if id == "" {
 			c.Fail(http.StatusBadRequest, c.M("Nom invalide : 1 à 32 caractères parmi a-z, 0-9, - et _, en commençant par une lettre ou un chiffre.",
 				"Invalid name: 1 to 32 characters among a-z, 0-9, - and _, starting with a letter or a digit."))

@@ -153,6 +153,7 @@ export default {
       namePlaceholder: 'maison',
       nameHint: 'Lettres minuscules, chiffres, - et _ (32 au plus). Il suit le type : « maison » donne frpc-maison ou frps-maison.',
       nameInvalid: 'De 1 à 32 caractères parmi a-z, 0-9, - et _, en commençant par une lettre ou un chiffre.',
+      nameOtherType: 'Ce nom désigne une instance {other} : choisissez-en un autre.',
       preview: 'Crée {path} et le service {service}, arrêté.',
       previewStandalone: 'Crée {path}, lancé par le panel une fois démarré.',
       copy: 'Configuration de départ',
@@ -160,7 +161,7 @@ export default {
       copyFrom: 'Copie de {name}',
       copyHint: {
         frpc: 'Garde le serveur, l’authentification et les réglages, sans les ports ouverts ni les visiteurs : ils entreraient en conflit avec ceux de l’instance d’origine. Le journal et le port du tableau de bord local changent.',
-        frps: 'Garde les réglages et le jeton. Les ports d’écoute (connexion, KCP, QUIC, vhost, tableau de bord) et le journal sont remplacés par des libres.',
+        frps: 'Garde les réglages, avec un nouveau jeton tiré au hasard. Les ports d’écoute (connexion, KCP, QUIC, vhost, tableau de bord) et le journal sont remplacés par des libres.',
       },
       defaultHint: {
         frpc: 'Sans serveur : renseignez-le dans sa configuration avant de le démarrer.',
@@ -469,6 +470,7 @@ export default {
     required: 'Champ obligatoire.',
     nameTaken: 'Ce nom est déjà utilisé.',
     nameClash: '« {name} » est déjà le nom d’un autre tunnel.',
+    nameFormat: 'Sans espace ni caractère de contrôle, 64 caractères au plus.',
     visitorNameClash: '« {name} » est déjà le nom d’un autre visiteur.',
     port: 'Entrez un port entre 1 et 65535.',
     portSpec: 'Entrez un port (8080), une plage (30000-30010) ou une liste (6000-6006,6007), entre 1 et 65535.',

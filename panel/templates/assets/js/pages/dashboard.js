@@ -22,6 +22,20 @@ let orphanSeq = 0;
 // Même règle que le serveur (instanceSuffixRe) / Same rule as the server (instanceSuffixRe)
 const SUFFIX_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
+/** Nom final de l'instance, comme newInstanceID côté serveur : « frps » ou
+ *  « frps-vps » pour un frps ne répètent pas le préfixe ; '' si le nom est
+ *  refusé, 'other' s'il désigne l'autre type (« frpc » pour un frps).
+ *  Final instance name, like newInstanceID on the server: "frps" or "frps-vps"
+ *  for an frps do not repeat the prefix; '' if the name is rejected, 'other' if
+ *  it points at the other type ("frpc" for an frps). */
+function instanceIdOf(type, suffix) {
+  if (suffix === type) return type;
+  const rest = suffix.startsWith(`${type}-`) ? suffix.slice(type.length + 1) : suffix;
+  const other = type === 'frps' ? 'frpc' : 'frps';
+  if (rest === other || rest.startsWith(`${other}-`)) return 'other';
+  return SUFFIX_RE.test(rest) ? `${type}-${rest}` : '';
+}
+
 export default {
   id: 'dashboard',
   title: () => t('nav.dashboard'),
@@ -384,8 +398,11 @@ async function newInstance() {
       const refresh = () => {
         // Aperçu des fichiers créés, seulement pour un nom valide (ou l'exemple)
         // Preview of the files created, only for a valid name (or the example)
-        const id = `${type}-${suffix() || t('dashboard.new.namePlaceholder')}`;
-        preview.hidden = !!suffix() && !SUFFIX_RE.test(suffix());
+        // Nom final affiché : en minuscules, préfixe du type pas répété
+        // Final name shown: lowercase, type prefix not repeated
+        const final = instanceIdOf(type, suffix() || t('dashboard.new.namePlaceholder'));
+        const id = final === 'other' ? '' : final;
+        preview.hidden = !id;
         preview.textContent = t(standalone ? 'dashboard.new.previewStandalone' : 'dashboard.new.preview',
           { id, path: `/etc/frp/${id}.toml`, service: `${id}.service` });
         // Copie possible depuis une instance du même type dont la config est lisible ici
@@ -410,8 +427,9 @@ async function newInstance() {
       const submit = (e) => {
         e.preventDefault();
         errorBox.hidden = true;
-        if (!SUFFIX_RE.test(suffix())) {
-          setFieldError(nameInput, t('dashboard.new.nameInvalid'));
+        const final = instanceIdOf(type, suffix());
+        if (!final || final === 'other') {
+          setFieldError(nameInput, t(final ? 'dashboard.new.nameOtherType' : 'dashboard.new.nameInvalid', { other: type === 'frps' ? 'frpc' : 'frps' }));
           nameInput.focus();
           return;
         }

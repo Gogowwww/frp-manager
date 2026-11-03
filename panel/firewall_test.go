@@ -5,7 +5,9 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"reflect"
 	"strings"
@@ -387,6 +389,43 @@ func TestNetJoinBrackets(t *testing.T) {
 	} {
 		if got := netJoin(in, 7500); got != want {
 			t.Errorf("netJoin(%q) = %q, attendu %q", in, got, want)
+		}
+	}
+}
+
+// urlHostPort : la zone d'une IPv6 s'écrit %25 et l'URL se lit sans erreur.
+// urlHostPort: the zone of an IPv6 is written %25 and the URL parses cleanly.
+func TestURLHostPortZone(t *testing.T) {
+	for in, want := range map[string]string{
+		"127.0.0.1": "127.0.0.1:7400", "::1": "[::1]:7400", "[::1]": "[::1]:7400",
+		"::1%eth0": "[::1%25eth0]:7400", "[fe80::1%2]": "[fe80::1%252]:7400", "example.org": "example.org:7400",
+	} {
+		got := urlHostPort(in, 7400)
+		if got != want {
+			t.Errorf("urlHostPort(%q) = %q, attendu %q", in, got, want)
+		}
+		if _, err := http.NewRequest(http.MethodGet, "http://"+got+"/api/status", nil); err != nil {
+			t.Errorf("urlHostPort(%q) : URL refusée : %v", in, err)
+		}
+	}
+	// La zone revient intacte une fois l'URL lue
+	// The zone comes back intact once the URL is read
+	if u, _ := url.Parse("http://" + urlHostPort("::1%eth0", 7400)); u == nil || u.Hostname() != "::1%eth0" {
+		t.Errorf("zone perdue : %v", u)
+	}
+}
+
+// isLoopbackHost : toutes les formes de la boucle locale, rien d'autre.
+// isLoopbackHost: every form of the loopback, nothing else.
+func TestIsLoopbackHost(t *testing.T) {
+	for in, want := range map[string]bool{
+		"127.0.0.1": true, "127.0.0.2": true, "localhost": true, "LocalHost": true, "::1": true, "[::1]": true,
+		"::1%lo": true, "[::1%lo]": true, "127.0.0.1%lo": true, "::ffff:127.0.0.1": true, " ::1 ": true,
+		"0.0.0.0": false, "::": false, "": false, "*": false, "192.168.1.2": false, "fe80::1%eth0": false,
+		"example.org": false, "localhost.example.org": false,
+	} {
+		if got := isLoopbackHost(in); got != want {
+			t.Errorf("isLoopbackHost(%q) = %v, attendu %v", in, got, want)
 		}
 	}
 }

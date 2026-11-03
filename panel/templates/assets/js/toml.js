@@ -60,9 +60,18 @@ export function parseToml(text) {
   let prefix = '';
   let section = '';
   let pendingRange = null;
+  // Commentaires de ligne entière entre deux blocs : ils partent avec le bloc
+  // qui suit (ceux d'avant le premier bloc restent dans la partie connexion,
+  // ceux de la fin dans out.trailing). Ceux du milieu d'un bloc sont perdus.
+  // Whole-line comments between two blocks: they go with the next block
+  // (those before the first block stay in the connection part, those at the
+  // end in out.trailing). Those in the middle of a block are lost.
+  let comments = [];
+  let seenBlock = false;
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
     const line = rawLine.trim();
+    if (line.startsWith('#') && seenBlock) comments.push(line);
     if (!line || line.startsWith('#')) continue;
 
     // Modèle de plage de ports : « range » devant le bloc, « end » derrière
@@ -74,13 +83,18 @@ export function parseToml(text) {
     if (END_RE.test(line)) continue;
 
     if (line === '[[proxies]]' || line === '[[visitors]]') {
-      block = { values: {}, raw: {}, order: [] };
+      block = { values: {}, raw: {}, order: [], comments };
+      comments = [];
+      seenBlock = true;
       if (pendingRange) block.range = pendingRange;
       pendingRange = null;
       out[line === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
       prefix = '';
       continue;
     }
+    // Ligne de contenu : les commentaires lus avant sont dans un bloc
+    // Content line: the comments read before are inside a block
+    comments = [];
 
     if (line.startsWith('[')) {
       const name = line.replace(/^\[+|\]+.*$/g, '').trim();
@@ -107,6 +121,7 @@ export function parseToml(text) {
       out.values[section ? `${section}.${key}` : key] = value;
     }
   }
+  out.trailing = comments;
   return out;
 }
 
@@ -349,6 +364,14 @@ export function visitorNames(v) {
   return isVisitorRanged(v) ? rangeNames(v.name, v.bindPort) : [v.name];
 }
 
+/** Nom de tunnel saisi : ni espace ni caractère de contrôle, 64 caractères au
+ *  plus. frp en accepte davantage : la règle ne vaut que pour un nom nouveau.
+ *  Typed tunnel name: no spaces or control characters, 64 characters at most.
+ *  frp accepts more: the rule only applies to a new name. */
+export function tunnelNameOk(name) {
+  return [...name].length <= 64 && !/[\s\p{Cc}]/u.test(name);
+}
+
 let uidSeq = 0;
 const uid = () => `u${++uidSeq}`;
 
@@ -380,6 +403,7 @@ export function proxyFromBlock(block) {
     compression: v['transport.useCompression'] === 'true',
     encryption: v['transport.useEncryption'] === 'true',
     extras: extrasOf(block, PROXY_KEYS),
+    comments: block.comments || [],
   };
 }
 
@@ -387,7 +411,10 @@ export function proxyFromBlock(block) {
  *  The two tunnels of a "TCP + UDP" entry (name-tcp, name-udp), otherwise the entry. */
 export function splitPair(p) {
   if (p.type !== TCP_UDP) return [p];
-  return [{ ...p, name: `${p.name}-tcp`, type: 'tcp' }, { ...p, name: `${p.name}-udp`, type: 'udp' }];
+  // Chacun retrouve ses commentaires (udpComments : ceux du tunnel udp)
+  // Each one gets its comments back (udpComments: those of the udp tunnel)
+  const { udpComments = [], ...q } = p;
+  return [{ ...q, name: `${p.name}-tcp`, type: 'tcp' }, { ...q, name: `${p.name}-udp`, type: 'udp', comments: udpComments }];
 }
 
 /**
@@ -403,7 +430,9 @@ export function splitPair(p) {
  * them back one after the other.
  */
 export function pairProxies(proxies) {
-  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '' });
+  // Les commentaires n'empêchent pas le regroupement : ceux des deux sont gardés
+  // Comments do not prevent grouping: those of both are kept
+  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '', comments: [], udpComments: [] });
   const mates = new Map();
   for (const p of proxies) {
     const base = p.type === 'tcp' && p.remotePort ? /^(.+)-tcp$/.exec(p.name)?.[1] : null;
@@ -419,7 +448,8 @@ export function pairProxies(proxies) {
     if (!q) { out.push(p); continue; }
     done.add(q);
     const tcp = p.type === 'tcp' ? p : q;
-    out.push({ ...tcp, name: tcp.name.slice(0, -'-tcp'.length), type: TCP_UDP });
+    const udp = tcp === p ? q : p;
+    out.push({ ...tcp, name: tcp.name.slice(0, -'-tcp'.length), type: TCP_UDP, udpComments: udp.comments || [] });
   }
   return out;
 }
@@ -435,7 +465,7 @@ export function randomPort() {
 export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',
-    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [],
+    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [], comments: [],
   };
 }
 
@@ -457,11 +487,12 @@ export function visitorFromBlock(block) {
     bindPort: range ? range.local : v.bindPort || '',
     serverPorts: range && range.remote && range.remote !== range.local ? range.remote : '',
     extras: extrasOf(block, VISITOR_KEYS),
+    comments: block.comments || [],
   };
 }
 
 export function newVisitor() {
-  return { uid: uid(), name: '', type: 'stcp', serverName: '', secretKey: '', bindAddr: '127.0.0.1', bindPort: '', serverPorts: '', extras: [] };
+  return { uid: uid(), name: '', type: 'stcp', serverName: '', secretKey: '', bindAddr: '127.0.0.1', bindPort: '', serverPorts: '', extras: [], comments: [] };
 }
 
 export function generateProxy(p) {
@@ -498,7 +529,7 @@ export function generateProxy(p) {
   if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
   for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
-  return L.join('\n');
+  return [...(p.comments || []), ...L].join('\n');
 }
 
 export function generateVisitor(v) {
@@ -520,7 +551,7 @@ export function generateVisitor(v) {
   else if (v.bindPort) L.push(`bindPort = ${v.bindPort}`);
   for (const [k, raw] of v.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
-  return L.join('\n');
+  return [...(v.comments || []), ...L].join('\n');
 }
 
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */
@@ -534,5 +565,11 @@ export function composeClientConfig(baseText, proxies, visitors) {
   // Bracketed connection addresses (older version): frpc would not start, they
   // are fixed on every write
   const base = unbracketConnection(stripBlocks(baseText));
-  return `${[base, ...blocks].filter(Boolean).join('\n\n')}\n`;
+  // Commentaires de la fin du fichier, après le dernier bloc : gardés à la fin
+  // Comments at the end of the file, after the last block: kept at the end
+  const trailing = parseToml(baseText).trailing.join('\n');
+  const text = `${[base, ...blocks, trailing].filter(Boolean).join('\n\n')}\n`;
+  // Fins de ligne du fichier d'origine : CRLF partout s'il en avait
+  // Line endings of the original file: CRLF everywhere if it had some
+  return /\r\n/.test(baseText) ? text.replace(/\r?\n/g, '\r\n') : text;
 }
