@@ -1772,6 +1772,16 @@ func inlineFormPorts(content string) []J {
 	if toml.Unmarshal([]byte(frpTOML(content)), &conf) != nil {
 		return nil
 	}
+	// Un genre écrit aussi en blocs [[…]] est déjà lu ligne à ligne
+	// A kind also written as [[…]] blocks is already read line by line
+	for _, line := range splitLines(content) {
+		switch tomlHead(strings.TrimSpace(line)) {
+		case "[[proxies]]":
+			conf.Proxies = nil
+		case "[[visitors]]":
+			conf.Visitors = nil
+		}
+	}
 	num := func(v any) int {
 		switch n := v.(type) {
 		case int64:

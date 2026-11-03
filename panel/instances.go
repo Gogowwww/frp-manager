@@ -381,8 +381,22 @@ func setTOMLKey(content, key, value string) string {
 func clientConnectionOnly(content string) string {
 	var out []string
 	drop, skipValue, table := false, false, ""
+	inlineDepth := 0
 	for _, line := range strings.Split(content, "\n") {
 		s := strings.TrimSpace(line)
+		// Forme en ligne « proxies = [ { … } ] » : retirée, sur une ou plusieurs lignes
+		// Inline form "proxies = [ { … } ]": removed, on one or several lines
+		if inlineDepth > 0 {
+			inlineDepth += bracketBalance(s)
+			continue
+		}
+		if k := tomlKeyOf(s); table == "" && (k == "proxies" || k == "visitors") {
+			_, v, _ := strings.Cut(s, "=")
+			if d := bracketBalance(strings.TrimSpace(v)); d > 0 {
+				inlineDepth = d
+			}
+			continue
+		}
 		if skipValue {
 			// Suite d'un tableau sur plusieurs lignes (includes = [ … ])
 			// Rest of a multi-line array (includes = [ … ])
@@ -889,4 +903,33 @@ func init() {
 		ok, msg, code := c.Lang.createInstance(bin, id, conf, "")
 		c.JSON(J{"ok": ok, "msg": msg, "id": id}, code)
 	}))
+}
+
+// bracketBalance : crochets et accolades ouverts moins fermés, hors chaînes
+// et commentaires
+// bracketBalance: open minus closed brackets and braces, outside strings and
+// comments
+func bracketBalance(s string) int {
+	depth := 0
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '#':
+			return depth
+		case c == '[' || c == '{':
+			depth++
+		case c == ']' || c == '}':
+			depth--
+		}
+	}
+	return depth
 }

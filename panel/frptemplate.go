@@ -23,7 +23,7 @@ var (
 	// Action d'un modèle sur une ligne, et ligne faite seulement d'actions
 	// A template action on one line, and a line made only of actions
 	frpActionRe     = regexp.MustCompile(`\{\{.*?\}\}`)
-	frpActionLineRe = regexp.MustCompile(`^\s*(?:\{\{.*?\}\}\s*)+$`)
+	frpActionLineRe = regexp.MustCompile(`^\s*(?:\{\{.*?\}\}\s*)+(?:#.*)?$`)
 	// Plage de ports écrite par la page Ports : ligne « range » devant le bloc,
 	// nom « nom-{{ $v.First }} » dans le bloc
 	// Port range written by the Ports page: "range" line in front of the block,
@@ -32,7 +32,7 @@ var (
 	// « nom-{{ $v }} » ; visiteurs : « bindPort = {{ $v.First }} »
 	// Types without a public port: a single range (parseNumberRange, group 3)
 	// and "name-{{ $v }}"; visitors: "bindPort = {{ $v.First }}"
-	frpRangeLineRe   = regexp.MustCompile(`^\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"|parseNumberRange\s+"([^"]*)")\s*-?\}\}$`)
+	frpRangeLineRe   = regexp.MustCompile(`^\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"|parseNumberRange\s+"([^"]*)")\s*-?\}\}\s*(?:#.*)?$`)
 	frpRangePairRe   = regexp.MustCompile(`parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"`)
 	frpRangeSingleRe = regexp.MustCompile(`parseNumberRange\s+"([^"]*)"`)
 	frpFirstRe       = regexp.MustCompile(`\{\{\s*\$v(?:\.First)?\s*\}\}`)

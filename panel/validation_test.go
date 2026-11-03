@@ -782,3 +782,33 @@ func TestExtractPortsInlineForm(t *testing.T) {
 		}
 	}
 }
+
+// Plage commentée, forme en ligne sans doublon de ports, copie sans tunnels en ligne
+// Commented range, inline form without duplicated ports, copy without inline tunnels
+func TestInlineFormAndCommentedRange(t *testing.T) {
+	setup(t)
+	rng := "serverAddr = \"x\"\nserverPort = 7000\n{{- range $_, $v := parseNumberRangePair \"6000-6001\" \"18850-18851\" }} # r\n[[proxies]]\nname = \"rg-{{ $v.First }}\"\ntype = \"tcp\"\nlocalPort = {{ $v.First }}\nremotePort = {{ $v.Second }}\n{{- end }} # fin\n"
+	if _, err := parseFrpConfig(rng); err != nil {
+		t.Errorf("plage commentée refusée : %v", err)
+	}
+	count := map[int]int{}
+	for _, p := range extractPortsFromConfig(rng, "frpc") {
+		count[p["port"].(int)]++
+	}
+	if count[18850] != 1 || count[18851] != 1 {
+		t.Errorf("ports de la plage commentée : %v", count)
+	}
+	mixed := "serverAddr = \"x\"\nserverPort = 7000\nvisitors = [ { name = \"v\", type = \"stcp\", bindAddr = \"0.0.0.0\", bindPort = 18999 } ]\n\n[[proxies]]\nname = \"a\"\ntype = \"tcp\"\nlocalPort = 1\nremotePort = 18801\n"
+	count = map[int]int{}
+	for _, p := range extractPortsFromConfig(mixed, "frpc") {
+		count[p["port"].(int)]++
+	}
+	if count[18801] != 1 || count[18999] != 1 {
+		t.Errorf("ports en doublon : %v", count)
+	}
+	inline := "serverAddr = \"x\"\nserverPort = 7000\nproxies = [\n  { name = \"a\", type = \"tcp\", localPort = 1, remotePort = 18801 },\n]\nvisitors = [ { name = \"v\" } ]\n[log]\nlevel = \"info\"\n"
+	out := clientConnectionOnly(inline)
+	if strings.Contains(out, "proxies") || strings.Contains(out, "visitors") || !strings.Contains(out, "[log]") {
+		t.Errorf("copie : tunnels en ligne gardés ou connexion perdue :\n%s", out)
+	}
+}

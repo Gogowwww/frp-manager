@@ -98,32 +98,43 @@ function scanEnd(s, start) {
   return -1;
 }
 
-/** Coupe sur les virgules du premier niveau (hors chaînes et commentaires). */
+/**
+ * Coupe sur les virgules du premier niveau (hors chaînes et commentaires).
+ * Renvoie { text, notes } : les commentaires lus dans chaque élément.
+ * Splits on the top-level commas (outside strings and comments). Returns
+ * { text, notes }: the comments read inside each element.
+ */
 function splitTop(s) {
   const out = [];
   let depth = 0;
   let quote = null;
   let cur = '';
+  let notes = [];
+  const push = () => { out.push({ text: cur.trim(), notes }); cur = ''; notes = []; };
   for (let i = 0; i < s.length; i += 1) {
     const c = s[i];
     if (quote) {
       cur += c;
       if (c === '\\' && quote === '"') { i += 1; cur += s[i] || ''; } else if (c === quote) quote = null;
     } else if (c === '"' || c === "'") { quote = c; cur += c; }
-    else if (c === '#') { while (i < s.length && s[i] !== '\n') i += 1; }
+    else if (c === '#') {
+      const from = i;
+      while (i < s.length && s[i] !== '\n') i += 1;
+      notes.push(s.slice(from, i).trim());
+    }
     else if (c === '[' || c === '{') { depth += 1; cur += c; }
     else if (c === ']' || c === '}') { depth -= 1; cur += c; }
-    else if (c === ',' && depth === 0) { out.push(cur); cur = ''; }
+    else if (c === ',' && depth === 0) push();
     else cur += c;
   }
-  out.push(cur);
-  return out.map((x) => x.trim()).filter(Boolean);
+  push();
+  return out.filter((x) => x.text || x.notes.length);
 }
 
 /** Lignes « clé = valeur » d'une table en ligne ; les sous-tables deviennent « a.b = … ». */
 function inlineLines(body, prefix = '') {
   const lines = [];
-  for (const part of splitTop(body)) {
+  for (const { text: part } of splitTop(body)) {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
     const key = part.slice(0, eq).trim().replace(/^(["'])(.*)\1$/, '$2');
@@ -134,30 +145,61 @@ function inlineLines(body, prefix = '') {
   return lines;
 }
 
+/** Lignes (début) des chaînes sur plusieurs lignes : on n'y cherche rien. */
+/** Start offsets of the lines inside multi-line strings: nothing is looked for there. */
+function multilineStringLines(text) {
+  const inside = new Set();
+  let delim = '';
+  let off = 0;
+  for (const line of text.split('\n')) {
+    if (delim) {
+      inside.add(off);
+      if (line.includes(delim)) delim = '';
+    } else {
+      const eq = line.indexOf('=');
+      const v = eq >= 0 ? line.slice(eq + 1).trim() : '';
+      const d = v.startsWith('"""') ? '"""' : v.startsWith("'''") ? "'''" : '';
+      if (d && !v.slice(3).includes(d)) delim = d;
+    }
+    off += line.length + 1;
+  }
+  return inside;
+}
+
 /** « proxies = [ { … }, { … } ] » → blocs [[proxies]] ajoutés à la fin du texte. */
 function expandInline(text) {
-  const re = /^[ \t]*(proxies|visitors)[ \t]*=[ \t]*\[/gm;
+  const re = /^[ \t]*["']?(proxies|visitors)["']?[ \t]*=[ \t]*\[/gm;
   const extra = [];
   let result = '';
   let pos = 0;
+  let found = false;
+  let skip = null;
   let m;
   while ((m = re.exec(text))) {
+    if (!skip) skip = multilineStringLines(text);
+    if (skip.has(m.index)) continue;
     const open = m.index + m[0].length - 1;
     const end = scanEnd(text, open);
     if (end < 0) continue;
+    found = true;
     for (const el of splitTop(text.slice(open + 1, end - 1))) {
-      if (el.startsWith('{') && el.endsWith('}')) extra.push(`[[${m[1]}]]\n${inlineLines(el.slice(1, -1)).join('\n')}`);
+      // Commentaire sans élément (après la dernière virgule) : gardé tel quel
+      // Comment with no element (after the last comma): kept as is
+      if (!el.text) { extra.push(el.notes.join('\n')); continue; }
+      if (!(el.text.startsWith('{') && el.text.endsWith('}'))) continue;
+      extra.push(`${el.notes.join('\n')}${el.notes.length ? '\n' : ''}[[${m[1]}]]\n${inlineLines(el.text.slice(1, -1)).join('\n')}`);
     }
     result += text.slice(pos, m.index);
     pos = end;
     re.lastIndex = end;
   }
-  if (!extra.length) return text;
-  return `${(result + text.slice(pos)).replace(/\s+$/, '')}\n\n${extra.join('\n\n')}\n`;
+  if (!found) return text;
+  const rest = `${(result + text.slice(pos)).replace(/\s+$/, '')}\n`;
+  return extra.length ? `${rest}\n${extra.join('\n\n')}\n` : rest;
 }
 
 function prep(text) {
-  return expandInline(String(text || '').replace(/^﻿/, '').replace(/\r(?!\n)/g, '\n'));
+  return expandInline(String(text || '').replace(/^\uFEFF/, '').replace(/\r(?!\n)/g, '\n'));
 }
 
 export function str(value) {
@@ -199,7 +241,7 @@ export function parseToml(text) {
     // Port-range template: "range" in front of the block, "end" behind it
     const [lineCode, lineNote] = line.startsWith('{{') ? splitComment(line) : [line, ''];
     const rm = RANGE_RE.exec(lineCode);
-    if (rm && lineNote) comments.push(lineNote);
+    if ((rm || END_RE.test(lineCode)) && lineNote) comments.push(lineNote);
     // Une seule plage (parseNumberRange) : pas de second côté
     // A single range (parseNumberRange): no second side
     if (rm) { pendingRange = rm[3] !== undefined ? { local: rm[3], remote: '' } : { local: rm[1], remote: rm[2] }; continue; }
@@ -228,9 +270,9 @@ export function parseToml(text) {
     comments = [];
 
     if (line.startsWith('[')) {
-      if (!(block && /^\[+(?:proxies|visitors)\./.test(line))) anyContent = true;
+      if (!(block && /^\[+\s*(?:proxies|visitors)\s*\./.test(line))) anyContent = true;
       const name = line.replace(/^\[+|\]+.*$/g, '').trim();
-      const sub = name.match(/^(?:proxies|visitors)\.(.+)$/);
+      const sub = name.match(/^(?:proxies|visitors)\s*\.\s*(.+)$/);
       // Sous-table d'un tunnel : ses commentaires passent à la première clé
       // Sub-table of a tunnel: its comments move to the first key
       if (block && sub) {
@@ -399,7 +441,7 @@ export function tablesAfterBlocks(text) {
       continue;
     }
     if (!seen) continue;
-    if (line.startsWith('[') && !/^\[+(?:proxies|visitors)\./.test(line)) {
+    if (line.startsWith('[') && !/^\[+\s*(?:proxies|visitors)\s*\./.test(line)) {
       // Les commentaires juste au-dessus d'un tableau partent avec lui
       // The comments right above a table go with it
       if (!inTable) buf = [...above];
@@ -670,6 +712,13 @@ function extrasOf(block, known) {
   return block.order.filter((k) => !known.has(k)).map((k) => [k, block.raw[k]]);
 }
 
+/** Entier TOML avec tirets bas (« 6_000 ») sans les tirets bas, sinon le texte. */
+/** TOML integer with underscores ("6_000") without them, otherwise the text. */
+function intText(v) {
+  const t = String(v || '');
+  return /^\d+(?:_\d+)*$/.test(t) ? t.replace(/_/g, '') : t;
+}
+
 export function proxyFromBlock(block) {
   const v = block.values;
   // Bloc d'un modèle de plage : les ports sont ceux de la ligne « range », le nom
@@ -685,9 +734,9 @@ export function proxyFromBlock(block) {
     name: range ? (v.name || '').replace(new RegExp(`-?${LOOP_FIRST}$`), '') : v.name || '',
     type: PROXY_TYPES.includes(v.type) ? v.type : (v.type || 'tcp'),
     localIP: v.localIP || '127.0.0.1',
-    localPort: range ? range.local : String(v.localPort || ''),
+    localPort: range ? range.local : intText(v.localPort),
     // remotePort = 0 : port attribué par le serveur, comme s'il était absent
-    remotePort: range ? range.remote : Number(v.remotePort) ? String(v.remotePort) : '',
+    remotePort: range ? range.remote : Number(intText(v.remotePort)) ? intText(v.remotePort) : '',
     domains: range ? domains.replace(new RegExp(LOOP_FIRST, 'g'), PORT_TOKEN) : domains,
     secretKey: v.secretKey || '',
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',
@@ -776,7 +825,7 @@ export function visitorFromBlock(block) {
     serverName: range ? (v.serverName || '').replace(new RegExp(`-?${LOOP_SECOND}$`), '') : v.serverName || '',
     secretKey: v.secretKey || '',
     bindAddr: v.bindAddr || '127.0.0.1',
-    bindPort: range ? range.local : v.bindPort || '',
+    bindPort: range ? range.local : intText(v.bindPort),
     serverPorts: range && range.remote && range.remote !== range.local ? range.remote : '',
     extras: extrasOf(block, VISITOR_KEYS),
     comments: block.comments || [],
