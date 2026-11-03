@@ -46,6 +46,12 @@ const (
 	fwLiveInterval  = time.Second
 	fwSeenFullEvery = 60 * time.Second
 	fwKnownTTL      = 15 * time.Second
+	// Démarrage du panel : passes rapprochées le temps que frps se lance et que
+	// ses proxys s'enregistrent (ports qui n'existent pas encore à la première).
+	// Panel startup: close passes while frps starts and its proxies register
+	// (ports that do not exist yet at the first one).
+	fwSyncBootInterval = 3 * time.Second
+	fwSyncBootPasses   = 10
 
 	// Systèmes autonomes (AS) : préfixes annoncés, via RIPEstat. Gardés sur
 	// disque et rafraîchis chaque jour ; si RIPEstat est injoignable, les
@@ -1601,46 +1607,76 @@ func fwVerdicts(ipText string, c fwConfig, known []J) []J {
 // fwSyncLoop garde la table à jour : ports des proxys qui changent, table
 // effacée (rechargement de nftables, redémarrage), démarrage du panel.
 func fwSyncLoop() {
-	time.Sleep(5 * time.Second)
+	// Première passe tout de suite, avec les listes et préfixes déjà sur
+	// disque : les règles filtrent dès le démarrage, sans attendre le réseau
+	// ni frps (les ports écrits dans les règles et la config de frps sont déjà
+	// connus). Les passes suivantes rafraîchissent et ajoutent les ports que
+	// frps ouvre une fois lancé.
+	// First pass right away, with the lists and prefixes already on disk: the
+	// rules filter from startup, without waiting for the network or frps (the
+	// ports written in the rules and in the frps config are already known).
+	// The next passes refresh and add the ports frps opens once running.
+	fwSyncPass(false)
+	for i := 0; i < fwSyncBootPasses; i++ {
+		time.Sleep(fwSyncBootInterval)
+		fwKnownInvalidate()
+		fwSyncPass(true)
+	}
 	for {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : %v", r), fmt.Sprintf("Firewall: %v", r)))
-				}
-			}()
-			c := fwCfg()
-			if !c.Enabled {
-				return
-			}
-			for _, r := range c.Rules {
-				if truthy(r["list"]) && ruleEnabled(r) {
-					if _, err := listsGet(fwListsMaxAge); err != "" {
-						log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : catalogue des listes communautaires non rafraîchi (%s)", err), fmt.Sprintf("Firewall: community list catalog not refreshed (%s)", err)))
-					}
-					break
-				}
-			}
-			for _, asn := range fwRuleASNs(c.Rules) {
-				if e := asnLookup(asn); e == nil || time.Now().Unix()-e.Fetched > fwASNMaxAge {
-					if _, err := asnFetch(asn); err != nil {
-						log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : préfixes de AS%d non rafraîchis (%v)", asn, err), fmt.Sprintf("Firewall: AS%d prefixes not refreshed (%v)", asn, err)))
-					}
-				}
-			}
-			detectFrp(false)
-			text := fwRuleset(c, fwKnownPorts(), seenEnabled())
-			expect := strings.Contains(text, "chain filter")
-			fwMu.Lock()
-			applied := fwApplied
-			fwMu.Unlock()
-			if text != applied || (expect && !fwTablePresent()) {
-				if ok, msg := fwApply(&c); !ok {
-					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : application impossible (%s)", msg), fmt.Sprintf("Firewall: cannot apply the rules (%s)", msg)))
-				}
-			}
-		}()
 		time.Sleep(fwSyncInterval)
+		fwSyncPass(true)
+	}
+}
+
+// fwKnownInvalidate : ports de frps relus au prochain appel de fwKnownPorts.
+// fwKnownInvalidate: frps ports read again at the next fwKnownPorts call.
+func fwKnownInvalidate() {
+	fwKnownMu.Lock()
+	fwKnownAt = time.Time{}
+	fwKnownMu.Unlock()
+}
+
+// fwSyncPass : une passe de fwSyncLoop ; refresh rafraîchit d'abord les listes
+// communautaires et les préfixes des AS (réseau, parfois lent).
+// fwSyncPass: one fwSyncLoop pass; refresh first refreshes the community lists
+// and the AS prefixes (network, sometimes slow).
+func fwSyncPass(refresh bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : %v", r), fmt.Sprintf("Firewall: %v", r)))
+		}
+	}()
+	c := fwCfg()
+	if !c.Enabled {
+		return
+	}
+	if refresh {
+		for _, r := range c.Rules {
+			if truthy(r["list"]) && ruleEnabled(r) {
+				if _, err := listsGet(fwListsMaxAge); err != "" {
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : catalogue des listes communautaires non rafraîchi (%s)", err), fmt.Sprintf("Firewall: community list catalog not refreshed (%s)", err)))
+				}
+				break
+			}
+		}
+		for _, asn := range fwRuleASNs(c.Rules) {
+			if e := asnLookup(asn); e == nil || time.Now().Unix()-e.Fetched > fwASNMaxAge {
+				if _, err := asnFetch(asn); err != nil {
+					log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : préfixes de AS%d non rafraîchis (%v)", asn, err), fmt.Sprintf("Firewall: AS%d prefixes not refreshed (%v)", asn, err)))
+				}
+			}
+		}
+	}
+	detectFrp(false)
+	text := fwRuleset(c, fwKnownPorts(), seenEnabled())
+	expect := strings.Contains(text, "chain filter")
+	fwMu.Lock()
+	applied := fwApplied
+	fwMu.Unlock()
+	if text != applied || (expect && !fwTablePresent()) {
+		if ok, msg := fwApply(&c); !ok {
+			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : application impossible (%s)", msg), fmt.Sprintf("Firewall: cannot apply the rules (%s)", msg)))
+		}
 	}
 }
 

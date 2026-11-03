@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"crypto/subtle"
+	"debug/elf"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -491,6 +493,15 @@ func posixParts(name string) []string {
 	return parts
 }
 
+// elfMachines : processeur ELF attendu pour chaque GOARCH (absent : pas vérifié).
+// elfMachines: expected ELF processor for each GOARCH (missing: not checked).
+var elfMachines = map[string]elf.Machine{
+	"amd64": elf.EM_X86_64, "386": elf.EM_386, "arm64": elf.EM_AARCH64, "arm": elf.EM_ARM,
+	"riscv64": elf.EM_RISCV, "loong64": elf.EM_LOONGARCH, "s390x": elf.EM_S390,
+	"ppc64le": elf.EM_PPC64, "mips": elf.EM_MIPS, "mipsle": elf.EM_MIPS,
+	"mips64": elf.EM_MIPS, "mips64le": elf.EM_MIPS,
+}
+
 // extractFrpBinaries extrait frps/frpc d'une archive .tar.gz dans dest : chemins
 // absolus ou avec « .. », liens et fichiers spéciaux refusés, taille
 // décompressée plafonnée (bombe de décompression). → {nom: chemin extrait}.
@@ -500,9 +511,15 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 		return nil, err
 	}
 	defer f.Close()
+	// Fichier qui n'est pas un .tar.gz, tronqué ou abîmé
+	// File that is not a .tar.gz, truncated or damaged
+	unreadable := func(err error) error {
+		return errors.New(l.M("archive illisible (pas un .tar.gz valide, tronquée ou abîmée) : "+err.Error(),
+			"unreadable archive (not a valid .tar.gz, truncated or damaged): "+err.Error()))
+	}
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return nil, err
+		return nil, unreadable(err)
 	}
 	tr := tar.NewReader(gz)
 	found := map[string]string{}
@@ -512,10 +529,21 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
+			// Fin du tar : le reste du flux gzip est lu pour vérifier sa somme
+			// de contrôle (archive coupée ou altérée).
+			// End of the tar: the rest of the gzip stream is read to check its
+			// checksum (cut or altered archive).
+			rest, err := io.Copy(io.Discard, io.LimitReader(gz, archiveMaxUnpacked-total+1))
+			if err != nil {
+				return nil, unreadable(err)
+			}
+			if total+rest > archiveMaxUnpacked {
+				return nil, errors.New(l.M("archive refusée : trop volumineuse une fois décompressée", "archive rejected: too large once decompressed"))
+			}
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, unreadable(err)
 		}
 		count++
 		if count > archiveMaxMembers {
@@ -559,7 +587,7 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 		n, err := io.Copy(w, io.LimitReader(tr, hdr.Size+1))
 		w.Close()
 		if err != nil {
-			return nil, err
+			return nil, unreadable(err)
 		}
 		if n > hdr.Size {
 			return nil, errors.New(l.M("archive refusée : taille incohérente", "archive rejected: inconsistent size"))
@@ -572,6 +600,21 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 		if string(head) != "\x7fELF" {
 			return nil, errors.New(l.M("archive refusée : "+hdr.Name+" n'est pas un exécutable Linux",
 				"archive rejected: "+hdr.Name+" is not a Linux executable"))
+		}
+		// En-tête ELF lisible et du processeur de cette machine : un programme
+		// d'une autre architecture ne démarrerait pas une fois installé.
+		// Readable ELF header for this machine's processor: a program for another
+		// architecture would not start once installed.
+		ef, err := elf.Open(out)
+		if err != nil {
+			return nil, errors.New(l.M("archive refusée : "+hdr.Name+" n'est pas un exécutable Linux",
+				"archive rejected: "+hdr.Name+" is not a Linux executable"))
+		}
+		machine := ef.Machine
+		ef.Close()
+		if want, ok := elfMachines[runtime.GOARCH]; ok && machine != want {
+			return nil, errors.New(l.M("archive refusée : "+hdr.Name+" est prévu pour un autre processeur ("+machine.String()+", ici "+runtime.GOARCH+")",
+				"archive rejected: "+hdr.Name+" is built for another processor ("+machine.String()+", here "+runtime.GOARCH+")"))
 		}
 		found[base] = out
 	}
@@ -611,6 +654,30 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 	if only != nil {
 		bins = only
 	}
+	logf(l.M("[INFO] Extraction …", "[INFO] Extracting…"))
+	tmpdir, err := os.MkdirTemp("", "frpm-extract-")
+	if err != nil {
+		logf("[ERROR] " + err.Error())
+		return false
+	}
+	defer os.RemoveAll(tmpdir)
+	extracted, err := extractFrpBinaries(l, archive, tmpdir)
+	if err != nil {
+		logf(l.M("[ERROR] "+err.Error()+" ; rien n'est installé, les services continuent.",
+			"[ERROR] "+err.Error()+"; nothing is installed, the services keep running."))
+		return false
+	}
+	// Archive vérifiée AVANT d'arrêter quoi que ce soit : une archive illisible,
+	// tronquée ou incomplète ne coupe pas les tunnels pour rien.
+	// Archive checked BEFORE stopping anything: an unreadable, truncated or
+	// incomplete archive does not cut the tunnels for nothing.
+	for _, b := range bins {
+		if extracted[b] == "" {
+			logf(l.M("[ERROR] "+b+" absent de l'archive : rien n'est installé, les services continuent.",
+				"[ERROR] "+b+" missing from the archive: nothing is installed, the services keep running."))
+			return false
+		}
+	}
 	logf(l.M("[INFO] Arrêt des services frp …", "[INFO] Stopping frp services…"))
 	running := stopRunningFrpServices(bins)
 	if len(running) > 0 {
@@ -640,29 +707,10 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 				func(level, msg string) { logf(level + " " + msg) })
 		}
 	}()
-	logf(l.M("[INFO] Extraction …", "[INFO] Extracting…"))
-	tmpdir, err := os.MkdirTemp("", "frpm-extract-")
-	if err != nil {
-		logf("[ERROR] " + err.Error())
-		return false
-	}
-	defer os.RemoveAll(tmpdir)
-	extracted, err := extractFrpBinaries(l, archive, tmpdir)
-	if err != nil {
-		logf("[ERROR] " + err.Error())
-		return false
-	}
 	var installed []string
 	os.MkdirAll(frpBinDir, 0o755) // dossier persistant du mode autonome / standalone mode persistent folder
 	for _, b := range bins {
 		src := extracted[b]
-		if src == "" {
-			if only != nil {
-				logf(l.M("[ERROR] "+b+" absent de l'archive.", "[ERROR] "+b+" missing from the archive."))
-				return false
-			}
-			continue
-		}
 		dst := filepath.Join(frpBinDir, b)
 		if err := installFile(src, dst, 0o755); err != nil {
 			logf("[ERROR] " + err.Error())

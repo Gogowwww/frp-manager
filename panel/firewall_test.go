@@ -262,6 +262,51 @@ func TestFirewallSaveAppliesWithNft(t *testing.T) {
 	expectCode(t, c.post("/api/firewall", J{"enabled": true, "rules": []any{J{"mode": "block", "ports": "7000"}}}), 400)
 }
 
+// Démarrage du panel (table absente, rien d'appliqué par ce processus) : la
+// première passe, sans réseau, recharge aussitôt les règles enregistrées.
+// Panel startup (table missing, nothing applied by this process): the first
+// pass, without network, reloads the saved rules right away.
+func TestFirewallFirstPassReappliesAtStartup(t *testing.T) {
+	e := setup(t)
+	e.fakeInstances()
+	table := true
+	var applied []string
+	execCmd = func(args []string, _ time.Duration, input *string) (bool, string, string) {
+		switch strings.Join(args, " ") {
+		case "nft -f -":
+			applied = append(applied, *input)
+			table = strings.Contains(*input, "chain filter")
+			return true, "", ""
+		case "nft --version":
+			return true, "nftables v1.0.6", ""
+		case "nft list tables inet":
+			if table {
+				return true, "table inet frp_manager", ""
+			}
+			return true, "", ""
+		}
+		return false, "", "absent"
+	}
+	c := e.owner()
+	expectCode(t, c.post("/api/firewall", J{"enabled": true, "rules": []any{J{"name": "SSH", "mode": "block", "ports": "7000", "sources": []any{J{"cidr": "203.0.113.4"}}}}}), 200)
+	// Redémarrage : table effacée, nouveau processus
+	// Restart: table wiped, new process
+	table, applied = false, nil
+	fwMu.Lock()
+	fwApplied = ""
+	fwMu.Unlock()
+	fwSyncPass(false)
+	if len(applied) != 1 || !strings.Contains(applied[0], "chain filter") || !strings.Contains(applied[0], "203.0.113.4/32") {
+		t.Fatalf("%v", applied)
+	}
+	// Passe suivante : rien de changé, rien de rechargé
+	// Next pass: nothing changed, nothing reloaded
+	fwSyncPass(true)
+	if len(applied) != 1 {
+		t.Fatalf("rechargé %d fois", len(applied))
+	}
+}
+
 func TestFirewallNeedsFrps(t *testing.T) {
 	e := setup(t)
 	c := e.owner()

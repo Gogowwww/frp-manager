@@ -7,11 +7,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"debug/elf"
+	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -207,7 +210,20 @@ func TestConfigSymlinkEscapeRefused(t *testing.T) {
 
 // ── Archives frp ────────────────────────────────────────────────────────────
 
-var elf = append([]byte("\x7fELF"), make([]byte, 60)...)
+// elfBin : en-tête ELF minimal pour le processeur de cette machine.
+// elfBin: minimal ELF header for this machine's processor.
+var elfBin = elfFor(elfMachines[runtime.GOARCH])
+
+// elfFor : en-tête ELF minimal pour le processeur m.
+// elfFor: minimal ELF header for the processor m.
+func elfFor(m elf.Machine) []byte {
+	var buf bytes.Buffer
+	h := elf.Header64{Type: uint16(elf.ET_EXEC), Machine: uint16(m), Version: 1, Ehsize: 64}
+	copy(h.Ident[:], "\x7fELF")
+	h.Ident[elf.EI_CLASS], h.Ident[elf.EI_DATA], h.Ident[elf.EI_VERSION] = byte(elf.ELFCLASS64), byte(elf.ELFDATA2LSB), 1
+	binary.Write(&buf, binary.LittleEndian, h)
+	return buf.Bytes()
+}
 
 type tarMember struct {
 	name string
@@ -236,8 +252,8 @@ func makeTar(t *testing.T, path string, members []tarMember) string {
 func TestExtractsOnlyFrpBinaries(t *testing.T) {
 	dir := t.TempDir()
 	arc := makeTar(t, filepath.Join(dir, "frp.tar.gz"), []tarMember{
-		{"frp_0.71.0_linux_amd64/frps", elf, false},
-		{"frp_0.71.0_linux_amd64/frpc", elf, false},
+		{"frp_0.71.0_linux_amd64/frps", elfBin, false},
+		{"frp_0.71.0_linux_amd64/frpc", elfBin, false},
 		{"frp_0.71.0_linux_amd64/LICENSE", []byte("MIT"), false},
 	})
 	out := filepath.Join(dir, "out")
@@ -260,9 +276,9 @@ func TestExtractsOnlyFrpBinaries(t *testing.T) {
 
 func TestMaliciousArchivesRejected(t *testing.T) {
 	for _, members := range [][]tarMember{
-		{{"../frps", elf, false}},
-		{{"/usr/local/bin/frps", elf, false}},
-		{{"frp/../../frpc", elf, false}},
+		{{"../frps", elfBin, false}},
+		{{"/usr/local/bin/frps", elfBin, false}},
+		{{"frp/../../frpc", elfBin, false}},
 		{{"frp/frps", nil, true}},
 		{{"frp/frps", []byte("#!/bin/sh\nrm -rf /\n"), false}}, // pas un exécutable ELF
 	} {
@@ -301,8 +317,8 @@ func TestReinstallOnlyOneBinary(t *testing.T) {
 	}
 	dir := t.TempDir()
 	arc := makeTar(t, filepath.Join(dir, "frp.tar.gz"), []tarMember{
-		{"frp_0.70.0_linux_amd64/frps", elf, false},
-		{"frp_0.70.0_linux_amd64/frpc", elf, false},
+		{"frp_0.70.0_linux_amd64/frps", elfBin, false},
+		{"frp_0.70.0_linux_amd64/frpc", elfBin, false},
 	})
 	if !installFromArchive(FR, arc, "0.70.0", []string{"frpc"}, func(string) {}) {
 		t.Fatal("échec")
@@ -310,7 +326,7 @@ func TestReinstallOnlyOneBinary(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frps")); string(b) != "ancien frps" {
 		t.Fatal("frps remplacé")
 	}
-	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frpc")); !bytes.Equal(b, elf) {
+	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frpc")); !bytes.Equal(b, elfBin) {
 		t.Fatal("frpc non installé")
 	}
 	if !reflect.DeepEqual(calls, []string{"systemctl stop frpc-maison", "systemctl start frpc-maison"}) {
@@ -326,6 +342,73 @@ func TestReinstallOnlyOneBinary(t *testing.T) {
 		if got, _ := reinstallVersion(v); got != "" {
 			t.Errorf("%q → %q", v, got)
 		}
+	}
+}
+
+// Archive refusée (illisible, tronquée, sans frps, autre processeur) : aucun
+// service arrêté, aucun binaire remplacé ; une archive valide arrête puis
+// relance les services.
+// Rejected archive (unreadable, truncated, without frps, other processor): no
+// service stopped, no binary replaced; a valid archive stops then restarts the
+// services.
+func TestBadArchiveKeepsServicesRunning(t *testing.T) {
+	setup(t)
+	saved := frpBinDir
+	defer func() { frpBinDir = saved }()
+	frpBinDir = t.TempDir()
+	os.WriteFile(filepath.Join(frpBinDir, "frps"), []byte("ancien frps"), 0o755)
+	var calls []string
+	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
+		switch {
+		case len(args) > 1 && args[1] == "list-units":
+			return true, "frps.service loaded active running frps\nfrpc.service loaded active running frpc\n", ""
+		case len(args) > 2 && args[1] == "show":
+			return true, "{ path=/usr/local/bin/" + strings.TrimSuffix(args[2], ".service") + " ; }", ""
+		}
+		calls = append(calls, strings.Join(args, " "))
+		return true, "", ""
+	}
+	dir := t.TempDir()
+	good := makeTar(t, filepath.Join(dir, "good.tar.gz"), []tarMember{
+		{"frp_0.70.0_linux_amd64/frps", elfBin, false},
+		{"frp_0.70.0_linux_amd64/frpc", elfBin, false},
+	})
+	data, _ := os.ReadFile(good)
+	other := elf.EM_AARCH64
+	if runtime.GOARCH == "arm64" {
+		other = elf.EM_X86_64
+	}
+	bad := map[string]string{
+		"illisible": filepath.Join(dir, "fake.tar.gz"),
+		"tronquée":  filepath.Join(dir, "short.tar.gz"),
+		"sans frps": makeTar(t, filepath.Join(dir, "nofrps.tar.gz"), []tarMember{{"frp/frpc", elfBin, false}}),
+		"autre processeur": makeTar(t, filepath.Join(dir, "arm.tar.gz"), []tarMember{
+			{"frp/frps", elfFor(other), false}, {"frp/frpc", elfFor(other), false}}),
+	}
+	os.WriteFile(bad["illisible"], []byte("pas une archive"), 0o644)
+	os.WriteFile(bad["tronquée"], data[:len(data)/2], 0o644)
+	for name, arc := range bad {
+		calls = nil
+		var lines []string
+		if installFromArchive(EN, arc, "0.70.0", nil, func(s string) { lines = append(lines, s) }) {
+			t.Errorf("%s : archive acceptée", name)
+		}
+		if len(calls) != 0 {
+			t.Errorf("%s : services touchés %v", name, calls)
+		}
+		if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frps")); string(b) != "ancien frps" {
+			t.Errorf("%s : frps remplacé", name)
+		}
+		if len(lines) == 0 || !strings.HasPrefix(lines[len(lines)-1], "[ERROR]") {
+			t.Errorf("%s : %v", name, lines)
+		}
+	}
+	calls = nil
+	if !installFromArchive(FR, good, "0.70.0", nil, func(string) {}) {
+		t.Fatal("archive valide refusée")
+	}
+	if !reflect.DeepEqual(calls, []string{"systemctl stop frps", "systemctl stop frpc", "systemctl start frps", "systemctl start frpc"}) {
+		t.Fatalf("%v", calls)
 	}
 }
 
@@ -380,7 +463,7 @@ func TestReinstallService(t *testing.T) {
 
 	// frps : programme présent, config conservée et rendue à la détection
 	os.MkdirAll(frpBinDir, 0o755)
-	os.WriteFile(filepath.Join(frpBinDir, "frps"), elf, 0o755)
+	os.WriteFile(filepath.Join(frpBinDir, "frps"), elfBin, 0o755)
 	os.WriteFile(frpsConf, []byte("bindPort = 7100\n"), 0o600)
 	if !isExecutable(filepath.Join(frpBinDir, "frps")) {
 		binarySearchPaths = nil // Windows : pas de bit exécutable, le programme passe pour absent
@@ -501,6 +584,19 @@ func TestDecompressionBombRejected(t *testing.T) {
 	arc := makeTar(t, filepath.Join(dir, "bomb.tar.gz"), []tarMember{{"frp/padding", make([]byte, 4096), false}})
 	if _, err := extractFrpBinaries(FR, arc, dir); err == nil {
 		t.Fatal("bombe acceptée")
+	}
+	// Zéros après la fin du tar, dans le flux gzip : plafonnés aussi
+	// Zeros after the end of the tar, inside the gzip stream: capped too
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	tw.Close()
+	gz.Write(make([]byte, 8192))
+	gz.Close()
+	tail := filepath.Join(dir, "tail.tar.gz")
+	os.WriteFile(tail, buf.Bytes(), 0o644)
+	if _, err := extractFrpBinaries(FR, tail, dir); err == nil || !strings.Contains(err.Error(), "volumineuse") {
+		t.Fatalf("bombe après le tar acceptée : %v", err)
 	}
 }
 
