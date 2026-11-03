@@ -129,7 +129,9 @@ export function parseToml(text) {
       if (!(block && /^\[+(?:proxies|visitors)\./.test(line))) anyContent = true;
       const name = line.replace(/^\[+|\]+.*$/g, '').trim();
       const sub = name.match(/^(?:proxies|visitors)\.(.+)$/);
-      if (block && sub) { prefix = `${sub[1]}.`; continue; }
+      // Sous-table d'un tunnel : ses commentaires passent à la première clé
+      // Sub-table of a tunnel: its comments move to the first key
+      if (block && sub) { prefix = `${sub[1]}.`; comments = pending; continue; }
       block = null;
       prefix = '';
       section = name;
