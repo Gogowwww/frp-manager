@@ -54,7 +54,8 @@ function annotate(lines, notes) {
   const out = [];
   for (const line of lines) {
     const eq = line.indexOf('=');
-    const n = eq > 0 && !/^[{[]/.test(line) ? notes[line.slice(0, eq).trim()] : null;
+    const isHead = line === '[[proxies]]' || line === '[[visitors]]';
+    const n = isHead ? notes['[[]]'] : (eq > 0 && !/^[{[]/.test(line) ? notes[line.slice(0, eq).trim()] : null);
     if (n && n.before) out.push(...n.before);
     out.push(n && n.eol ? `${line} ${n.eol}` : line);
   }
@@ -112,13 +113,17 @@ export function parseToml(text) {
     if (rm) { pendingRange = rm[3] !== undefined ? { local: rm[3], remote: '' } : { local: rm[1], remote: rm[2] }; continue; }
     if (END_RE.test(line)) continue;
 
-    if (line === '[[proxies]]' || line === '[[visitors]]') {
+    // En-tête de bloc, avec un éventuel commentaire de fin de ligne
+    // Block header, with a possible end-of-line comment
+    const [head, headEol] = line.startsWith('[[') ? splitComment(line) : [line, ''];
+    if (head === '[[proxies]]' || head === '[[visitors]]') {
       block = { values: {}, raw: {}, order: [], comments, notes: {} };
+      if (headEol) block.notes['[[]]'] = { before: [], eol: headEol };
       comments = [];
       seenBlock = true;
       if (pendingRange) block.range = pendingRange;
       pendingRange = null;
-      out[line === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
+      out[head === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
       prefix = '';
       continue;
     }
@@ -133,7 +138,12 @@ export function parseToml(text) {
       const sub = name.match(/^(?:proxies|visitors)\.(.+)$/);
       // Sous-table d'un tunnel : ses commentaires passent à la première clé
       // Sub-table of a tunnel: its comments move to the first key
-      if (block && sub) { prefix = `${sub[1]}.`; comments = pending; continue; }
+      if (block && sub) {
+        prefix = `${sub[1]}.`;
+        const subEol = splitComment(line)[1];
+        comments = subEol ? [...pending, subEol] : pending;
+        continue;
+      }
       block = null;
       prefix = '';
       section = name;
@@ -144,14 +154,18 @@ export function parseToml(text) {
     if (eq < 0) continue;
     const key = line.slice(0, eq).trim();
     let [raw, eol] = splitComment(line.slice(eq + 1));
+    // Commentaires à l'intérieur d'un tableau : remontés au-dessus de la clé
+    // Comments inside an array: moved above the key
+    const inner = [];
     // Tableau sur plusieurs lignes : toutes les lignes jusqu'au crochet fermant
     // Multi-line array: all the lines up to the closing bracket
     if (raw.startsWith('[') && bracketDepth(raw) > 0) {
       const parts = [raw];
       while (li + 1 < allLines.length && bracketDepth(parts.join('\n')) > 0) {
         li += 1;
-        const [more] = splitComment(allLines[li]);
+        const [more, note] = splitComment(allLines[li]);
         if (more) parts.push(more);
+        if (note) inner.push(note);
       }
       raw = parts.join('\n');
     }
@@ -164,7 +178,7 @@ export function parseToml(text) {
       block.raw[k] = raw;
       // Commentaires du bloc : ceux d'avant la clé et celui de fin de ligne
       // Block comments: those before the key and the end-of-line one
-      if (pending.length || eol) block.notes[k] = { before: pending, eol };
+      if (pending.length || inner.length || eol) block.notes[k] = { before: [...pending, ...inner], eol };
     } else {
       anyContent = true;
       out.values[section ? `${section}.${key}` : key] = value;
@@ -234,7 +248,8 @@ export function tablesAfterBlocks(text) {
   };
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim();
-    if (line === '[[proxies]]' || line === '[[visitors]]') {
+    const head = line.startsWith('[[') ? splitComment(line)[0] : line;
+    if (head === '[[proxies]]' || head === '[[visitors]]') {
       if (inTable) flush();
       inTable = false;
       seen = true;
