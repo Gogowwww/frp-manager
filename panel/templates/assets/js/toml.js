@@ -74,6 +74,92 @@ function unquote(raw) {
   return raw;
 }
 
+// ── Normalisation du texte avant lecture ──────────────────────────────────
+// BOM UTF-8 retiré (frpc le refuse), fins de ligne CR seul ramenées à LF, forme
+// en ligne « proxies = [ { … } ] » convertie en blocs [[proxies]].
+// Text normalization before reading: UTF-8 BOM removed (frpc rejects it), lone
+// CR line endings turned into LF, inline form "proxies = [ { … } ]" converted
+// into [[proxies]] blocks.
+
+/** Fin du tableau ou de la table commençant en start ('[' ou '{'), sinon -1. */
+function scanEnd(s, start) {
+  let depth = 0;
+  let quote = null;
+  for (let i = start; i < s.length; i += 1) {
+    const c = s[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') i += 1;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '#') { while (i < s.length && s[i] !== '\n') i += 1; }
+    else if (c === '[' || c === '{') depth += 1;
+    else if (c === ']' || c === '}') { depth -= 1; if (depth === 0) return i + 1; }
+  }
+  return -1;
+}
+
+/** Coupe sur les virgules du premier niveau (hors chaînes et commentaires). */
+function splitTop(s) {
+  const out = [];
+  let depth = 0;
+  let quote = null;
+  let cur = '';
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (quote) {
+      cur += c;
+      if (c === '\\' && quote === '"') { i += 1; cur += s[i] || ''; } else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") { quote = c; cur += c; }
+    else if (c === '#') { while (i < s.length && s[i] !== '\n') i += 1; }
+    else if (c === '[' || c === '{') { depth += 1; cur += c; }
+    else if (c === ']' || c === '}') { depth -= 1; cur += c; }
+    else if (c === ',' && depth === 0) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
+/** Lignes « clé = valeur » d'une table en ligne ; les sous-tables deviennent « a.b = … ». */
+function inlineLines(body, prefix = '') {
+  const lines = [];
+  for (const part of splitTop(body)) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const key = part.slice(0, eq).trim().replace(/^(["'])(.*)\1$/, '$2');
+    const val = part.slice(eq + 1).trim();
+    if (val.startsWith('{') && val.endsWith('}')) lines.push(...inlineLines(val.slice(1, -1), `${prefix}${key}.`));
+    else lines.push(`${prefix}${key} = ${val.replace(/\s*\n\s*/g, ' ')}`);
+  }
+  return lines;
+}
+
+/** « proxies = [ { … }, { … } ] » → blocs [[proxies]] ajoutés à la fin du texte. */
+function expandInline(text) {
+  const re = /^[ \t]*(proxies|visitors)[ \t]*=[ \t]*\[/gm;
+  const extra = [];
+  let result = '';
+  let pos = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    const open = m.index + m[0].length - 1;
+    const end = scanEnd(text, open);
+    if (end < 0) continue;
+    for (const el of splitTop(text.slice(open + 1, end - 1))) {
+      if (el.startsWith('{') && el.endsWith('}')) extra.push(`[[${m[1]}]]\n${inlineLines(el.slice(1, -1)).join('\n')}`);
+    }
+    result += text.slice(pos, m.index);
+    pos = end;
+    re.lastIndex = end;
+  }
+  if (!extra.length) return text;
+  return `${(result + text.slice(pos)).replace(/\s+$/, '')}\n\n${extra.join('\n\n')}\n`;
+}
+
+function prep(text) {
+  return expandInline(String(text || '').replace(/^﻿/, '').replace(/\r(?!\n)/g, '\n'));
+}
+
 export function str(value) {
   return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
@@ -102,7 +188,7 @@ export function parseToml(text) {
   // right before the first block, go with it
   let anyContent = false;
 
-  const allLines = String(text || '').replace(/^﻿/, '').split(/\r?\n/);
+  const allLines = prep(text).split(/\r?\n/);
   for (let li = 0; li < allLines.length; li += 1) {
     const rawLine = allLines[li];
     const line = rawLine.trim();
@@ -161,8 +247,25 @@ export function parseToml(text) {
 
     const eq = line.indexOf('=');
     if (eq < 0) continue;
-    const key = line.slice(0, eq).trim();
+    // Clé entre guillemets : "name" = "a" se lit comme name = "a"
+    // Quoted key: "name" = "a" reads as name = "a"
+    const key = line.slice(0, eq).trim().replace(/^(["'])([\w.-]+)\1$/, '$2');
     let [raw, eol] = splitComment(line.slice(eq + 1));
+    // Chaîne sur plusieurs lignes (""" ou ''') : gardée telle quelle jusqu'au
+    // délimiteur de fin
+    // Multi-line string (""" or '''): kept as is up to the closing delimiter
+    const rest0 = line.slice(eq + 1).trim();
+    const delim = rest0.startsWith('"""') ? '"""' : rest0.startsWith("'''") ? "'''" : '';
+    if (delim && !rest0.slice(3).includes(delim)) {
+      const parts = [rest0];
+      while (li + 1 < allLines.length) {
+        li += 1;
+        parts.push(allLines[li]);
+        if (allLines[li].includes(delim)) break;
+      }
+      raw = parts.join('\n');
+      eol = '';
+    }
     // Commentaires à l'intérieur d'un tableau : remontés au-dessus de la clé
     // Comments inside an array: moved above the key
     const inner = [];
@@ -205,7 +308,7 @@ export function parseToml(text) {
 export function stripBlocks(text) {
   // BOM UTF-8 au début : frpc le refuse, l'enregistrement le retire
   // UTF-8 BOM at the start: frpc rejects it, saving removes it
-  text = String(text || '').replace(/^﻿/, '');
+  text = prep(text);
   const m = BLOCK_RE.exec(text);
   const base = (m ? text.slice(0, m.index) : text).trimEnd();
   return m ? dropTrailingComments(base) : base;
@@ -253,6 +356,7 @@ export function tablesAfterBlocks(text) {
   let buf = [];
   let above = [];
   let arrDepth = 0;
+  let strDelim = '';
   const flush = () => {
     // Commentaires et « range » juste devant un bloc : ils sont à ce bloc
     // Comments and "range" right before a block: they belong to that block
@@ -263,7 +367,7 @@ export function tablesAfterBlocks(text) {
     if (buf.length) out.push(buf.join('\n'));
     buf = [];
   };
-  for (const raw of String(text || '').replace(/^﻿/, '').split(/\r?\n/)) {
+  for (const raw of prep(text).split(/\r?\n/)) {
     const line = raw.trim();
     // Suite d'un tableau sur plusieurs lignes : pas un en-tête de tableau TOML
     // Continuation of a multi-line array: not a TOML table header
@@ -271,6 +375,18 @@ export function tablesAfterBlocks(text) {
       arrDepth = Math.max(0, arrDepth + bracketDepth(splitComment(line)[0]));
       if (inTable) buf.push(raw);
       continue;
+    }
+    // Suite d'une chaîne sur plusieurs lignes
+    // Continuation of a multi-line string
+    if (strDelim) {
+      if (raw.includes(strDelim)) strDelim = '';
+      if (inTable) buf.push(raw);
+      continue;
+    }
+    if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
+      const v0 = line.slice(line.indexOf('=') + 1).trim();
+      const d0 = v0.startsWith('"""') ? '"""' : v0.startsWith("'''") ? "'''" : '';
+      if (d0 && !v0.slice(3).includes(d0)) strDelim = d0;
     }
     if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
       arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(line.indexOf('=') + 1))[0]));
@@ -307,6 +423,7 @@ export function tablesAfterBlocks(text) {
 
 /** Uniquement les blocs [[proxies]] / [[visitors]] (texte brut). */
 export function extractBlocks(text) {
+  text = prep(text);
   const m = BLOCK_RE.exec(text);
   return m ? text.slice(m.index).trim() : '';
 }
@@ -732,7 +849,7 @@ export function generateVisitor(v) {
 
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */
 export function composeClientConfig(baseText, proxies, visitors) {
-  baseText = String(baseText || '').replace(/^﻿/, '');
+  baseText = prep(baseText);
   const blocks = [
     ...proxies.flatMap(splitPair).map((p) => generateProxy(p)),
     ...visitors.filter((v) => v.name).map(generateVisitor),
