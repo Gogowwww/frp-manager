@@ -840,3 +840,48 @@ func TestQuotedInlineKeyAndUnderscoreInts(t *testing.T) {
 		t.Fatalf("bloc 18_801 / block 18_801: %v", extractPortsFromConfig(b, "frpc"))
 	}
 }
+
+// Chaîne sur plusieurs lignes dont des lignes ressemblent à des en-têtes ou à
+// des clés : ni la copie, ni l'écriture d'une clé, ni la lecture des ports ne
+// s'y trompent
+// Multi-line string with lines that look like headers or keys: neither the
+// copy, nor writing a key, nor reading the ports is fooled
+func TestMultilineStringLines(t *testing.T) {
+	conn := "serverAddr = \"x\"\nserverPort = 7000\nmetadatas.m = \"\"\"\nu\n[[proxies]]\nremotePort = 18802\n[log]\n\"\"\"\n# note = '''\n"
+	tail := "\n[[proxies]]\nname = \"a\"\ntype = \"tcp\"\nlocalPort = 22\nremotePort = 18801\nannotations.n = '''\n[[visitors]]\nremotePort = 18803\n'''\n\n[webServer]\nuser = \"\"\"\n[[proxies]]\nport = 18804\n\"\"\"\npassword = \"\"\"p\"\"\"\nport = 7400\n"
+	c := conn + tail
+	if _, err := parseFrpConfig(c); err != nil {
+		t.Fatalf("entrée invalide / invalid input: %v", err)
+	}
+	got := map[int]int{}
+	for _, p := range extractPortsFromConfig(c, "frpc") {
+		got[p["port"].(int)]++
+	}
+	if len(got) != 3 || got[7000] != 1 || got[18801] != 1 || got[7400] != 1 {
+		t.Errorf("ports : %v", got)
+	}
+	out := clientConnectionOnly(c)
+	conf, err := parseFrpConfig(out)
+	if err != nil {
+		t.Fatalf("copie invalide / invalid copy: %v\n%s", err, out)
+	}
+	ws, _ := conf["webServer"].(map[string]any)
+	if conf["proxies"] != nil || ws["user"] != "[[proxies]]\nport = 18804\n" || ws["port"] != int64(7400) || !strings.Contains(out, "remotePort = 18802\n[log]\n") {
+		t.Errorf("copie / copy:\n%s", out)
+	}
+	set := setTOMLKey(c, "log.to", `"/tmp/x.log"`)
+	if conf, err := parseFrpConfig(set); err != nil || tomlLookup(conf, "log.to") != "/tmp/x.log" || !strings.Contains(set, "u\n[[proxies]]\nremotePort = 18802\n[log]\n\"\"\"\n") {
+		t.Errorf("setTOMLKey : %v\n%s", err, set)
+	}
+	if set := setTOMLKey(c, "webServer.port", "7401"); !strings.Contains(set, "port = 18804\n") || !strings.Contains(set, "port = 7401\n") {
+		t.Errorf("setTOMLKey webServer.port :\n%s", set)
+	}
+	// Chaîne fermée sur sa ligne d'ouverture, commentaire qui ressemble à une ouverture
+	// String closed on its opening line, comment that looks like an opening
+	want := []bool{false, false, true, true, false, false, false}
+	for i, in := range tomlStringLines("a = \"\"\"x\"\"\"\nb = '''\nl\n'''\n# c = \"\"\"\n[x]\nd = 1") {
+		if in != want[i] {
+			t.Errorf("ligne %d : %v", i, in)
+		}
+	}
+}

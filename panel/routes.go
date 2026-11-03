@@ -1391,6 +1391,12 @@ func splitLines(s string) []string {
 // extractPortsFromConfig : numéros de port d'une config frp TOML.
 func extractPortsFromConfig(content, binType string) []J {
 	var ports []J
+	// Lecture ligne à ligne sur un texte sans l'intérieur des chaînes sur
+	// plusieurs lignes ; le lecteur TOML de la forme en ligne garde l'original
+	// Line-by-line reading on a text without the inside of multi-line strings;
+	// the TOML reader of the inline form keeps the original
+	full := content
+	content = withoutTOMLStrings(content)
 	switch binType {
 	case "frps":
 		for _, p := range frpsTopPorts {
@@ -1514,7 +1520,7 @@ func extractPortsFromConfig(content, binType string) []J {
 		// Forme en ligne « proxies = [ { … } ] » : lue avec le lecteur TOML
 		// Inline form "proxies = [ { … } ]": read with the TOML reader
 		if inlineFormRe.MatchString(content) {
-			ports = append(ports, inlineFormPorts(content)...)
+			ports = append(ports, inlineFormPorts(full)...)
 		}
 	}
 	// Port du webServer (section [webServer]) : frps et frpc
@@ -1774,7 +1780,7 @@ func inlineFormPorts(content string) []J {
 	}
 	// Un genre écrit aussi en blocs [[…]] est déjà lu ligne à ligne
 	// A kind also written as [[…]] blocks is already read line by line
-	for _, line := range splitLines(content) {
+	for _, line := range splitLines(withoutTOMLStrings(content)) {
 		switch tomlHead(strings.TrimSpace(line)) {
 		case "[[proxies]]":
 			conf.Proxies = nil

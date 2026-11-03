@@ -296,6 +296,65 @@ func tomlKeyOf(s string) string {
 	return strings.NewReplacer(`"`, "", `'`, "").Replace(strings.Join(strings.Fields(k), ""))
 }
 
+// tomlStringLines : pour chaque ligne de content (coupé sur "\n"), vrai si elle
+// est à l'intérieur d'une chaîne sur plusieurs lignes (trois guillemets doubles
+// ou trois apostrophes) ; la ligne
+// de fermeture en fait partie, pas celle d'ouverture. Un commentaire n'ouvre
+// pas de chaîne, une chaîne fermée sur sa ligne d'ouverture non plus. Les
+// lecteurs ligne à ligne n'y cherchent ni en-tête ni clé.
+// tomlStringLines: for each line of content (split on "\n"), true if it is
+// inside a multi-line string (three double quotes or three single quotes); the
+// closing line is part of it, the
+// opening one is not. A comment opens no string, nor does a string closed on
+// its opening line. Line-by-line readers look for no header or key there.
+func tomlStringLines(content string) []bool {
+	lines := strings.Split(content, "\n")
+	inside := make([]bool, len(lines))
+	delim := ""
+	for i, line := range lines {
+		if delim != "" {
+			inside[i] = true
+			if strings.Contains(line, delim) {
+				delim = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		_, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		for _, d := range []string{`"""`, `'''`} {
+			if strings.HasPrefix(v, d) && !strings.Contains(v[3:], d) {
+				delim = d
+				break
+			}
+		}
+	}
+	return inside
+}
+
+// withoutTOMLStrings : content dont les lignes internes aux chaînes sur
+// plusieurs lignes sont vidées (même nombre de lignes), pour les lecteurs qui
+// ne font que chercher des clés.
+// withoutTOMLStrings: content whose lines inside multi-line strings are emptied
+// (same number of lines), for the readers that only look for keys.
+func withoutTOMLStrings(content string) string {
+	if !strings.Contains(content, `"""`) && !strings.Contains(content, `'''`) {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, in := range tomlStringLines(content) {
+		if in {
+			lines[i] = ""
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func insertLine(lines []string, at int, line string) []string {
 	return append(lines[:at], append([]string{line}, lines[at:]...)...)
 }
@@ -316,7 +375,13 @@ func setTOMLKey(content, key, value string) string {
 	}
 	table, array, found := "", false, false
 	headerAt, firstTable := -1, -1
+	inString := tomlStringLines(content)
 	for i, line := range lines {
+		// Ligne d'une chaîne sur plusieurs lignes : ni en-tête ni clé
+		// Line of a multi-line string: neither header nor key
+		if inString[i] {
+			continue
+		}
 		s := strings.TrimSpace(line)
 		if name, arr, ok := tomlHeader(s); ok {
 			table, array = name, arr
@@ -355,10 +420,10 @@ func setTOMLKey(content, key, value string) string {
 		// Avant les commentaires et lignes vides qui précèdent la table
 		// Before the comments and blank lines in front of the table
 		at := firstTable
-		for at > 0 && strings.HasPrefix(strings.TrimSpace(lines[at-1]), "#") {
+		for at > 0 && !inString[at-1] && strings.HasPrefix(strings.TrimSpace(lines[at-1]), "#") {
 			at--
 		}
-		for at > 0 && strings.TrimSpace(lines[at-1]) == "" {
+		for at > 0 && !inString[at-1] && strings.TrimSpace(lines[at-1]) == "" {
 			at--
 		}
 		lines = insertLine(lines, at, key+" = "+value)
@@ -384,7 +449,22 @@ func clientConnectionOnly(content string) string {
 	var out []string
 	drop, skipValue, table := false, false, ""
 	inlineDepth := 0
-	for _, line := range strings.Split(content, "\n") {
+	inString := tomlStringLines(content)
+	// La dernière ligne hors chaîne a été gardée
+	// The last line outside a string was kept
+	kept := false
+	for i, line := range strings.Split(content, "\n") {
+		// Ligne d'une chaîne sur plusieurs lignes : elle suit le sort de sa clé
+		// (gardée dans la connexion, retirée avec un tunnel)
+		// Line of a multi-line string: it follows its key (kept in the connection
+		// part, removed with a tunnel)
+		if inString[i] {
+			if kept {
+				out = append(out, line)
+			}
+			continue
+		}
+		kept = false
 		s := strings.TrimSpace(line)
 		// Forme en ligne « proxies = [ { … } ] » : retirée, sur une ou plusieurs lignes
 		// Inline form "proxies = [ { … } ]": removed, on one or several lines
@@ -420,6 +500,7 @@ func clientConnectionOnly(content string) string {
 			continue
 		}
 		out = append(out, line)
+		kept = true
 	}
 	text := multiBlankRe.ReplaceAllString(strings.Join(out, "\n"), "\n\n")
 	return strings.TrimRight(text, "\n") + "\n"

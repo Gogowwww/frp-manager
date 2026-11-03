@@ -168,6 +168,25 @@ function multilineStringLines(text) {
   return inside;
 }
 
+/** Premier en-tête [[proxies]] / [[visitors]] (avec sa ligne « range ») hors
+ *  chaîne multi-lignes, comme BLOCK_RE.exec, sinon null.
+ *  First [[proxies]] / [[visitors]] header (with its "range" line) outside
+ *  multi-line strings, like BLOCK_RE.exec, otherwise null. */
+function findBlock(text) {
+  const re = new RegExp(BLOCK_RE.source, 'gm');
+  let skip = null;
+  let m;
+  while ((m = re.exec(text))) {
+    if (!skip) skip = multilineStringLines(text);
+    // En-tête (ou ligne « range ») dans une chaîne : on cherche à la ligne suivante
+    // Header (or "range" line) inside a string: the search goes on at the next line
+    const head = text.lastIndexOf('\n', m.index + m[0].length - 1) + 1;
+    if (!skip.has(m.index) && !skip.has(head)) return m;
+    re.lastIndex = m.index + 1;
+  }
+  return null;
+}
+
 /** « proxies = [ { … }, { … } ] » → blocs [[proxies]] ajoutés à la fin du texte. */
 function expandInline(text) {
   const re = /^[ \t]*["']?(proxies|visitors)["']?[ \t]*=[ \t]*\[/gm;
@@ -353,8 +372,8 @@ export function stripBlocks(text) {
   // BOM UTF-8 au début : frpc le refuse, l'enregistrement le retire
   // UTF-8 BOM at the start: frpc rejects it, saving removes it
   text = prep(text);
-  const m = BLOCK_RE.exec(text);
-  const base = (m ? text.slice(0, m.index) : text).trimEnd();
+  const m = findBlock(text);
+  const base =(m ? text.slice(0, m.index) : text).trimEnd();
   return m ? dropTrailingComments(base) : base;
 }
 
@@ -367,7 +386,14 @@ export function stripBlocks(text) {
 function dropTrailingComments(base) {
   const lines = base.split(/\r?\n/);
   if (!lines.some((l) => l.trim() && !l.trim().startsWith('#'))) return base;
-  while (lines.length && (!lines[lines.length - 1].trim() || lines[lines.length - 1].trim().startsWith('#'))) lines.pop();
+  // Une ligne en « # » à l'intérieur d'une chaîne multi-lignes n'est pas un commentaire
+  // A "#" line inside a multi-line string is not a comment
+  const inside = multilineStringLines(base);
+  const starts = [];
+  let off = 0;
+  for (const l of base.split('\n')) { starts.push(off); off += l.length + 1; }
+  const isNote = (i) => !inside.has(starts[i]) && (!lines[i].trim() || lines[i].trim().startsWith('#'));
+  while (lines.length && isNote(lines.length - 1)) lines.pop();
   return lines.join(/\r\n/.test(base) ? '\r\n' : '\n');
 }
 
@@ -468,7 +494,7 @@ export function tablesAfterBlocks(text) {
 /** Uniquement les blocs [[proxies]] / [[visitors]] (texte brut). */
 export function extractBlocks(text) {
   text = prep(text);
-  const m = BLOCK_RE.exec(text);
+  const m = findBlock(text);
   return m ? text.slice(m.index).trim() : '';
 }
 
@@ -585,7 +611,15 @@ export function unbracket(addr) {
  *  the rest of the text (comments, order, other keys) stays as is. */
 export function unbracketConnection(text) {
   let section = '';
-  return String(text || '').split('\n').map((line) => {
+  text = String(text || '');
+  // Lignes d'une chaîne multi-lignes : ni en-tête ni clé, gardées telles quelles
+  // Lines of a multi-line string: neither header nor key, kept as they are
+  const inside = multilineStringLines(text);
+  let off = 0;
+  return text.split('\n').map((line) => {
+    const at = off;
+    off += line.length + 1;
+    if (inside.has(at)) return line;
     const head = line.trim();
     // Les blocs [[proxies]] / [[visitors]] ne sont pas concernés
     // The [[proxies]] / [[visitors]] blocks are not concerned
@@ -913,7 +947,7 @@ export function composeClientConfig(baseText, proxies, visitors) {
   // Commentaires de la fin du fichier, après le dernier bloc : gardés à la fin
   // Comments at the end of the file, after the last block: kept at the end
   let trailingLines = parseToml(baseText).trailing;
-  if (!BLOCK_RE.test(baseText)) {
+  if (!findBlock(baseText)) {
     // Fichier sans aucun tunnel : ses commentaires de fin sont dans la partie
     // connexion ; avec un premier tunnel ils passent devant lui, une seule fois
     // File with no tunnel: its end comments are in the connection part; with a
