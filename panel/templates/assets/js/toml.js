@@ -17,7 +17,7 @@ const RANGE_LINE = String.raw`\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberR
 // Loop port inside the block: "{{ $v }}", or "{{ $v.First }}" / "{{ $v.Second }}"
 const LOOP_FIRST = String.raw`\{\{\s*\$v(?:\.First)?\s*\}\}`;
 const LOOP_SECOND = String.raw`\{\{\s*\$v(?:\.Second)?\s*\}\}`;
-const BLOCK_RE = new RegExp(String.raw`^(?:${RANGE_LINE}[ \t]*\r?\n)?\[\[(proxies|visitors)\]\]`, 'm');
+const BLOCK_RE = new RegExp(String.raw`^[ \t]*(?:${RANGE_LINE}[ \t]*\r?\n[ \t]*)?\[\[(proxies|visitors)\]\]`, 'm');
 const RANGE_RE = new RegExp(`^${RANGE_LINE}$`);
 const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
 
@@ -168,6 +168,10 @@ export function parseToml(text) {
         if (note) inner.push(note);
       }
       raw = parts.join('\n');
+      // Le commentaire d'ouverture remonte avec les autres : stable dès la
+      // première sauvegarde
+      // The opening comment moves up with the others: stable from the first save
+      if (eol) { inner.unshift(eol); eol = ''; }
     }
     const value = unquote(raw);
 
@@ -236,6 +240,7 @@ export function tablesAfterBlocks(text) {
   let inTable = false;
   let buf = [];
   let above = [];
+  let arrDepth = 0;
   const flush = () => {
     // Commentaires et « range » juste devant un bloc : ils sont à ce bloc
     // Comments and "range" right before a block: they belong to that block
@@ -248,6 +253,16 @@ export function tablesAfterBlocks(text) {
   };
   for (const raw of String(text || '').split(/\r?\n/)) {
     const line = raw.trim();
+    // Suite d'un tableau sur plusieurs lignes : pas un en-tête de tableau TOML
+    // Continuation of a multi-line array: not a TOML table header
+    if (arrDepth > 0) {
+      arrDepth = Math.max(0, arrDepth + bracketDepth(splitComment(line)[0]));
+      if (inTable) buf.push(raw);
+      continue;
+    }
+    if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
+      arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(line.indexOf('=') + 1))[0]));
+    }
     const head = line.startsWith('[[') ? splitComment(line)[0] : line;
     if (head === '[[proxies]]' || head === '[[visitors]]') {
       if (inTable) flush();
