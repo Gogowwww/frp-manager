@@ -291,7 +291,9 @@ func tomlKeyOf(s string) string {
 	if !ok {
 		return ""
 	}
-	return strings.Join(strings.Fields(k), "")
+	// Guillemets retirés : "proxies" = [ … ] est la clé proxies
+	// Quotes removed: "proxies" = [ … ] is the key proxies
+	return strings.NewReplacer(`"`, "", `'`, "").Replace(strings.Join(strings.Fields(k), ""))
 }
 
 func insertLine(lines []string, at int, line string) []string {

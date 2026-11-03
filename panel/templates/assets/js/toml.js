@@ -155,7 +155,9 @@ function multilineStringLines(text) {
     if (delim) {
       inside.add(off);
       if (line.includes(delim)) delim = '';
-    } else {
+    } else if (!/^\s*#/.test(line)) {
+      // Une ligne de commentaire n'ouvre pas de chaîne
+      // A comment line opens no string
       const eq = line.indexOf('=');
       const v = eq >= 0 ? line.slice(eq + 1).trim() : '';
       const d = v.startsWith('"""') ? '"""' : v.startsWith("'''") ? "'''" : '';

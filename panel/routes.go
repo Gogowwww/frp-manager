@@ -1360,24 +1360,24 @@ func readInstanceConfig(inst *Instance) (string, bool) {
 var (
 	nameLineRe     = regexp.MustCompile(`^name\s*=\s*["']?([^"']+)["']?`)
 	typeLineRe     = regexp.MustCompile(`^type\s*=\s*["']?(\w+)["']?`)
-	remotePortRe   = regexp.MustCompile(`^remotePort\s*=\s*(\d+)`)
+	remotePortRe   = regexp.MustCompile(`^remotePort\s*=\s*(\d[\d_]*)`)
 	bindAddrLineRe = regexp.MustCompile(`^bindAddr\s*=\s*["']?([^"']+)["']?`)
-	bindPortLineRe = regexp.MustCompile(`^bindPort\s*=\s*(\d+)`)
-	portLineRe     = regexp.MustCompile(`^port\s*=\s*(\d+)`)
+	bindPortLineRe = regexp.MustCompile(`^bindPort\s*=\s*(\d[\d_]*)`)
+	portLineRe     = regexp.MustCompile(`^port\s*=\s*(\d[\d_]*)`)
 	frpsTopPorts   = []struct {
 		re           *regexp.Regexp
 		proto, label string
 	}{
-		{regexp.MustCompile(`(?mi)^bindPort\s*=\s*(\d+)`), "tcp", "Connexion frpc"},
-		{regexp.MustCompile(`(?mi)^kcpBindPort\s*=\s*(\d+)`), "udp", "KCP"},
-		{regexp.MustCompile(`(?mi)^quicBindPort\s*=\s*(\d+)`), "udp", "QUIC"},
-		{regexp.MustCompile(`(?mi)^vhostHTTPPort\s*=\s*(\d+)`), "tcp", "vhost HTTP"},
-		{regexp.MustCompile(`(?mi)^vhostHTTPSPort\s*=\s*(\d+)`), "tcp", "vhost HTTPS"},
+		{regexp.MustCompile(`(?mi)^bindPort\s*=\s*(\d[\d_]*)`), "tcp", "Connexion frpc"},
+		{regexp.MustCompile(`(?mi)^kcpBindPort\s*=\s*(\d[\d_]*)`), "udp", "KCP"},
+		{regexp.MustCompile(`(?mi)^quicBindPort\s*=\s*(\d[\d_]*)`), "udp", "QUIC"},
+		{regexp.MustCompile(`(?mi)^vhostHTTPPort\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTP"},
+		{regexp.MustCompile(`(?mi)^vhostHTTPSPort\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTPS"},
 	}
-	serverPortRe = regexp.MustCompile(`(?mi)^serverPort\s*=\s*(\d+)`)
+	serverPortRe = regexp.MustCompile(`(?mi)^serverPort\s*=\s*(\d[\d_]*)`)
 )
 
-func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
+func atoi(s string) int { n, _ := strconv.Atoi(strings.ReplaceAll(s, "_", "")); return n }
 
 func splitLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
@@ -1758,7 +1758,7 @@ func tomlHead(s string) string {
 	return strings.Join(strings.Fields(s), "")
 }
 
-var inlineFormRe = regexp.MustCompile(`(?m)^[ \t]*(proxies|visitors)[ \t]*=[ \t]*\[`)
+var inlineFormRe = regexp.MustCompile(`(?m)^[ \t]*["']?(proxies|visitors)["']?[ \t]*=[ \t]*\[`)
 
 // inlineFormPorts : ports publics (remotePort) et d'écoute locale (bindPort)
 // des tunnels et visiteurs écrits en forme en ligne.

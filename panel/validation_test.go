@@ -812,3 +812,31 @@ func TestInlineFormAndCommentedRange(t *testing.T) {
 		t.Errorf("copie : tunnels en ligne gardés ou connexion perdue :\n%s", out)
 	}
 }
+
+// Clé entre guillemets et entiers à tirets bas : lus côté Go comme côté interface
+// Quoted key and integers with underscores: read on the Go side like the interface
+func TestQuotedInlineKeyAndUnderscoreInts(t *testing.T) {
+	c := "serverAddr = \"127.0.0.1\"\nserverPort = 7000\n\"proxies\" = [ { name = \"q\", type = \"tcp\", localPort = 22, remotePort = 18_801 } ]\n"
+	found := false
+	for _, p := range extractPortsFromConfig(c, "frpc") {
+		if p["port"] == 18801 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("port 18801 attendu / expected: %v", extractPortsFromConfig(c, "frpc"))
+	}
+	if out := clientConnectionOnly(c); strings.Contains(out, "proxies") {
+		t.Fatalf("tunnel gardé / tunnel kept: %q", out)
+	}
+	b := "[[proxies]]\nname = \"a\"\ntype = \"tcp\"\nremotePort = 18_801\n"
+	ok := false
+	for _, p := range extractPortsFromConfig(b, "frpc") {
+		if p["port"] == 18801 {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Fatalf("bloc 18_801 / block 18_801: %v", extractPortsFromConfig(b, "frpc"))
+	}
+}
