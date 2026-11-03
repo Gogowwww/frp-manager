@@ -287,13 +287,41 @@ func tomlKeyOf(s string) string {
 	if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, "[") || strings.HasPrefix(s, "{{") {
 		return ""
 	}
-	k, _, ok := strings.Cut(s, "=")
+	k, _, ok := cutTOMLKey(s)
 	if !ok {
 		return ""
 	}
 	// Guillemets retirés : "proxies" = [ … ] est la clé proxies
 	// Quotes removed: "proxies" = [ … ] is the key proxies
 	return strings.NewReplacer(`"`, "", `'`, "").Replace(strings.Join(strings.Fields(k), ""))
+}
+
+// cutTOMLKey : comme strings.Cut(line, "="), mais sur le premier « = » hors
+// guillemets (une clé entre guillemets peut en contenir : "a=b" = 1) ; un « # »
+// hors guillemets avant lui (commentaire) : pas de clé.
+// cutTOMLKey: like strings.Cut(line, "="), but on the first "=" outside quotes
+// (a quoted key may contain one: "a=b" = 1); a "#" outside quotes before it
+// (comment): no key.
+func cutTOMLKey(line string) (key, value string, ok bool) {
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '#':
+			return line, "", false
+		case c == '=':
+			return line[:i], line[i+1:], true
+		}
+	}
+	return line, "", false
 }
 
 // tomlStringLines : pour chaque ligne de content (coupé sur "\n"), vrai si elle
@@ -322,7 +350,7 @@ func tomlStringLines(content string) []bool {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}
-		_, v, ok := strings.Cut(line, "=")
+		_, v, ok := cutTOMLKey(line)
 		if !ok {
 			continue
 		}
@@ -407,7 +435,7 @@ func setTOMLKey(content, key, value string) string {
 			k = table + "." + k
 		}
 		if k == key {
-			left, _, _ := strings.Cut(line, "=")
+			left, _, _ := cutTOMLKey(line)
 			lines[i] = strings.TrimRight(left, " \t") + " = " + value
 			found = true
 		}

@@ -884,4 +884,18 @@ func TestMultilineStringLines(t *testing.T) {
 			t.Errorf("ligne %d : %v", i, in)
 		}
 	}
+	// Clé entre guillemets qui contient « = » : la chaîne s'ouvre quand même
+	// Quoted key containing "=": the string still opens
+	want = []bool{false, true, true, false}
+	for i, in := range tomlStringLines("\"a=b\" = \"\"\"\n[x]\n# y\"\"\"\nz = 1") {
+		if in != want[i] {
+			t.Errorf("clé \"a=b\", ligne %d : %v", i, in)
+		}
+	}
+	if k := tomlKeyOf(`"a=b" = 1`); k != "a=b" {
+		t.Errorf("tomlKeyOf : %q", k)
+	}
+	if _, _, ok := cutTOMLKey("x # a = 1"); ok {
+		t.Error("cutTOMLKey : « = » dans un commentaire / \"=\" inside a comment")
+	}
 }

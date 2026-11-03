@@ -47,6 +47,24 @@ function splitComment(value) {
   return [value.trim(), ''];
 }
 
+/** Position du « = » d'une ligne « clé = valeur », hors guillemets (une clé entre
+ *  guillemets peut en contenir : "a=b" = 1), sinon -1.
+ *  Position of the "=" of a "key = value" line, outside quotes (a quoted key may
+ *  contain one: "a=b" = 1), otherwise -1. */
+function keyEnd(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') i += 1;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '#') return -1;
+    else if (c === '=') return i;
+  }
+  return -1;
+}
+
 /**
  * Remet les commentaires d'un bloc (notes : clé → { before, eol }) autour de
  * ses lignes « clé = valeur ».
@@ -57,7 +75,7 @@ function annotate(lines, notes) {
   if (!notes) return lines;
   const out = [];
   for (const line of lines) {
-    const eq = line.indexOf('=');
+    const eq = keyEnd(line);
     const isHead = line === '[[proxies]]' || line === '[[visitors]]';
     const n = isHead ? notes['[[]]'] : (eq > 0 && !/^[{[]/.test(line) ? notes[line.slice(0, eq).trim()] : null);
     if (n && n.before) out.push(...n.before);
@@ -135,7 +153,7 @@ function splitTop(s) {
 function inlineLines(body, prefix = '') {
   const lines = [];
   for (const { text: part } of splitTop(body)) {
-    const eq = part.indexOf('=');
+    const eq = keyEnd(part);
     if (eq < 0) continue;
     const key = part.slice(0, eq).trim().replace(/^(["'])(.*)\1$/, '$2');
     const val = part.slice(eq + 1).trim();
@@ -158,7 +176,7 @@ function multilineStringLines(text) {
     } else if (!/^\s*#/.test(line)) {
       // Une ligne de commentaire n'ouvre pas de chaîne
       // A comment line opens no string
-      const eq = line.indexOf('=');
+      const eq = keyEnd(line);
       const v = eq >= 0 ? line.slice(eq + 1).trim() : '';
       const d = v.startsWith('"""') ? '"""' : v.startsWith("'''") ? "'''" : '';
       if (d && !v.slice(3).includes(d)) delim = d;
@@ -308,7 +326,7 @@ export function parseToml(text) {
       continue;
     }
 
-    const eq = line.indexOf('=');
+    const eq = keyEnd(line);
     if (eq < 0) continue;
     // Clé entre guillemets : "name" = "a" se lit comme name = "a"
     // Quoted key: "name" = "a" reads as name = "a"
@@ -373,7 +391,7 @@ export function stripBlocks(text) {
   // UTF-8 BOM at the start: frpc rejects it, saving removes it
   text = prep(text);
   const m = findBlock(text);
-  const base =(m ? text.slice(0, m.index) : text).trimEnd();
+  const base = (m ? text.slice(0, m.index) : text).trimEnd();
   return m ? dropTrailingComments(base) : base;
 }
 
@@ -427,15 +445,26 @@ export function tablesAfterBlocks(text) {
   let above = [];
   let arrDepth = 0;
   let strDelim = '';
+  // Nombre de lignes de buf jusqu'à la dernière ligne de chaîne multi-lignes :
+  // celles-là ne sont jamais retirées (un « # » y est du texte, pas un commentaire)
+  // Number of buf lines up to the last multi-line string line: those are never
+  // removed (a "#" there is text, not a comment)
+  let pinned = 0;
+  // Fin de buf : lignes vides, commentaires (et « range » si withRange) retirés
+  // End of buf: blank lines, comments (and "range" if withRange) removed
+  const trimBuf = (withRange) => {
+    while (buf.length > pinned) {
+      const l = buf[buf.length - 1].trim();
+      if (!l || l.startsWith('#') || (withRange && RANGE_RE.test(splitComment(l)[0]))) buf.pop(); else break;
+    }
+  };
   const flush = () => {
     // Commentaires et « range » juste devant un bloc : ils sont à ce bloc
     // Comments and "range" right before a block: they belong to that block
-    while (buf.length) {
-      const l = buf[buf.length - 1].trim();
-      if (!l || l.startsWith('#') || RANGE_RE.test(splitComment(l)[0])) buf.pop(); else break;
-    }
+    trimBuf(true);
     if (buf.length) out.push(buf.join('\n'));
     buf = [];
+    pinned = 0;
   };
   for (const raw of prep(text).split(/\r?\n/)) {
     const line = raw.trim();
@@ -450,16 +479,17 @@ export function tablesAfterBlocks(text) {
     // Continuation of a multi-line string
     if (strDelim) {
       if (raw.includes(strDelim)) strDelim = '';
-      if (inTable) buf.push(raw);
+      if (inTable) { buf.push(raw); pinned = buf.length; }
       continue;
     }
-    if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
-      const v0 = line.slice(line.indexOf('=') + 1).trim();
+    const eq = line.startsWith('[') ? -1 : keyEnd(line);
+    if (eq >= 0) {
+      const v0 = line.slice(eq + 1).trim();
       const d0 = v0.startsWith('"""') ? '"""' : v0.startsWith("'''") ? "'''" : '';
       if (d0 && !v0.slice(3).includes(d0)) strDelim = d0;
-    }
-    if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
-      arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(line.indexOf('=') + 1))[0]));
+      // Ouverture d'une chaîne : ses crochets ne comptent pas comme un tableau
+      // Opening of a string: its brackets do not count as an array
+      else arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(eq + 1))[0]));
     }
     const head = line.startsWith('[[') ? splitComment(line)[0].replace(/\s+/g, '') : line;
     if (head === '[[proxies]]' || head === '[[visitors]]') {
@@ -482,10 +512,7 @@ export function tablesAfterBlocks(text) {
   if (inTable) {
     // Fin de fichier : on garde aussi les commentaires de la fin dans trailing
     // End of file: the trailing comments stay in trailing
-    while (buf.length) {
-      const l = buf[buf.length - 1].trim();
-      if (!l || l.startsWith('#')) buf.pop(); else break;
-    }
+    trimBuf(false);
     if (buf.length) out.push(buf.join('\n'));
   }
   return out.join('\n\n');
