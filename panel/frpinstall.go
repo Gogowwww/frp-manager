@@ -514,7 +514,20 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 	// Fichier qui n'est pas un .tar.gz, tronqué ou abîmé
 	// File that is not a .tar.gz, truncated or damaged
 	unreadable := func(err error) error {
-		return errors.New(l.M("archive illisible (pas un .tar.gz valide, tronquée ou abîmée) : "+err.Error(),
+		// Détail en français pour les erreurs connues de Go
+		// Detail in French for the known Go errors
+		fr := err.Error()
+		switch {
+		case errors.Is(err, gzip.ErrHeader):
+			fr = "en-tête gzip invalide"
+		case errors.Is(err, gzip.ErrChecksum):
+			fr = "somme de contrôle gzip invalide"
+		case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
+			fr = "fin de fichier inattendue"
+		case errors.Is(err, tar.ErrHeader):
+			fr = "en-tête tar invalide"
+		}
+		return errors.New(l.M("archive illisible (pas un .tar.gz valide, tronquée ou abîmée) : "+fr,
 			"unreadable archive (not a valid .tar.gz, truncated or damaged): "+err.Error()))
 	}
 	gz, err := gzip.NewReader(f)

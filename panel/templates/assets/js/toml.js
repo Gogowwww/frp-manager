@@ -23,6 +23,11 @@ const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
 
 /** Coupe un commentaire de fin de ligne situé hors chaîne. */
 function stripComment(value) {
+  return splitComment(value)[0];
+}
+
+/** [valeur, commentaire de fin de ligne] / [value, end-of-line comment] */
+function splitComment(value) {
   let quote = null;
   for (let i = 0; i < value.length; i += 1) {
     const c = value[i];
@@ -32,10 +37,28 @@ function stripComment(value) {
     } else if (c === '"' || c === "'") {
       quote = c;
     } else if (c === '#') {
-      return value.slice(0, i).trim();
+      return [value.slice(0, i).trim(), value.slice(i).trim()];
     }
   }
-  return value.trim();
+  return [value.trim(), ''];
+}
+
+/**
+ * Remet les commentaires d'un bloc (notes : clé → { before, eol }) autour de
+ * ses lignes « clé = valeur ».
+ * Puts the comments of a block (notes: key → { before, eol }) back around its
+ * "key = value" lines.
+ */
+function annotate(lines, notes) {
+  if (!notes) return lines;
+  const out = [];
+  for (const line of lines) {
+    const eq = line.indexOf('=');
+    const n = eq > 0 && !/^[{[]/.test(line) ? notes[line.slice(0, eq).trim()] : null;
+    if (n && n.before) out.push(...n.before);
+    out.push(n && n.eol ? `${line} ${n.eol}` : line);
+  }
+  return out;
 }
 
 function unquote(raw) {
@@ -68,10 +91,15 @@ export function parseToml(text) {
   // end in out.trailing). Those in the middle of a block are lost.
   let comments = [];
   let seenBlock = false;
+  // Une ligne de contenu a déjà été lue hors d'un bloc : les commentaires qui
+  // suivent, juste avant le premier bloc, partent avec lui
+  // A content line was already read outside a block: the comments that follow,
+  // right before the first block, go with it
+  let anyContent = false;
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
     const line = rawLine.trim();
-    if (line.startsWith('#') && seenBlock) comments.push(line);
+    if (line.startsWith('#') && (seenBlock || anyContent)) comments.push(line);
     if (!line || line.startsWith('#')) continue;
 
     // Modèle de plage de ports : « range » devant le bloc, « end » derrière
@@ -83,7 +111,7 @@ export function parseToml(text) {
     if (END_RE.test(line)) continue;
 
     if (line === '[[proxies]]' || line === '[[visitors]]') {
-      block = { values: {}, raw: {}, order: [], comments };
+      block = { values: {}, raw: {}, order: [], comments, notes: {} };
       comments = [];
       seenBlock = true;
       if (pendingRange) block.range = pendingRange;
@@ -94,9 +122,11 @@ export function parseToml(text) {
     }
     // Ligne de contenu : les commentaires lus avant sont dans un bloc
     // Content line: the comments read before are inside a block
+    const pending = comments;
     comments = [];
 
     if (line.startsWith('[')) {
+      if (!(block && /^\[+(?:proxies|visitors)\./.test(line))) anyContent = true;
       const name = line.replace(/^\[+|\]+.*$/g, '').trim();
       const sub = name.match(/^(?:proxies|visitors)\.(.+)$/);
       if (block && sub) { prefix = `${sub[1]}.`; continue; }
@@ -109,7 +139,7 @@ export function parseToml(text) {
     const eq = line.indexOf('=');
     if (eq < 0) continue;
     const key = line.slice(0, eq).trim();
-    const raw = stripComment(line.slice(eq + 1));
+    const [raw, eol] = splitComment(line.slice(eq + 1));
     const value = unquote(raw);
 
     if (block) {
@@ -117,7 +147,11 @@ export function parseToml(text) {
       if (!(k in block.raw)) block.order.push(k);
       block.values[k] = value;
       block.raw[k] = raw;
+      // Commentaires du bloc : ceux d'avant la clé et celui de fin de ligne
+      // Block comments: those before the key and the end-of-line one
+      if (pending.length || eol) block.notes[k] = { before: pending, eol };
     } else {
+      anyContent = true;
       out.values[section ? `${section}.${key}` : key] = value;
     }
   }
@@ -128,7 +162,16 @@ export function parseToml(text) {
 /** Partie « connexion » de la config, sans les [[proxies]] / [[visitors]]. */
 export function stripBlocks(text) {
   const m = BLOCK_RE.exec(text);
-  return (m ? text.slice(0, m.index) : text).trimEnd();
+  const base = (m ? text.slice(0, m.index) : text).trimEnd();
+  if (!m) return base;
+  // Commentaires collés au premier bloc : ils partent avec lui (sauf s'il n'y
+  // a que des commentaires avant, comme l'en-tête du fichier)
+  // Comments stuck to the first block: they go with it (unless there are only
+  // comments before, like the file header)
+  const lines = base.split(/\r?\n/);
+  if (!lines.some((l) => l.trim() && !l.trim().startsWith('#'))) return base;
+  while (lines.length && (!lines[lines.length - 1].trim() || lines[lines.length - 1].trim().startsWith('#'))) lines.pop();
+  return lines.join(/\r\n/.test(base) ? '\r\n' : '\n');
 }
 
 /**
@@ -142,6 +185,7 @@ export function tablesAfterBlocks(text) {
   let seen = false;
   let inTable = false;
   let buf = [];
+  let above = [];
   const flush = () => {
     // Commentaires et « range » juste devant un bloc : ils sont à ce bloc
     // Comments and "range" right before a block: they belong to that block
@@ -162,9 +206,14 @@ export function tablesAfterBlocks(text) {
     }
     if (!seen) continue;
     if (line.startsWith('[') && !/^\[+(?:proxies|visitors)\./.test(line)) {
+      // Les commentaires juste au-dessus d'un tableau partent avec lui
+      // The comments right above a table go with it
+      if (!inTable) buf = [...above];
       inTable = true;
     }
     if (inTable) buf.push(raw);
+    else if (line.startsWith('#')) above.push(raw);
+    else if (line) above = [];
   }
   if (inTable) {
     // Fin de fichier : on garde aussi les commentaires de la fin dans trailing
@@ -451,6 +500,7 @@ export function proxyFromBlock(block) {
     encryption: v['transport.useEncryption'] === 'true',
     extras: extrasOf(block, PROXY_KEYS),
     comments: block.comments || [],
+    notes: block.notes || {},
   };
 }
 
@@ -479,7 +529,7 @@ export function splitPair(p) {
 export function pairProxies(proxies) {
   // Les commentaires n'empêchent pas le regroupement : ceux des deux sont gardés
   // Comments do not prevent grouping: those of both are kept
-  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '', comments: [], udpComments: [] });
+  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '', comments: [], udpComments: [], notes: {} });
   const mates = new Map();
   for (const p of proxies) {
     const base = p.type === 'tcp' && p.remotePort ? /^(.+)-tcp$/.exec(p.name)?.[1] : null;
@@ -535,6 +585,7 @@ export function visitorFromBlock(block) {
     serverPorts: range && range.remote && range.remote !== range.local ? range.remote : '',
     extras: extrasOf(block, VISITOR_KEYS),
     comments: block.comments || [],
+    notes: block.notes || {},
   };
 }
 
@@ -576,7 +627,7 @@ export function generateProxy(p) {
   if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
   for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
-  return [...(p.comments || []), ...L].join('\n');
+  return [...(p.comments || []), ...annotate(L, p.notes)].join('\n');
 }
 
 export function generateVisitor(v) {
@@ -598,7 +649,7 @@ export function generateVisitor(v) {
   else if (v.bindPort) L.push(`bindPort = ${v.bindPort}`);
   for (const [k, raw] of v.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
-  return [...(v.comments || []), ...L].join('\n');
+  return [...(v.comments || []), ...annotate(L, v.notes)].join('\n');
 }
 
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */

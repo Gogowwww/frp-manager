@@ -40,9 +40,9 @@ import (
 
 const (
 	fwTable         = "frp_manager"
-	fwSyncInterval  = 60 * time.Second
-	fwSeenTimeout   = 86400 // une adresse bloquée reste listée 24 h après sa dernière tentative
-	fwSeenSize      = 4096  // adresses retenues au plus, par règle et par famille
+	fwSyncInterval  = 10 * time.Second // un port ouvert par un frps lancé plus tard est couvert en 10 s / a port opened by a later frps is covered within 10 s
+	fwSeenTimeout   = 86400            // une adresse bloquée reste listée 24 h après sa dernière tentative
+	fwSeenSize      = 4096             // adresses retenues au plus, par règle et par famille
 	fwLiveInterval  = time.Second
 	fwSeenFullEvery = 60 * time.Second
 	fwKnownTTL      = 15 * time.Second
@@ -1625,6 +1625,7 @@ func fwSyncLoop() {
 	}
 	for {
 		time.Sleep(fwSyncInterval)
+		fwKnownInvalidate()
 		fwSyncPass(true)
 	}
 }
