@@ -84,10 +84,45 @@ function annotate(lines, notes) {
   return out;
 }
 
-function unquote(raw) {
-  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
-    return raw.slice(1, -1).replace(/\\(["\\nt])/g, (m, c) => ({ n: '\n', t: '\t' }[c] || c));
+/** Échappements d'une chaîne TOML entre guillemets doubles (\n, \t, \", \\, \uXXXX…) ;
+ *  dans une chaîne multi-lignes, « \ » en fin de ligne retire le saut de ligne et
+ *  les blancs qui suivent.
+ *  Escapes of a double-quoted TOML string (\n, \t, \", \\, \uXXXX…); in a
+ *  multi-line string, "\" at the end of a line removes the line break and the
+ *  whitespace that follows. */
+function unescapeBasic(s) {
+  return s.replace(/\\(?:([btnfr"\\])|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8})|[ \t]*\n\s*)/g, (m, c, u4, u8) => {
+    if (c) return { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r' }[c] || c;
+    if (u4 || u8) return String.fromCodePoint(parseInt(u4 || u8, 16));
+    return '';
+  });
+}
+
+/** Valeur d'une chaîne multi-lignes brute (""" ou ''', lignes jointes par \n), ou
+ *  null si raw n'en est pas une : le saut de ligne qui suit l'ouverture ne compte
+ *  pas, la fermeture peut être suivie d'un ou deux guillemets du contenu.
+ *  Value of a raw multi-line string (""" or ''', lines joined with \n), or null
+ *  if raw is not one: the line break right after the opening does not count, the
+ *  closing may be followed by one or two quotes of the content. */
+function multilineValue(raw) {
+  const d = raw.slice(0, 3);
+  if (d !== '"""' && d !== "'''") return null;
+  const body = raw.slice(3);
+  for (let i = 0; i + 3 <= body.length; i += 1) {
+    if (d === '"""' && body[i] === '\\') { i += 1; continue; }
+    if (!body.startsWith(d, i)) continue;
+    let end = i;
+    while (end - i < 2 && body[end + 3] === d[0]) end += 1;
+    const text = body.slice(0, end).replace(/^\n/, '');
+    return d === '"""' ? unescapeBasic(text) : text;
   }
+  return null;
+}
+
+function unquote(raw) {
+  const ml = multilineValue(raw);
+  if (ml !== null) return ml;
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) return unescapeBasic(raw.slice(1, -1));
   if (raw.length >= 2 && raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1);
   return raw;
 }
@@ -241,8 +276,14 @@ function prep(text) {
   return expandInline(String(text || '').replace(/^\uFEFF/, '').replace(/\r(?!\n)/g, '\n'));
 }
 
+// Chaîne TOML sur une ligne : les sauts de ligne et autres caractères de contrôle
+// sont échappés (une valeur lue dans une chaîne multi-lignes en a)
+// One-line TOML string: line breaks and other control characters are escaped (a
+// value read from a multi-line string has some)
 export function str(value) {
-  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return `"${String(value).replace(/[\\"\u0000-\u001f\u007f]/g, (c) => ({
+    '\\': '\\\\', '"': '\\"', '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r',
+  }[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`))}"`;
 }
 
 /**

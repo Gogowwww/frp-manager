@@ -110,6 +110,15 @@ func TestFrpTemplateValidation(t *testing.T) {
 		rangeTOML,
 		validTOML + "\n" + stcpRangeTOML + "\n" + httpRangeTOML + "\n" + visitorRangeTOML,
 		"serverAddr = \"{{ .Envs.FRP_SERVER }}\"\nserverPort = {{ .Envs.FRP_PORT }}\n",
+		// Chaîne multi-lignes avec des lignes d'actions valides, et la même valeur
+		// réécrite échappée sur une ligne par la page Configuration
+		// Multi-line string with valid action lines, and the same value rewritten
+		// escaped on one line by the Configuration page
+		"metadatas.note = \"\"\"\n{{- if true }}\nbonjour\n{{- end }}\n\"\"\"\n" + validTOML,
+		"metadatas.note = \"\\n{{- if true }}\\nbonjour\\n{{- end }}\\n\"\n" + validTOML,
+		// Texte « parseNumberRange » hors action (note, commentaire) : pas un appel
+		// "parseNumberRange" text outside an action (note, comment): not a call
+		"metadatas.note = '''\nvoir parseNumberRange \"abc\"\n'''\n# parseNumberRangePair \"1\" \"2-3\"\n" + validTOML + "\n" + rangeTOML,
 	} {
 		if err := FR.validateConfigContent("/etc/frp/frpc.toml", good); err != nil {
 			t.Errorf("%q : %v", truncRunes(good, 40), err)
@@ -131,6 +140,11 @@ func TestFrpTemplateValidation(t *testing.T) {
 		strings.Replace(stcpRangeTOML, "6000-6002", "6002-6000", 1),
 		strings.Replace(httpRangeTOML, "8080-8081", "70000", 1),
 		strings.Replace(visitorRangeTOML, "6000-6002", "6000", 1),
+		// Action invalide dans une chaîne multi-lignes : frp passe tout le fichier
+		// par text/template, il la refuserait aussi
+		// Invalid action inside a multi-line string: frp runs the whole file
+		// through text/template, it would reject it too
+		"metadatas.note = \"\"\"\n{{- … }}\n\"\"\"\n" + validTOML,
 	} {
 		if err := FR.validateConfigContent("/etc/frp/frpc.toml", bad); err == nil {
 			t.Errorf("accepté : %q", truncRunes(bad, 80))

@@ -24,6 +24,9 @@ var (
 	// A template action on one line, and a line made only of actions
 	frpActionRe     = regexp.MustCompile(`\{\{.*?\}\}`)
 	frpActionLineRe = regexp.MustCompile(`^\s*(?:\{\{.*?\}\}\s*)+(?:#.*)?$`)
+	// Action sur une ou plusieurs lignes
+	// An action on one or several lines
+	frpActionAnyRe = regexp.MustCompile(`(?s)\{\{.*?\}\}`)
 	// Plage de ports écrite par la page Ports : ligne « range » devant le bloc,
 	// nom « nom-{{ $v.First }} » dans le bloc
 	// Port range written by the Ports page: "range" line in front of the block,
@@ -127,6 +130,11 @@ func checkFrpTemplate(content string) error {
 	if _, err := template.New("frp").Funcs(funcs).Parse(content); err != nil {
 		return err
 	}
+	// Plages cherchées seulement dans les actions {{ … }} : le même texte dans
+	// un commentaire ou une chaîne (une note sur plusieurs lignes) n'est pas un appel
+	// Ranges looked for only inside {{ … }} actions: the same text in a comment
+	// or a string (a multi-line note) is not a call
+	content = strings.Join(frpActionAnyRe.FindAllString(content, -1), "\n")
 	for _, m := range frpRangePairRe.FindAllStringSubmatch(content, -1) {
 		first, err := frpPortRange(m[1])
 		if err != nil {

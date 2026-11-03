@@ -145,13 +145,21 @@ const SCHEMA = {
 // (fichier écrit par une ancienne version), à corriger en enregistrant
 // addrs: names of the address fields; bracketed: values read with brackets
 // (file written by an older version), to be fixed by saving
-const S = { iid: '', type: '', controls: {}, addrs: new Set(), bracketed: {}, snapshot: '', els: {} };
+// multiline : valeurs lues avec des sauts de ligne (chaîne multi-lignes du
+// fichier) ; un champ d'une ligne les retire, la valeur d'origine est gardée
+// tant que le champ n'est pas modifié
+// multiline: values read with line breaks (multi-line string of the file); a
+// one-line field removes them, the original value is kept as long as the field
+// is not changed
+const S = { iid: '', type: '', controls: {}, addrs: new Set(), bracketed: {}, multiline: {}, snapshot: '', els: {} };
 
 function values() {
   const v = {};
   for (const [name, ctrl] of Object.entries(S.controls)) {
+    const orig = S.multiline[name];
     v[name] = ctrl.type === 'checkbox' ? ctrl.checked
-      : S.addrs.has(name) ? unbracket(ctrl.value.trim()) : ctrl.value.trim();
+      : orig !== undefined && ctrl.value === orig.replace(/[\r\n]/g, '') ? orig
+        : S.addrs.has(name) ? unbracket(ctrl.value.trim()) : ctrl.value.trim();
   }
   return v;
 }
@@ -233,6 +241,7 @@ async function load(discarded = false) {
   S.controls = {};
   S.addrs = new Set();
   S.bracketed = {};
+  S.multiline = {};
   S.els.savebar.hidden = true;
 
   if (isDocker(inst)) {
@@ -320,6 +329,7 @@ function buildFields(section, cfg) {
     }
     let ctrl;
     let el;
+    if (f.kind !== 'select' && /[\r\n]/.test(raw || '')) S.multiline[f.name] = raw;
     if (f.kind === 'select') {
       ctrl = select(f.options, raw || f.def);
       el = ctrl;
