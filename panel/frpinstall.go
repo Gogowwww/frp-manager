@@ -5,6 +5,7 @@ package main
 
 import (
 	"archive/tar"
+	"compress/flate"
 	"compress/gzip"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -505,6 +506,14 @@ var elfMachines = map[string]elf.Machine{
 // extractFrpBinaries extrait frps/frpc d'une archive .tar.gz dans dest : chemins
 // absolus ou avec « .. », liens et fichiers spéciaux refusés, taille
 // décompressée plafonnée (bombe de décompression). → {nom: chemin extrait}.
+// isFlateErr : flux deflate corrompu (erreur du paquet compress/flate)
+// isFlateErr: corrupt deflate stream (compress/flate error)
+func isFlateErr(err error) bool {
+	var ce flate.CorruptInputError
+	var ie flate.InternalError
+	return errors.As(err, &ce) || errors.As(err, &ie)
+}
+
 func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error) {
 	f, err := os.Open(archive)
 	if err != nil {
@@ -518,6 +527,8 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 		// Detail in French for the known Go errors
 		fr := err.Error()
 		switch {
+		case isFlateErr(err):
+			fr = "flux compressé abîmé"
 		case errors.Is(err, gzip.ErrHeader):
 			fr = "en-tête gzip invalide"
 		case errors.Is(err, gzip.ErrChecksum):

@@ -707,3 +707,37 @@ func TestExtractPorts(t *testing.T) {
 		t.Fatalf("%d ports frps", n)
 	}
 }
+
+// Archive au flux deflate abîmé : le détail Go est traduit en français
+// Archive with a damaged deflate stream: the Go detail is translated into French
+func TestCorruptDeflateMessageFrench(t *testing.T) {
+	dir := t.TempDir()
+	good := makeTar(t, filepath.Join(dir, "good.tar.gz"), []tarMember{
+		{"frp/frps", elfBin, false}, {"frp/frpc", elfBin, false},
+	})
+	data, _ := os.ReadFile(good)
+	found := false
+	for off := 10; off < 100 && off < len(data); off++ {
+		d := append([]byte(nil), data...)
+		for i := 0; i < 4 && off+i < len(d); i++ {
+			d[off+i] ^= 0xff
+		}
+		p := filepath.Join(dir, "bad.tar.gz")
+		os.WriteFile(p, d, 0o644)
+		_, err := extractFrpBinaries(FR, p, t.TempDir())
+		if err == nil {
+			continue
+		}
+		for _, en := range []string{"flate:", "gzip:", "unexpected EOF", "archive/tar"} {
+			if strings.Contains(err.Error(), en) {
+				t.Fatalf("offset %d : détail en anglais dans « %s »", off, err)
+			}
+		}
+		if strings.Contains(err.Error(), "abîmé") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("aucune corruption flate rencontrée")
+	}
+}

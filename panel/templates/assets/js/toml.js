@@ -97,7 +97,9 @@ export function parseToml(text) {
   // right before the first block, go with it
   let anyContent = false;
 
-  for (const rawLine of String(text || '').split(/\r?\n/)) {
+  const allLines = String(text || '').split(/\r?\n/);
+  for (let li = 0; li < allLines.length; li += 1) {
+    const rawLine = allLines[li];
     const line = rawLine.trim();
     if (line.startsWith('#') && (seenBlock || anyContent)) comments.push(line);
     if (!line || line.startsWith('#')) continue;
@@ -141,7 +143,18 @@ export function parseToml(text) {
     const eq = line.indexOf('=');
     if (eq < 0) continue;
     const key = line.slice(0, eq).trim();
-    const [raw, eol] = splitComment(line.slice(eq + 1));
+    let [raw, eol] = splitComment(line.slice(eq + 1));
+    // Tableau sur plusieurs lignes : toutes les lignes jusqu'au crochet fermant
+    // Multi-line array: all the lines up to the closing bracket
+    if (raw.startsWith('[') && bracketDepth(raw) > 0) {
+      const parts = [raw];
+      while (li + 1 < allLines.length && bracketDepth(parts.join('\n')) > 0) {
+        li += 1;
+        const [more] = splitComment(allLines[li]);
+        if (more) parts.push(more);
+      }
+      raw = parts.join('\n');
+    }
     const value = unquote(raw);
 
     if (block) {
@@ -165,15 +178,36 @@ export function parseToml(text) {
 export function stripBlocks(text) {
   const m = BLOCK_RE.exec(text);
   const base = (m ? text.slice(0, m.index) : text).trimEnd();
-  if (!m) return base;
-  // Commentaires collés au premier bloc : ils partent avec lui (sauf s'il n'y
-  // a que des commentaires avant, comme l'en-tête du fichier)
-  // Comments stuck to the first block: they go with it (unless there are only
-  // comments before, like the file header)
+  return m ? dropTrailingComments(base) : base;
+}
+
+/**
+ * Commentaires collés au premier bloc : ils partent avec lui (sauf s'il n'y
+ * a que des commentaires avant, comme l'en-tête du fichier).
+ * Comments stuck to the first block: they go with it (unless there are only
+ * comments before, like the file header).
+ */
+function dropTrailingComments(base) {
   const lines = base.split(/\r?\n/);
   if (!lines.some((l) => l.trim() && !l.trim().startsWith('#'))) return base;
   while (lines.length && (!lines[lines.length - 1].trim() || lines[lines.length - 1].trim().startsWith('#'))) lines.pop();
   return lines.join(/\r\n/.test(base) ? '\r\n' : '\n');
+}
+
+/** Profondeur de crochets ouverts hors chaîne / open brackets depth outside strings */
+function bracketDepth(s) {
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') i += 1;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '[') depth += 1;
+    else if (c === ']') depth -= 1;
+  }
+  return depth;
 }
 
 /**
@@ -512,8 +546,8 @@ export function splitPair(p) {
   if (p.type !== TCP_UDP) return [p];
   // Chacun retrouve ses commentaires (udpComments : ceux du tunnel udp)
   // Each one gets its comments back (udpComments: those of the udp tunnel)
-  const { udpComments = [], ...q } = p;
-  return [{ ...q, name: `${p.name}-tcp`, type: 'tcp' }, { ...q, name: `${p.name}-udp`, type: 'udp', comments: udpComments }];
+  const { udpComments = [], udpNotes, ...q } = p;
+  return [{ ...q, name: `${p.name}-tcp`, type: 'tcp' }, { ...q, name: `${p.name}-udp`, type: 'udp', comments: udpComments, notes: udpNotes || q.notes }];
 }
 
 /**
@@ -531,7 +565,7 @@ export function splitPair(p) {
 export function pairProxies(proxies) {
   // Les commentaires n'empêchent pas le regroupement : ceux des deux sont gardés
   // Comments do not prevent grouping: those of both are kept
-  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '', comments: [], udpComments: [], notes: {} });
+  const rest = (p) => JSON.stringify({ ...p, uid: '', name: '', type: '', comments: [], udpComments: [], notes: {}, udpNotes: {} });
   const mates = new Map();
   for (const p of proxies) {
     const base = p.type === 'tcp' && p.remotePort ? /^(.+)-tcp$/.exec(p.name)?.[1] : null;
@@ -548,7 +582,7 @@ export function pairProxies(proxies) {
     done.add(q);
     const tcp = p.type === 'tcp' ? p : q;
     const udp = tcp === p ? q : p;
-    out.push({ ...tcp, name: tcp.name.slice(0, -'-tcp'.length), type: TCP_UDP, udpComments: udp.comments || [] });
+    out.push({ ...tcp, name: tcp.name.slice(0, -'-tcp'.length), type: TCP_UDP, udpComments: udp.comments || [], udpNotes: udp.notes || {} });
   }
   return out;
 }
@@ -664,10 +698,22 @@ export function composeClientConfig(baseText, proxies, visitors) {
   // démarrerait pas, elles sont corrigées à chaque écriture
   // Bracketed connection addresses (older version): frpc would not start, they
   // are fixed on every write
-  const base = unbracketConnection(stripBlocks(baseText));
+  let base = unbracketConnection(stripBlocks(baseText));
   // Commentaires de la fin du fichier, après le dernier bloc : gardés à la fin
   // Comments at the end of the file, after the last block: kept at the end
-  const trailing = parseToml(baseText).trailing.join('\n');
+  let trailingLines = parseToml(baseText).trailing;
+  if (!BLOCK_RE.test(baseText)) {
+    // Fichier sans aucun tunnel : ses commentaires de fin sont dans la partie
+    // connexion ; avec un premier tunnel ils passent devant lui, une seule fois
+    // File with no tunnel: its end comments are in the connection part; with a
+    // first tunnel they move in front of it, only once
+    if (blocks.length && trailingLines.length) {
+      base = dropTrailingComments(base);
+      blocks[0] = [...trailingLines, blocks[0]].join('\n');
+    }
+    trailingLines = [];
+  }
+  const trailing = trailingLines.join('\n');
   // Tableaux écrits après les tunnels : repris après la connexion
   // Tables written after the tunnels: carried over after the connection part
   const tables = tablesAfterBlocks(baseText);
