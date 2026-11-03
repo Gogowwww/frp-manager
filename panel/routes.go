@@ -1415,12 +1415,13 @@ func extractPortsFromConfig(content, binType string) []J {
 				pendingRange = frpRangePairs(m)
 				continue
 			}
-			if s == "[[proxies]]" {
+			h := tomlHead(s)
+			if h == "[[proxies]]" {
 				inProxy, proxyName, proxyType = true, "", "tcp"
 				proxyRange, pendingRange = pendingRange, nil
 				continue
 			}
-			if strings.HasPrefix(s, "[") && !strings.HasPrefix(s, "[[proxies]]") {
+			if strings.HasPrefix(s, "[") && !strings.HasPrefix(h, "[[proxies]]") {
 				// La ligne « range » d'un [[visitors]] n'est pas pour le tunnel suivant
 				// The "range" line of a [[visitors]] is not for the next tunnel
 				inProxy, pendingRange = false, nil
@@ -1482,13 +1483,14 @@ func extractPortsFromConfig(content, binType string) []J {
 				visPending = frpRangePairs(m)
 				continue
 			}
-			if s == "[[visitors]]" {
+			h := tomlHead(s)
+			if h == "[[visitors]]" {
 				flush()
 				inVisitor, visName, visAddr, visPort, visRanged = true, "", "127.0.0.1", 0, false
 				visRange, visPending = visPending, nil
 				continue
 			}
-			if strings.HasPrefix(s, "[") && s != "[[visitors]]" {
+			if strings.HasPrefix(s, "[") && h != "[[visitors]]" {
 				flush()
 				inVisitor, visPort, visRanged, visPending = false, 0, false, nil
 				continue
@@ -1735,4 +1737,18 @@ func wsLogs(c *Ctx) {
 			}
 		}
 	}
+}
+
+// tomlHead : en-tête de tableau sans commentaire de fin de ligne ni espace
+// (« [[ proxies ]] # note » devient « [[proxies]] »)
+// tomlHead: table header without an end-of-line comment or spaces
+// ("[[ proxies ]] # note" becomes "[[proxies]]")
+func tomlHead(s string) string {
+	if !strings.HasPrefix(s, "[") {
+		return s
+	}
+	if i := strings.IndexByte(s, '#'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.Join(strings.Fields(s), "")
 }

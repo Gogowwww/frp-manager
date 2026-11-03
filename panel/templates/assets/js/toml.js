@@ -17,7 +17,11 @@ const RANGE_LINE = String.raw`\{\{-?\s*range\s+\$_,\s*\$v\s*:=\s*(?:parseNumberR
 // Loop port inside the block: "{{ $v }}", or "{{ $v.First }}" / "{{ $v.Second }}"
 const LOOP_FIRST = String.raw`\{\{\s*\$v(?:\.First)?\s*\}\}`;
 const LOOP_SECOND = String.raw`\{\{\s*\$v(?:\.Second)?\s*\}\}`;
-const BLOCK_RE = new RegExp(String.raw`^[ \t]*(?:${RANGE_LINE}[ \t]*\r?\n[ \t]*)?\[\[(proxies|visitors)\]\]`, 'm');
+// Entre la ligne « range » et l'en-tête : commentaire de fin de ligne, lignes
+// vides ou commentées, espaces dans les crochets
+// Between the "range" line and the header: end-of-line comment, blank or
+// commented lines, spaces inside the brackets
+const BLOCK_RE = new RegExp(String.raw`^[ \t]*(?:${RANGE_LINE}[ \t]*(?:#[^\r\n]*)?\r?\n(?:[ \t]*(?:#[^\r\n]*)?\r?\n)*[ \t]*)?\[\[[ \t]*(proxies|visitors)[ \t]*\]\]`, 'm');
 const RANGE_RE = new RegExp(`^${RANGE_LINE}$`);
 const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
 
@@ -98,7 +102,7 @@ export function parseToml(text) {
   // right before the first block, go with it
   let anyContent = false;
 
-  const allLines = String(text || '').split(/\r?\n/);
+  const allLines = String(text || '').replace(/^﻿/, '').split(/\r?\n/);
   for (let li = 0; li < allLines.length; li += 1) {
     const rawLine = allLines[li];
     const line = rawLine.trim();
@@ -107,15 +111,20 @@ export function parseToml(text) {
 
     // Modèle de plage de ports : « range » devant le bloc, « end » derrière
     // Port-range template: "range" in front of the block, "end" behind it
-    const rm = RANGE_RE.exec(line);
+    const [lineCode, lineNote] = line.startsWith('{{') ? splitComment(line) : [line, ''];
+    const rm = RANGE_RE.exec(lineCode);
+    if (rm && lineNote) comments.push(lineNote);
     // Une seule plage (parseNumberRange) : pas de second côté
     // A single range (parseNumberRange): no second side
     if (rm) { pendingRange = rm[3] !== undefined ? { local: rm[3], remote: '' } : { local: rm[1], remote: rm[2] }; continue; }
-    if (END_RE.test(line)) continue;
+    if (END_RE.test(lineCode)) continue;
 
-    // En-tête de bloc, avec un éventuel commentaire de fin de ligne
-    // Block header, with a possible end-of-line comment
-    const [head, headEol] = line.startsWith('[[') ? splitComment(line) : [line, ''];
+    // En-tête de bloc, avec un éventuel commentaire de fin de ligne et des
+    // espaces dans les crochets
+    // Block header, with a possible end-of-line comment and spaces inside the
+    // brackets
+    const [headRaw, headEol] = line.startsWith('[[') ? splitComment(line) : [line, ''];
+    const head = line.startsWith('[[') ? headRaw.replace(/\s+/g, '') : headRaw;
     if (head === '[[proxies]]' || head === '[[visitors]]') {
       block = { values: {}, raw: {}, order: [], comments, notes: {} };
       if (headEol) block.notes['[[]]'] = { before: [], eol: headEol };
@@ -194,6 +203,9 @@ export function parseToml(text) {
 
 /** Partie « connexion » de la config, sans les [[proxies]] / [[visitors]]. */
 export function stripBlocks(text) {
+  // BOM UTF-8 au début : frpc le refuse, l'enregistrement le retire
+  // UTF-8 BOM at the start: frpc rejects it, saving removes it
+  text = String(text || '').replace(/^﻿/, '');
   const m = BLOCK_RE.exec(text);
   const base = (m ? text.slice(0, m.index) : text).trimEnd();
   return m ? dropTrailingComments(base) : base;
@@ -246,12 +258,12 @@ export function tablesAfterBlocks(text) {
     // Comments and "range" right before a block: they belong to that block
     while (buf.length) {
       const l = buf[buf.length - 1].trim();
-      if (!l || l.startsWith('#') || RANGE_RE.test(l)) buf.pop(); else break;
+      if (!l || l.startsWith('#') || RANGE_RE.test(splitComment(l)[0])) buf.pop(); else break;
     }
     if (buf.length) out.push(buf.join('\n'));
     buf = [];
   };
-  for (const raw of String(text || '').split(/\r?\n/)) {
+  for (const raw of String(text || '').replace(/^﻿/, '').split(/\r?\n/)) {
     const line = raw.trim();
     // Suite d'un tableau sur plusieurs lignes : pas un en-tête de tableau TOML
     // Continuation of a multi-line array: not a TOML table header
@@ -263,7 +275,7 @@ export function tablesAfterBlocks(text) {
     if (line.includes('=') && !line.startsWith('[') && !line.startsWith('#')) {
       arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(line.indexOf('=') + 1))[0]));
     }
-    const head = line.startsWith('[[') ? splitComment(line)[0] : line;
+    const head = line.startsWith('[[') ? splitComment(line)[0].replace(/\s+/g, '') : line;
     if (head === '[[proxies]]' || head === '[[visitors]]') {
       if (inTable) flush();
       inTable = false;
@@ -720,6 +732,7 @@ export function generateVisitor(v) {
 
 /** Config frpc complète : connexion d'origine + tunnels + visiteurs. */
 export function composeClientConfig(baseText, proxies, visitors) {
+  baseText = String(baseText || '').replace(/^﻿/, '');
   const blocks = [
     ...proxies.flatMap(splitPair).map((p) => generateProxy(p)),
     ...visitors.filter((v) => v.name).map(generateVisitor),

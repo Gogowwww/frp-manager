@@ -741,3 +741,28 @@ func TestCorruptDeflateMessageFrench(t *testing.T) {
 		t.Error("aucune corruption flate rencontrée")
 	}
 }
+
+// Ports lus malgré un commentaire ou des espaces dans l'en-tête de bloc
+// Ports read despite a comment or spaces in the block header
+func TestExtractPortsCommentedHeader(t *testing.T) {
+	setup(t)
+	for _, head := range []string{"[[proxies]]", "[[proxies]] # note", "  [[ proxies ]]", "[[proxies]]\t# note"} {
+		content := "serverAddr = \"x\"\nserverPort = 7000\n\n" + head + "\nname = \"a\"\ntype = \"tcp\"\nlocalPort = 22\nremotePort = 18801\n\n[[visitors]] # v\nname = \"v\"\nbindAddr = \"0.0.0.0\"\nbindPort = 18999\n"
+		ports := extractPortsFromConfig(content, "frpc")
+		var got []int
+		for _, p := range ports {
+			got = append(got, p["port"].(int))
+		}
+		has := func(n int) bool {
+			for _, g := range got {
+				if g == n {
+					return true
+				}
+			}
+			return false
+		}
+		if !has(18801) || !has(18999) {
+			t.Errorf("en-tête %q : ports lus %v", head, got)
+		}
+	}
+}
