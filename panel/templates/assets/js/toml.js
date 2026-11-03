@@ -131,6 +131,53 @@ export function stripBlocks(text) {
   return (m ? text.slice(0, m.index) : text).trimEnd();
 }
 
+/**
+ * Tableaux [xxx] placés APRÈS le premier [[proxies]] / [[visitors]] (fichier
+ * écrit à la main) : ils ne sont pas des tunnels, on les garde tels quels.
+ * Tables [xxx] placed AFTER the first [[proxies]] / [[visitors]] (hand-written
+ * file): they are not tunnels, they are kept as they are.
+ */
+export function tablesAfterBlocks(text) {
+  const out = [];
+  let seen = false;
+  let inTable = false;
+  let buf = [];
+  const flush = () => {
+    // Commentaires et « range » juste devant un bloc : ils sont à ce bloc
+    // Comments and "range" right before a block: they belong to that block
+    while (buf.length) {
+      const l = buf[buf.length - 1].trim();
+      if (!l || l.startsWith('#') || RANGE_RE.test(l)) buf.pop(); else break;
+    }
+    if (buf.length) out.push(buf.join('\n'));
+    buf = [];
+  };
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '[[proxies]]' || line === '[[visitors]]') {
+      if (inTable) flush();
+      inTable = false;
+      seen = true;
+      continue;
+    }
+    if (!seen) continue;
+    if (line.startsWith('[') && !/^\[+(?:proxies|visitors)\./.test(line)) {
+      inTable = true;
+    }
+    if (inTable) buf.push(raw);
+  }
+  if (inTable) {
+    // Fin de fichier : on garde aussi les commentaires de la fin dans trailing
+    // End of file: the trailing comments stay in trailing
+    while (buf.length) {
+      const l = buf[buf.length - 1].trim();
+      if (!l || l.startsWith('#')) buf.pop(); else break;
+    }
+    if (buf.length) out.push(buf.join('\n'));
+  }
+  return out.join('\n\n');
+}
+
 /** Uniquement les blocs [[proxies]] / [[visitors]] (texte brut). */
 export function extractBlocks(text) {
   const m = BLOCK_RE.exec(text);
@@ -568,7 +615,10 @@ export function composeClientConfig(baseText, proxies, visitors) {
   // Commentaires de la fin du fichier, après le dernier bloc : gardés à la fin
   // Comments at the end of the file, after the last block: kept at the end
   const trailing = parseToml(baseText).trailing.join('\n');
-  const text = `${[base, ...blocks, trailing].filter(Boolean).join('\n\n')}\n`;
+  // Tableaux écrits après les tunnels : repris après la connexion
+  // Tables written after the tunnels: carried over after the connection part
+  const tables = tablesAfterBlocks(baseText);
+  const text = `${[base, tables, ...blocks, trailing].filter(Boolean).join('\n\n')}\n`;
   // Fins de ligne du fichier d'origine : CRLF partout s'il en avait
   // Line endings of the original file: CRLF everywhere if it had some
   return /\r\n/.test(baseText) ? text.replace(/\r?\n/g, '\r\n') : text;

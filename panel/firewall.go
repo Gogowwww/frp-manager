@@ -82,6 +82,7 @@ var (
 
 	fwMu       sync.Mutex
 	fwApplied  = ""   // dernier jeu de règles chargé avec succès
+	fwLastWarn = ""   // dernier échec signalé, pour ne pas le répéter / last failure logged, not repeated
 	fwSeenOK   = true // false si ce nftables refuse les ensembles dynamiques
 	fwSeenOKMu sync.Mutex
 )
@@ -1674,7 +1675,18 @@ func fwSyncPass(refresh bool) {
 	applied := fwApplied
 	fwMu.Unlock()
 	if text != applied || (expect && !fwTablePresent()) {
-		if ok, msg := fwApply(&c); !ok {
+		// Même message qu'à la passe précédente : on ne le répète pas
+		// Same message as the previous pass: not repeated
+		ok, msg := fwApply(&c)
+		fwMu.Lock()
+		repeat := !ok && fwLastWarn == msg
+		if ok {
+			fwLastWarn = ""
+		} else {
+			fwLastWarn = msg
+		}
+		fwMu.Unlock()
+		if !ok && !repeat {
 			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Pare-feu : application impossible (%s)", msg), fmt.Sprintf("Firewall: cannot apply the rules (%s)", msg)))
 		}
 	}
