@@ -371,8 +371,12 @@ export function parseToml(text) {
 
     if (line.startsWith('[')) {
       if (!(block && /^\[+\s*(?:proxies|visitors)\s*\./.test(line))) anyContent = true;
-      const name = line.replace(/^\[+|\]+.*$/g, '').trim();
-      const sub = name.match(/^(?:proxies|visitors)\s*\.\s*(.+)$/);
+      // Nom lu comme mergeConnection (keyPath) : [ "log" ], [ "transport" . tls ]
+      // donnent log et transport.tls
+      // Name read like mergeConnection (keyPath): [ "log" ], [ "transport" . tls ]
+      // give log and transport.tls
+      const name = keyPath(splitComment(line)[0].replace(/^\[\[?|\]\]?$/g, ''));
+      const sub = name.match(/^(?:proxies|visitors)\.(.+)$/);
       // Sous-table d'un tunnel : ses commentaires passent à la première clé
       // Sub-table of a tunnel: its comments move to the first key
       if (block && sub) {
@@ -391,7 +395,11 @@ export function parseToml(text) {
     if (eq < 0) continue;
     // Clé entre guillemets : "name" = "a" se lit comme name = "a"
     // Quoted key: "name" = "a" reads as name = "a"
-    const key = line.slice(0, eq).trim().replace(/^(["'])([\w.-]+)\1$/, '$2');
+    // Hors tunnel, clé lue comme mergeConnection (keyPath) : "log".level et
+    // log . level donnent log.level
+    // Outside a tunnel, key read like mergeConnection (keyPath): "log".level and
+    // log . level give log.level
+    const key = block ? line.slice(0, eq).trim().replace(/^(["'])([\w.-]+)\1$/, '$2') : keyPath(line.slice(0, eq));
     let [raw, eol] = splitComment(line.slice(eq + 1));
     // Chaîne sur plusieurs lignes (""" ou ''') : gardée telle quelle jusqu'au
     // délimiteur de fin
