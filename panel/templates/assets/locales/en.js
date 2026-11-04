@@ -500,6 +500,7 @@ export default {
     advancedDesc: 'The defaults fit most setups.',
     saved: 'Configuration saved',
     readBackError: 'Could not read the current file back: saving cancelled so nothing it contains is lost.',
+    inlineRefused: 'Could not write {keys}: in the file, the value that should hold it is not a table. Fix that line by hand; nothing was saved.',
     toggles: {
       webEnabled: 'Enable the frp web dashboard',
       tlsEnabled: 'Use TLS with your own certificates',

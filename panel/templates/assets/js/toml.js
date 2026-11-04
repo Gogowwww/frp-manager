@@ -38,6 +38,14 @@ function splitComment(value) {
     if (quote) {
       if (c === '\\' && quote === '"') i += 1;
       else if (c === quote) quote = null;
+    } else if (value.startsWith('"""', i) || value.startsWith("'''", i)) {
+      // Chaîne multi-lignes (""" … """ sur une ligne) : ses guillemets et ses #
+      // en font partie ; non fermée sur la ligne, tout le reste est la chaîne
+      // Multi-line string (""" … """ on one line): its quotes and # are part of
+      // it; not closed on the line, all the rest is the string
+      const end = multilineClose(value.slice(i));
+      if (end < 0) return [value.trim(), ''];
+      i += end - 1;
     } else if (c === '"' || c === "'") {
       quote = c;
     } else if (c === '#') {
@@ -280,10 +288,22 @@ function prep(text) {
 // sont échappés (une valeur lue dans une chaîne multi-lignes en a)
 // One-line TOML string: line breaks and other control characters are escaped (a
 // value read from a multi-line string has some)
+// Une action de modèle {{ … }} (sans caractère de contrôle) reste telle quelle : frp
+// l'exécute avant de lire le TOML, ses guillemets échappés (\") la rendraient invalide
+// A template action {{ … }} (with no control character) stays as is: frp runs it
+// before reading the TOML, escaped quotes (\") would make it invalid
 export function str(value) {
-  return `"${String(value).replace(/[\\"\u0000-\u001f\u007f]/g, (c) => ({
+  const esc = (s) => s.replace(/[\\"\u0000-\u001f\u007f]/g, (c) => ({
     '\\': '\\\\', '"': '\\"', '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r',
-  }[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`))}"`;
+  }[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
+  const s = String(value);
+  let out = '';
+  let pos = 0;
+  for (const m of s.matchAll(/\{\{[^\u0000-\u001f\u007f]*?\}\}/g)) {
+    out += esc(s.slice(pos, m.index)) + m[0];
+    pos = m.index + m[0].length;
+  }
+  return `"${out}${esc(s.slice(pos))}"`;
 }
 
 /**
@@ -379,11 +399,31 @@ export function parseToml(text) {
     const rest0 = line.slice(eq + 1).trim();
     const delim = rest0.startsWith('"""') ? '"""' : rest0.startsWith("'''") ? "'''" : '';
     if (delim && !rest0.slice(3).includes(delim)) {
-      const parts = [rest0];
+      // Première ligne prise dans la ligne brute : ses espaces de fin font partie
+      // de la chaîne
+      // First line taken from the raw line: its trailing spaces are part of the
+      // string
+      const lead = rawLine.length - rawLine.trimStart().length;
+      const parts = [rawLine.slice(lead + eq + 1).trimStart()];
       while (li + 1 < allLines.length) {
         li += 1;
         parts.push(allLines[li]);
         if (allLines[li].includes(delim)) break;
+      }
+      raw = parts.join('\n');
+      eol = '';
+    }
+    // Table en ligne sur plusieurs lignes, hors tunnels : gardée telle quelle
+    // (commentaires compris) jusqu'à l'accolade fermante
+    // Multi-line inline table, outside tunnels: kept as is (comments included) up
+    // to the closing brace
+    if (!block && raw.startsWith('{') && openDepth(rest0) > 0) {
+      const parts = [rest0];
+      let d = openDepth(rest0);
+      while (d > 0 && li + 1 < allLines.length) {
+        li += 1;
+        parts.push(allLines[li]);
+        d += openDepth(allLines[li]);
       }
       raw = parts.join('\n');
       eol = '';
@@ -419,7 +459,11 @@ export function parseToml(text) {
       if (pending.length || inner.length || eol) block.notes[k] = { before: [...pending, ...inner], eol };
     } else {
       anyContent = true;
-      out.values[section ? `${section}.${key}` : key] = value;
+      const full = section ? `${section}.${key}` : key;
+      out.values[full] = value;
+      // Table en ligne (auth = { token = "…" }) : ses clés se lisent comme auth.token
+      // Inline table (auth = { token = "…" }): its keys read as auth.token
+      if (raw.startsWith('{')) inlineValues(raw, full, out.values);
     }
   }
   out.trailing = comments;
@@ -713,13 +757,19 @@ function scanConnection(lines) {
   const entries = [];
   const headers = [];
   const heads = [];
+  // depth[i] : blocs de modèle ({{ if }} … {{ end }}) ouverts devant la ligne i
+  // depth[i]: template blocks ({{ if }} … {{ end }}) open in front of line i
+  const depth = [];
+  let tdepth = 0;
   let firstBlock = -1;
   let table = '';
   let inBlock = false;
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     const tr = line.trim();
-    if (!tr || tr.startsWith('#') || tr.startsWith('{{')) continue;
+    depth[i] = tdepth;
+    if (tr.startsWith('{{')) { tdepth = Math.max(0, tdepth + tplDelta(tr)); continue; }
+    if (!tr || tr.startsWith('#')) continue;
     if (tr.startsWith('[')) {
       const code = splitComment(tr)[0];
       const array = code.startsWith('[[');
@@ -755,9 +805,205 @@ function scanConnection(lines) {
       const k = keyPath(line.slice(0, eq));
       entries.push({ key: table ? `${table}.${k}` : k, table, start: i, end, eq });
     }
+    for (let j = i + 1; j <= end; j += 1) depth[j] = tdepth;
     i = end;
   }
-  return { entries, headers, heads, firstBlock };
+  depth[lines.length] = tdepth;
+  return { entries, headers, heads, firstBlock, depth };
+}
+
+// Actions de modèle : if, range, with, block, define ouvrent un bloc que {{ end }}
+// ferme ; {{ else }} reste dans le bloc
+// Template actions: if, range, with, block, define open a block that {{ end }}
+// closes; {{ else }} stays inside the block
+const TPL_ACTION = /\{\{-?\s*(if|range|with|block|define|else|end)\b/g;
+function tplDelta(line) {
+  let d = 0;
+  for (const m of line.matchAll(TPL_ACTION)) {
+    if (m[1] === 'end') d -= 1;
+    else if (m[1] !== 'else') d += 1;
+  }
+  return d;
+}
+/** Ligne {{ end }} ou {{ else }} : elle va avec ce qui la précède.
+ *  {{ end }} or {{ else }} line: it goes with what comes before it. */
+const tplClosing = (line) => /^\{\{-?\s*(?:end|else)\b/.test(line.trim());
+
+// ── Tables en ligne (auth = { token = "…" }) ──────────────────────────────
+// Inline tables (auth = { token = "…" })
+
+/** Fin (index après) d'une valeur commençant en vs dans une table en ligne qui se
+ *  ferme en close, sinon -1.
+ *  End (index after) of a value starting at vs inside an inline table that closes
+ *  at close, otherwise -1. */
+function inlineValueEnd(s, vs, close) {
+  const c = s[vs];
+  if (s.startsWith('"""', vs) || s.startsWith("'''", vs)) {
+    const e = multilineClose(s.slice(vs));
+    return e < 0 || vs + e > close ? -1 : vs + e;
+  }
+  if (c === '"' || c === "'") {
+    for (let i = vs + 1; i < close; i += 1) {
+      if (c === '"' && s[i] === '\\') i += 1;
+      else if (s[i] === c) return i + 1;
+      else if (s[i] === '\n') return -1;
+    }
+    return -1;
+  }
+  if (c === '{' || c === '[') {
+    const e = scanEnd(s, vs);
+    return e < 0 || e > close ? -1 : e;
+  }
+  let i = vs;
+  while (i < close && !/[,}#\n]/.test(s[i])) i += 1;
+  while (i > vs && /\s/.test(s[i - 1])) i -= 1;
+  return i > vs ? i : -1;
+}
+
+/** Éléments du premier niveau de la table en ligne ouverte en s[open] (« { ») :
+ *  { items: [{ key, ks, vs, ve }], close } (début de la clé, début et fin de la
+ *  valeur, position de « } »), sinon null si elle est mal formée. Commentaires et
+ *  sauts de ligne tolérés.
+ *  Top-level elements of the inline table opened at s[open] ("{"): { items: [{ key,
+ *  ks, vs, ve }], close } (key start, value start and end, position of "}"),
+ *  otherwise null if it is malformed. Comments and line breaks tolerated. */
+function inlineItems(s, open) {
+  const end = scanEnd(s, open);
+  if (end < 0) return null;
+  const close = end - 1;
+  const items = [];
+  let i = open + 1;
+  while (i < close) {
+    const c = s[i];
+    if (/\s/.test(c) || c === ',') { i += 1; continue; }
+    if (c === '#') { while (i < close && s[i] !== '\n') i += 1; continue; }
+    const ks = i;
+    let quote = null;
+    for (; i < close; i += 1) {
+      const d = s[i];
+      if (quote) {
+        if (d === '\\' && quote === '"') i += 1;
+        else if (d === quote) quote = null;
+      } else if (d === '"' || d === "'") quote = d;
+      else if (/[=,#\n{}[\]]/.test(d)) break;
+    }
+    if (s[i] !== '=') return null;
+    const key = keyPath(s.slice(ks, i));
+    let vs = i + 1;
+    while (vs < close && (s[vs] === ' ' || s[vs] === '\t')) vs += 1;
+    const ve = vs < close ? inlineValueEnd(s, vs, close) : -1;
+    if (ve < 0 || !key) return null;
+    items.push({ key, ks, vs, ve });
+    i = ve;
+  }
+  return { items, close };
+}
+
+/** Clés d'une table en ligne lue (« { a = 1, b = { c = 2 } } ») ajoutées à into sous
+ *  prefix : prefix.a, prefix.b.c…
+ *  Keys of an inline table read ("{ a = 1, b = { c = 2 } }") added to into under
+ *  prefix: prefix.a, prefix.b.c… */
+function inlineValues(raw, prefix, into) {
+  const t = inlineItems(raw, 0);
+  if (!t) return;
+  for (const it of t.items) {
+    const v = raw.slice(it.vs, it.ve);
+    const k = `${prefix}.${it.key}`;
+    into[k] = unquote(v);
+    if (v.startsWith('{')) inlineValues(v, k, into);
+  }
+}
+
+/** Retire l'élément k d'une table en ligne, avec sa virgule, et sa ligne entière s'il
+ *  y est seul (avec son commentaire).
+ *  Removes element k of an inline table, with its comma, and its whole line if it is
+ *  alone on it (with its comment). */
+function inlineDrop(s, items, k, close) {
+  const it = items[k];
+  const next = items[k + 1];
+  const ls = s.lastIndexOf('\n', it.ks - 1) + 1;
+  const nl = s.indexOf('\n', it.ve);
+  const after = nl >= 0 ? s.slice(it.ve, nl) : '';
+  // Virgule juste après la valeur / comma right after the value
+  const own = /^[ \t]*,/.test(s.slice(it.ve));
+  const alone = !s.slice(ls, it.ks).trim() && nl >= 0 && nl < (next ? next.ks : close) && /^[ \t]*,?[ \t]*(?:#.*)?$/.test(after);
+  if (next) return alone && own ? s.slice(0, ls) + s.slice(nl + 1) : s.slice(0, it.ks) + s.slice(next.ks);
+  if (k > 0) {
+    // Dernier élément : la virgule qui le sépare du précédent part avec lui (une
+    // virgule finale qu'il avait reste au précédent)
+    // Last element: the comma separating it from the previous one goes with it (a
+    // trailing comma it had stays with the previous one)
+    const prev = items[k - 1];
+    const sep = s.indexOf(',', prev.ve);
+    if (sep < 0 || sep > it.ks) return s.slice(0, prev.ve) + s.slice(it.ve);
+    if (!alone) return s.slice(0, sep) + s.slice(it.ve);
+    const cut = s.slice(0, ls) + s.slice(nl + 1);
+    return own ? cut : cut.slice(0, sep) + cut.slice(sep + 1);
+  }
+  if (alone) return s.slice(0, ls) + s.slice(nl + 1);
+  return s.slice(0, it.ks) + s.slice(it.ve).replace(/^[ \t]*,/, '');
+}
+
+/** Ajoute la ligne « clé = valeur » à la fin d'une table en ligne : à la suite sur
+ *  une ligne, sur sa propre ligne (même retrait) si la table en a plusieurs.
+ *  Adds the "key = value" line at the end of an inline table: in a row on one line,
+ *  on its own line (same indentation) if the table spans several. */
+function inlineAdd(s, open, items, close, line) {
+  if (!items.length) {
+    if (!s.slice(open + 1, close).trim()) return `${s.slice(0, open + 1)} ${line} ${s.slice(close)}`;
+    // Rien que des commentaires : nouvelle ligne devant l'accolade fermante
+    // Nothing but comments: new line in front of the closing brace
+    const ls = s.lastIndexOf('\n', close - 1) + 1;
+    return `${s.slice(0, ls)}  ${line}\n${s.slice(ls)}`;
+  }
+  const last = items[items.length - 1];
+  const nl = s.indexOf('\n', last.ve);
+  if (nl < 0 || nl > close) return `${s.slice(0, last.ve)}, ${line}${s.slice(last.ve)}`;
+  const ind = /^[ \t]*/.exec(s.slice(s.lastIndexOf('\n', last.ks - 1) + 1))[0];
+  const own = /^[ \t]*,/.test(s.slice(last.ve));
+  const out = `${s.slice(0, nl + 1)}${ind}${line}${own ? ',' : ''}\n${s.slice(nl + 1)}`;
+  return own ? out : `${out.slice(0, last.ve)},${out.slice(last.ve)}`;
+}
+
+/** Table en ligne vide (ni élément ni commentaire) / empty inline table (no element, no comment) */
+function inlineEmpty(s, open) {
+  const t = inlineItems(s, open);
+  return !!t && !t.items.length && !s.slice(open + 1, t.close).trim();
+}
+
+/**
+ * Écrit (raw) ou retire (raw undefined) la clé path dans la table en ligne ouverte
+ * en s[open], tables en ligne imbriquées comprises ; une table imbriquée vidée part
+ * avec sa clé. Renvoie le texte modifié, ou null si la clé ne peut pas y être
+ * rangée (valeur qui n'est pas une table, table mal formée).
+ * Writes (raw) or removes (raw undefined) the key path in the inline table opened
+ * at s[open], nested inline tables included; an emptied nested table goes with its
+ * key. Returns the changed text, or null if the key cannot be stored there (value
+ * that is not a table, malformed table).
+ */
+function inlineSet(s, open, path, raw) {
+  const t = inlineItems(s, open);
+  if (!t) return null;
+  const { items, close } = t;
+  const k = items.findIndex((it) => it.key === path);
+  if (k >= 0) {
+    if (raw === undefined) return inlineDrop(s, items, k, close);
+    const it = items[k];
+    return unquote(s.slice(it.vs, it.ve)) === unquote(raw) ? s : `${s.slice(0, it.vs)}${raw}${s.slice(it.ve)}`;
+  }
+  const p = items.findIndex((it) => path.startsWith(`${it.key}.`));
+  if (p >= 0) {
+    const it = items[p];
+    if (s[it.vs] !== '{') return null;
+    const sub = inlineSet(s, it.vs, path.slice(it.key.length + 1), raw);
+    if (sub === null || sub === s || !inlineEmpty(sub, it.vs)) return sub;
+    const u = inlineItems(sub, open);
+    return u ? inlineDrop(sub, u.items, p, u.close) : null;
+  }
+  // Clé déjà table d'autres clés (path.x = …) : pas une valeur simple
+  // Key already the table of other keys (path.x = …): not a plain value
+  if (items.some((it) => it.key.startsWith(`${path}.`))) return null;
+  return raw === undefined ? s : inlineAdd(s, open, items, close, `${path} = ${raw}`);
 }
 
 /** Clé complète → valeur brute des lignes d'une config générée (generateServer / generateClient).
@@ -786,6 +1032,13 @@ function entryValue(text, eq) {
   return splitComment(rest);
 }
 
+/** Position de l'accolade d'une entrée « clé = { … } » (eq : position du « = »), sinon -1.
+ *  Position of the brace of a "key = { … }" entry (eq: position of the "="), otherwise -1. */
+function inlineOpen(text, eq) {
+  const i = text.slice(eq + 1).search(/\S/);
+  return i >= 0 && text[eq + 1 + i] === '{' ? eq + 1 + i : -1;
+}
+
 /** Nombre de segments communs au début de deux clés / leading segments shared by two keys */
 function sharedSegs(a, b) {
   const x = a.split('.');
@@ -802,13 +1055,19 @@ function sharedSegs(a, b) {
  * quelle si la valeur ne change pas), ligne retirée si la clé n'est plus générée,
  * ajoutée près des clés de sa table sinon (ou dans une nouvelle table, avant les
  * tunnels). Une table vidée par la fusion disparaît. Une clé rangée dans une table
- * en ligne (auth = { … }) n'est pas ajoutée.
+ * en ligne (auth = { … }) y est modifiée, ajoutée ou retirée ; si la valeur qui
+ * devrait la contenir n'est pas une table, une erreur porte les clés refusées
+ * (err.inlineKeys) et rien n'est écrit. Les clés ajoutées ne vont jamais dans un
+ * bloc de modèle {{ if }} … {{ end }}.
  * Merges a generated config into the original text, for the keys of touched only
  * (full keys, "webServer.user"): value replaced in place (all its forms: table,
  * dotted key, quoted; the line stays as is if the value does not change), line
  * removed if the key is no longer generated, otherwise added near the keys of
  * its table (or in a new table, before the tunnels). A table emptied by the
- * merge disappears. A key stored in an inline table (auth = { … }) is not added.
+ * merge disappears. A key stored in an inline table (auth = { … }) is changed,
+ * added or removed there; if the value that should hold it is not a table, an
+ * error carries the refused keys (err.inlineKeys) and nothing is written. Added
+ * keys never go inside an {{ if }} … {{ end }} template block.
  */
 export function mergeConnection(text, generated, touched) {
   const src = String(text || '').replace(/^\uFEFF/, '').replace(/\r(?!\n)/g, '\n');
@@ -817,7 +1076,7 @@ export function mergeConnection(text, generated, touched) {
   const crlf = /\r\n/.test(src);
   const lines = src.split(/\r?\n/);
   const n = lines.length;
-  const { entries, headers, heads, firstBlock } = scanConnection(lines);
+  const { entries, headers, heads, firstBlock, depth } = scanConnection(lines);
   const want = generatedRaws(generated);
   const touch = new Set(touched);
   const keys = [...[...want.keys()].filter((k) => touch.has(k)), ...[...touch].filter((k) => !want.has(k))];
@@ -829,9 +1088,31 @@ export function mergeConnection(text, generated, touched) {
   const add = (q, ...ls) => { if (!before.has(q)) before.set(q, []); before.get(q).push(...ls); };
   const newTables = new Map();
   const isNote = (l) => { const x = l.trim(); return x.startsWith('#') || x.startsWith('{{'); };
-  // Devant une ligne : en remontant les commentaires et modèles collés au-dessus
-  // In front of a line: going up over the comments and templates stuck above it
-  const above = (q) => { while (q > 0 && isNote(lines[q - 1])) q -= 1; return q; };
+  // Devant une ligne : en remontant les commentaires et modèles collés au-dessus,
+  // sans passer un {{ end }} / {{ else }} (il ferme ce qui précède) ni sortir des
+  // blocs de modèle ouverts au niveau base ; blank : lignes vides passées aussi
+  // In front of a line: going up over the comments and templates stuck above it,
+  // without passing an {{ end }} / {{ else }} (it closes what comes before) nor
+  // leaving the template blocks open at level base; blank: blank lines passed too
+  const above = (q, base = 0, blank = false) => {
+    while (q > 0 && (isNote(lines[q - 1]) || (blank && !lines[q - 1].trim())) && !tplClosing(lines[q - 1]) && depth[q - 1] >= base) q -= 1;
+    return q;
+  };
+  // Jamais à l'intérieur d'un bloc {{ if }} … {{ end }} plus profond que base : devant
+  // son ouverture (et ses commentaires), la clé vaut dans tous les cas
+  // Never inside an {{ if }} … {{ end }} block deeper than base: in front of its
+  // opening (and its comments), the key applies in every case
+  const outside = (q, base = 0, blank = false) => {
+    if (depth[q] <= base) return q;
+    while (q > 0 && depth[q] > base) q -= 1;
+    return above(q, base, blank);
+  };
+  // Clés rangées dans une table en ligne : texte modifié par entrée ; refused :
+  // clés qui ne peuvent pas y être écrites
+  // Keys stored in an inline table: changed text per entry; refused: keys that
+  // cannot be written there
+  const inline = new Map();
+  const refused = [];
   const limit = firstBlock >= 0 ? firstBlock : n;
   const firstHead = Math.min(limit, ...headers.map((h) => h.line));
   // Fichier sans en-tête de table écrit en clés pointées (auth.token = …) : on
@@ -859,10 +1140,20 @@ export function mergeConnection(text, generated, touched) {
       }
       continue;
     }
+    // Clé à l'intérieur d'une valeur (table en ligne auth = { … }) : modifiée,
+    // ajoutée ou retirée dans la table en ligne
+    // Key inside a value (inline table auth = { … }): changed, added or removed
+    // inside the inline table
+    const host = entries.find((e) => key.startsWith(`${e.key}.`));
+    if (host) {
+      const cur = inline.has(host) ? inline.get(host) : lines.slice(host.start, host.end + 1).join('\n');
+      const open = inlineOpen(cur, host.eq);
+      const next = open >= 0 ? inlineSet(cur, open, key.slice(host.key.length + 1), raw) : null;
+      if (next !== null) inline.set(host, next);
+      else if (raw !== undefined) refused.push(key);
+      continue;
+    }
     if (raw === undefined) continue;
-    // Clé à l'intérieur d'une valeur (table en ligne) : on n'y touche pas
-    // Key inside a value (inline table): left alone
-    if (entries.some((e) => key.startsWith(`${e.key}.`))) continue;
     const segs = key.split('.');
     const sec = segs.slice(0, -1).join('.');
     // Table d'accueil : l'en-tête le plus long qui contient la clé, sinon la racine
@@ -885,9 +1176,31 @@ export function mergeConnection(text, generated, touched) {
     // After the last key of the table sharing the most segments with it
     let best = null;
     for (const e of inHome) if (!best || sharedSegs(e.key, key) >= sharedSegs(best.key, key)) best = e;
-    if (best) add(best.end + 1, line);
-    else if (home) add(headers.find((h) => h.name === home && !h.array).line + 1, line);
+    const homeHead = home ? headers.find((h) => h.name === home && !h.array).line : -1;
+    // Hors des blocs de modèle ouverts dans la table (ou à la racine)
+    // Outside the template blocks opened inside the table (or at the root)
+    if (best) add(outside(best.end + 1, homeHead >= 0 ? depth[homeHead + 1] : 0), line);
+    else if (home) add(homeHead + 1, line);
     else rootAdds.push(line);
+  }
+
+  if (refused.length) {
+    // Rien n'est écrit : l'appelant affiche les clés refusées
+    // Nothing is written: the caller shows the refused keys
+    const err = new Error(`inline table: ${refused.join(', ')}`);
+    err.inlineKeys = refused;
+    throw err;
+  }
+  for (const [e, text] of inline) {
+    // Table en ligne vidée : l'entrée part ; sinon réécrite (fins de ligne du fichier)
+    // Emptied inline table: the entry goes; otherwise written back (file line endings)
+    if (inlineEmpty(text, inlineOpen(text, e.eq))) {
+      for (let j = e.start; j <= e.end; j += 1) drop.add(j);
+      continue;
+    }
+    if (text === lines.slice(e.start, e.end + 1).join('\n')) continue;
+    put.set(e.start, text.split('\n').join(crlf ? '\r\n' : '\n'));
+    for (let j = e.start + 1; j <= e.end; j += 1) drop.add(j);
   }
 
   // Racine sans aucune clé : devant la première table (et ses commentaires), sinon
@@ -898,14 +1211,18 @@ export function mergeConnection(text, generated, touched) {
     let q = firstHead;
     if (q < n) q = above(q);
     else while (q > 0 && !lines[q - 1].trim()) q -= 1;
+    // Pas entre une ligne de modèle et ce qu'elle gouverne ({{- if … }} + table)
+    // Not between a template line and what it governs ({{- if … }} + table)
+    q = outside(q);
     add(q, ...rootAdds, ...(q < n && lines[q].trim() ? [''] : []));
   }
 
   if (newTables.size) {
-    // Avant le premier tunnel (et ses commentaires), sinon à la fin du fichier
-    // Before the first tunnel (and its comments), otherwise at the end of the file
-    let q = limit;
-    while (q > 0 && (!lines[q - 1].trim() || isNote(lines[q - 1]))) q -= 1;
+    // Avant le premier tunnel (et ses commentaires), sinon à la fin du fichier ;
+    // jamais à l'intérieur d'un bloc de modèle
+    // Before the first tunnel (and its comments), otherwise at the end of the file;
+    // never inside a template block
+    const q = outside(above(limit, 0, true), 0, true);
     const ls = [];
     for (const [sec, body] of newTables) ls.push(...(ls.length || q > 0 ? [''] : []), `[${sec}]`, ...body);
     if (q < n && lines[q].trim()) ls.push('');

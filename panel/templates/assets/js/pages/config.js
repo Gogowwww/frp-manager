@@ -408,6 +408,11 @@ async function save(restart) {
     // Les champs montrent ce qui est écrit (« [::1] » tapé devient « ::1 »)
     // The fields show what is written ("[::1]" typed becomes "::1")
     for (const name of S.addrs) S.controls[name].value = v[name];
+    // Champ multi-lignes modifié : écrit sur une ligne, la valeur d'origine n'est
+    // plus dans le fichier (la retaper l'écrit telle quelle, sans saut de ligne)
+    // Changed multi-line field: written on one line, the original value is no
+    // longer in the file (typing it again writes it as is, with no line break)
+    for (const name of Object.keys(S.multiline)) if (v[name] !== S.multiline[name]) delete S.multiline[name];
     S.bracketed = {};
     S.loaded = values();
     S.snapshot = JSON.stringify(S.loaded);
@@ -452,5 +457,14 @@ async function mergeIntoFile(generated, touched) {
   }
   const text = d.content || '';
   if (!d.exists || !text.trim()) return generated;
-  return mergeConnection(text, generated, touched);
+  try {
+    return mergeConnection(text, generated, touched);
+  } catch (e) {
+    // Clé qui ne peut pas être rangée dans le fichier (auth = "…" au lieu d'une
+    // table) : rien n'est enregistré, l'utilisateur sait laquelle
+    // Key that cannot be stored in the file (auth = "…" instead of a table):
+    // nothing is saved, the user knows which one
+    if (!e.inlineKeys) throw e;
+    throw new Error(t('config.inlineRefused', { keys: e.inlineKeys.join(', ') }));
+  }
 }

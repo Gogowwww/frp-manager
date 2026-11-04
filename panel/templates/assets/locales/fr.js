@@ -501,6 +501,7 @@ export default {
     advancedDesc: 'Les valeurs par défaut conviennent dans la plupart des cas.',
     saved: 'Configuration enregistrée',
     readBackError: 'Impossible de relire le fichier actuel : enregistrement annulé pour ne rien perdre de ce qu’il contient.',
+    inlineRefused: 'Impossible d’écrire {keys} : dans le fichier, la valeur qui doit la contenir n’est pas une table. Corrigez cette ligne à la main ; rien n’a été enregistré.',
     toggles: {
       webEnabled: 'Activer le tableau de bord web de frp',
       tlsEnabled: 'Utiliser TLS avec vos propres certificats',
