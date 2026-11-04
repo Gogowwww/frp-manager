@@ -499,7 +499,7 @@ export default {
     advanced: 'Advanced settings',
     advancedDesc: 'The defaults fit most setups.',
     saved: 'Configuration saved',
-    blocksReadError: 'Could not read the existing ports back: saving cancelled so they are not lost.',
+    readBackError: 'Could not read the current file back: saving cancelled so nothing it contains is lost.',
     toggles: {
       webEnabled: 'Enable the frp web dashboard',
       tlsEnabled: 'Use TLS with your own certificates',

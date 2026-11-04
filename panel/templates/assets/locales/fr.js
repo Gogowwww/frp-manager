@@ -500,7 +500,7 @@ export default {
     advanced: 'Réglages avancés',
     advancedDesc: 'Les valeurs par défaut conviennent dans la plupart des cas.',
     saved: 'Configuration enregistrée',
-    blocksReadError: 'Impossible de relire les ports existants : enregistrement annulé pour ne pas les perdre.',
+    readBackError: 'Impossible de relire le fichier actuel : enregistrement annulé pour ne rien perdre de ce qu’il contient.',
     toggles: {
       webEnabled: 'Activer le tableau de bord web de frp',
       tlsEnabled: 'Utiliser TLS avec vos propres certificats',

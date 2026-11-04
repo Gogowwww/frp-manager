@@ -9,7 +9,7 @@ import {
   h, icon, button, toast, toastError, confirmDialog, field, input, select, secretInput, switchRow,
   callout, emptyState, card, saveBar,
 } from '../ui.js';
-import { parseToml, generateServer, generateClient, extractBlocks, randomPort, unbracket } from '../toml.js';
+import { parseToml, generateServer, generateClient, mergeConnection, randomPort, unbracket } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
 
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error'];
@@ -151,7 +151,11 @@ const SCHEMA = {
 // multiline: values read with line breaks (multi-line string of the file); a
 // one-line field removes them, the original value is kept as long as the field
 // is not changed
-const S = { iid: '', type: '', controls: {}, addrs: new Set(), bracketed: {}, multiline: {}, snapshot: '', els: {} };
+// loaded : valeurs des champs telles que lues dans le fichier ; seules les clés des
+// champs modifiés depuis sont réécrites (voir touchedKeys)
+// loaded: field values as read from the file; only the keys of the fields
+// changed since then are written back (see touchedKeys)
+const S = { iid: '', type: '', controls: {}, addrs: new Set(), bracketed: {}, multiline: {}, loaded: {}, snapshot: '', els: {} };
 
 function values() {
   const v = {};
@@ -294,7 +298,8 @@ async function load(discarded = false) {
   // corrigée dans le champ, fait apparaître la barre d'enregistrement
   // Reference = the file as it is: a bracketed address, already fixed in the
   // field, makes the save bar appear
-  S.snapshot = JSON.stringify({ ...values(), ...(discarded ? {} : S.bracketed) });
+  S.loaded = values();
+  S.snapshot = JSON.stringify({ ...S.loaded, ...(discarded ? {} : S.bracketed) });
   updateSaveBar();
 }
 
@@ -396,14 +401,16 @@ async function save(restart) {
     // En-tête du fichier dans la langue de l'interface
     // File header in the interface language
     const by = t('config.generatedBy');
-    const content = S.type === 'frps' ? generateServer(v, S.iid, by) : await withExistingBlocks(generateClient(v, S.iid, by));
+    const generated = S.type === 'frps' ? generateServer(v, S.iid, by) : generateClient(v, S.iid, by);
+    const content = await mergeIntoFile(generated, touchedKeys(v));
     const d = await post(`/api/config/${encodeURIComponent(S.iid)}`, { content });
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
     // Les champs montrent ce qui est écrit (« [::1] » tapé devient « ::1 »)
     // The fields show what is written ("[::1]" typed becomes "::1")
     for (const name of S.addrs) S.controls[name].value = v[name];
     S.bracketed = {};
-    S.snapshot = JSON.stringify(values());
+    S.loaded = values();
+    S.snapshot = JSON.stringify(S.loaded);
     updateSaveBar();
     toast(t('config.saved'), 'success');
     if (restart) {
@@ -415,13 +422,35 @@ async function save(restart) {
   } catch (e) { toastError(e); }
 }
 
-/** frpc : conserve les [[proxies]] / [[visitors]] actuels du fichier. */
-async function withExistingBlocks(base) {
-  try {
-    const d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
-    const blocks = extractBlocks(d.content || '');
-    return blocks ? `${base}\n${blocks}\n` : base;
-  } catch {
-    throw new Error(t('config.blocksReadError'));
+/** Clés TOML des champs modifiés depuis la lecture : valeur changée, interrupteur
+ *  de leur section ou de leur champ basculé, adresse entre crochets à corriger.
+ *  TOML keys of the fields changed since reading: value changed, switch of their
+ *  section or field flipped, bracketed address to fix. */
+function touchedKeys(v) {
+  const changed = (name) => name !== undefined && String(v[name]) !== String(S.loaded[name]);
+  const keys = [];
+  for (const section of SCHEMA[S.type]) {
+    for (const f of section.fields) {
+      if (changed(f.name) || changed(section.toggle?.name) || changed(f.optionalToggle) || f.name in S.bracketed) keys.push(f.key);
+    }
   }
+  return keys;
+}
+
+/** Fichier actuel relu au moment d'enregistrer : seules les clés modifiées y
+ *  changent, le reste (tunnels, clés inconnues, commentaires) reste tel quel.
+ *  Sans fichier, la config générée entière.
+ *  Current file read again when saving: only the changed keys change in it, the
+ *  rest (tunnels, unknown keys, comments) stays as is. Without a file, the whole
+ *  generated config. */
+async function mergeIntoFile(generated, touched) {
+  let d;
+  try {
+    d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
+  } catch {
+    throw new Error(t('config.readBackError'));
+  }
+  const text = d.content || '';
+  if (!d.exists || !text.trim()) return generated;
+  return mergeConnection(text, generated, touched);
 }
