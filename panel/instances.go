@@ -267,13 +267,13 @@ func pickPort(used map[int]bool, base int, udp bool) int {
 func tomlHeader(s string) (string, bool, bool) {
 	if strings.HasPrefix(s, "[[") {
 		if i := strings.Index(s, "]]"); i > 2 {
-			return strings.Join(strings.Fields(s[2:i]), ""), true, true
+			return plainTOMLName(strings.Join(strings.Fields(s[2:i]), "")), true, true
 		}
 		return "", false, false
 	}
 	if strings.HasPrefix(s, "[") {
 		if i := strings.Index(s, "]"); i > 1 {
-			return strings.Join(strings.Fields(s[1:i]), ""), false, true
+			return plainTOMLName(strings.Join(strings.Fields(s[1:i]), "")), false, true
 		}
 	}
 	return "", false, false

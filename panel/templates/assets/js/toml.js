@@ -21,8 +21,26 @@ const LOOP_SECOND = String.raw`\{\{\s*\$v(?:\.Second)?\s*\}\}`;
 // vides ou commentées, espaces dans les crochets
 // Between the "range" line and the header: end-of-line comment, blank or
 // commented lines, spaces inside the brackets
-const BLOCK_RE = new RegExp(String.raw`^[ \t]*(?:${RANGE_LINE}[ \t]*(?:#[^\r\n]*)?\r?\n(?:[ \t]*(?:#[^\r\n]*)?\r?\n)*[ \t]*)?\[\[[ \t]*(proxies|visitors)[ \t]*\]\]`, 'm');
+const BLOCK_RE = new RegExp(String.raw`^[ \t]*(?:${RANGE_LINE}[ \t]*(?:#[^\r\n]*)?\r?\n(?:[ \t]*(?:#[^\r\n]*)?\r?\n)*[ \t]*)?\[\[[ \t]*(["']?)(proxies|visitors)\4[ \t]*\]\]`, 'm');
 const RANGE_RE = new RegExp(`^${RANGE_LINE}$`);
+
+/** Genre du bloc ouvert par la ligne (« proxies » ou « visitors », nom entre
+ *  guillemets compris : [["proxies"]]), sinon null.
+ *  Kind of the block opened by the line ("proxies" or "visitors", quoted name
+ *  included: [["proxies"]]), otherwise null. */
+function blockKind(line) {
+  const code = splitComment(String(line).trim())[0];
+  if (!code.startsWith('[[') || !code.endsWith(']]')) return null;
+  const name = keyPath(code.slice(2, -2));
+  return name === 'proxies' || name === 'visitors' ? name : null;
+}
+
+/** Ligne d'en-tête d'une sous-table de tunnel ([proxies.plugin], [ "proxies" . x ]).
+ *  Header line of a tunnel sub-table ([proxies.plugin], [ "proxies" . x ]). */
+function isBlockSub(line) {
+  const code = splitComment(String(line).trim())[0];
+  return code.startsWith('[') && /^(?:proxies|visitors)\./.test(keyPath(code.replace(/^\[\[?|\]\]?$/g, '')));
+}
 const END_RE = /^\{\{-?\s*end\s*-?\}\}$/;
 
 /** Coupe un commentaire de fin de ligne situé hors chaîne. */
@@ -351,16 +369,16 @@ export function parseToml(text) {
     // espaces dans les crochets
     // Block header, with a possible end-of-line comment and spaces inside the
     // brackets
-    const [headRaw, headEol] = line.startsWith('[[') ? splitComment(line) : [line, ''];
-    const head = line.startsWith('[[') ? headRaw.replace(/\s+/g, '') : headRaw;
-    if (head === '[[proxies]]' || head === '[[visitors]]') {
+    const headEol = line.startsWith('[[') ? splitComment(line)[1] : '';
+    const kind = blockKind(line);
+    if (kind) {
       block = { values: {}, raw: {}, order: [], comments, notes: {} };
       if (headEol) block.notes['[[]]'] = { before: [], eol: headEol };
       comments = [];
       seenBlock = true;
       if (pendingRange) block.range = pendingRange;
       pendingRange = null;
-      out[head === '[[proxies]]' ? 'proxies' : 'visitors'].push(block);
+      out[kind].push(block);
       prefix = '';
       continue;
     }
@@ -370,7 +388,7 @@ export function parseToml(text) {
     comments = [];
 
     if (line.startsWith('[')) {
-      if (!(block && /^\[+\s*(?:proxies|visitors)\s*\./.test(line))) anyContent = true;
+      if (!(block && isBlockSub(line))) anyContent = true;
       // Nom lu comme mergeConnection (keyPath) : [ "log" ], [ "transport" . tls ]
       // donnent log et transport.tls
       // Name read like mergeConnection (keyPath): [ "log" ], [ "transport" . tls ]
@@ -584,15 +602,14 @@ export function tablesAfterBlocks(text) {
       // Opening of a string: its brackets do not count as an array
       else arrDepth = Math.max(0, bracketDepth(splitComment(line.slice(eq + 1))[0]));
     }
-    const head = line.startsWith('[[') ? splitComment(line)[0].replace(/\s+/g, '') : line;
-    if (head === '[[proxies]]' || head === '[[visitors]]') {
+    if (blockKind(line)) {
       if (inTable) flush();
       inTable = false;
       seen = true;
       continue;
     }
     if (!seen) continue;
-    if (line.startsWith('[') && !/^\[+\s*(?:proxies|visitors)\s*\./.test(line)) {
+    if (line.startsWith('[') && !isBlockSub(line)) {
       // Les commentaires juste au-dessus d'un tableau partent avec lui
       // The comments right above a table go with it
       if (!inTable) buf = [...above];
@@ -768,6 +785,11 @@ function scanConnection(lines) {
   // depth[i] : blocs de modèle ({{ if }} … {{ end }}) ouverts devant la ligne i
   // depth[i]: template blocks ({{ if }} … {{ end }}) open in front of line i
   const depth = [];
+  // body : lignes de suite d'une valeur sur plusieurs lignes (chaîne, tableau, table
+  // en ligne) ; un « # » ou un « {{ » au début n'y est pas un commentaire
+  // body: continuation lines of a value spanning several lines (string, array,
+  // inline table); a leading "#" or "{{" there is not a comment
+  const body = new Set();
   let tdepth = 0;
   let firstBlock = -1;
   let table = '';
@@ -813,11 +835,11 @@ function scanConnection(lines) {
       const k = keyPath(line.slice(0, eq));
       entries.push({ key: table ? `${table}.${k}` : k, table, start: i, end, eq });
     }
-    for (let j = i + 1; j <= end; j += 1) depth[j] = tdepth;
+    for (let j = i + 1; j <= end; j += 1) { depth[j] = tdepth; body.add(j); }
     i = end;
   }
   depth[lines.length] = tdepth;
-  return { entries, headers, heads, firstBlock, depth };
+  return { entries, headers, heads, firstBlock, depth, body };
 }
 
 // Actions de modèle : if, range, with, block, define ouvrent un bloc que {{ end }}
@@ -1084,7 +1106,7 @@ export function mergeConnection(text, generated, touched) {
   const crlf = /\r\n/.test(src);
   const lines = src.split(/\r?\n/);
   const n = lines.length;
-  const { entries, headers, heads, firstBlock, depth } = scanConnection(lines);
+  const { entries, headers, heads, firstBlock, depth, body } = scanConnection(lines);
   const want = generatedRaws(generated);
   const touch = new Set(touched);
   const keys = [...[...want.keys()].filter((k) => touch.has(k)), ...[...touch].filter((k) => !want.has(k))];
@@ -1096,6 +1118,9 @@ export function mergeConnection(text, generated, touched) {
   const add = (q, ...ls) => { if (!before.has(q)) before.set(q, []); before.get(q).push(...ls); };
   const newTables = new Map();
   const isNote = (l) => { const x = l.trim(); return x.startsWith('#') || x.startsWith('{{'); };
+  // Ligne q - 1 passée en remontant : jamais la suite d'une valeur sur plusieurs lignes
+  // Line q - 1 passed going up: never the continuation of a multi-line value
+  const passable = (q, blank) => !body.has(q - 1) && (isNote(lines[q - 1]) || (blank && !lines[q - 1].trim()));
   // Devant une ligne : en remontant les commentaires et modèles collés au-dessus,
   // sans passer un {{ end }} / {{ else }} (il ferme ce qui précède) ni sortir des
   // blocs de modèle ouverts au niveau base ; blank : lignes vides passées aussi
@@ -1103,7 +1128,7 @@ export function mergeConnection(text, generated, touched) {
   // without passing an {{ end }} / {{ else }} (it closes what comes before) nor
   // leaving the template blocks open at level base; blank: blank lines passed too
   const above = (q, base = 0, blank = false) => {
-    while (q > 0 && (isNote(lines[q - 1]) || (blank && !lines[q - 1].trim())) && !tplClosing(lines[q - 1]) && depth[q - 1] >= base) q -= 1;
+    while (q > 0 && passable(q, blank) && !tplClosing(lines[q - 1]) && depth[q - 1] >= base) q -= 1;
     return q;
   };
   // Jamais à l'intérieur d'un bloc {{ if }} … {{ end }} plus profond que base : devant
@@ -1129,6 +1154,11 @@ export function mergeConnection(text, generated, touched) {
   // style is kept rather than adding a table
   const dottedStyle = !headers.some((h) => !h.array) && entries.some((e) => e.key.includes('.'));
   const rootAdds = [];
+  // Dernière position où une clé racine est ajoutée : les nouvelles tables vont
+  // après (une clé écrite sous un en-tête serait lue dans cette table)
+  // Last position where a root key is added: the new tables go after it (a key
+  // written under a header would be read inside that table)
+  let rootAt = -1;
 
   for (const key of keys) {
     const raw = want.get(key);
@@ -1187,8 +1217,11 @@ export function mergeConnection(text, generated, touched) {
     const homeHead = home ? headers.find((h) => h.name === home && !h.array).line : -1;
     // Hors des blocs de modèle ouverts dans la table (ou à la racine)
     // Outside the template blocks opened inside the table (or at the root)
-    if (best) add(outside(best.end + 1, homeHead >= 0 ? depth[homeHead + 1] : 0), line);
-    else if (home) add(homeHead + 1, line);
+    if (best) {
+      const q = outside(best.end + 1, homeHead >= 0 ? depth[homeHead + 1] : 0);
+      add(q, line);
+      if (!home) rootAt = Math.max(rootAt, q);
+    } else if (home) add(homeHead + 1, line);
     else rootAdds.push(line);
   }
 
@@ -1215,6 +1248,11 @@ export function mergeConnection(text, generated, touched) {
   // après la dernière ligne non vide
   // Root without any key: in front of the first table (and its comments),
   // otherwise after the last non-blank line
+  // Avant le premier tunnel (et ses commentaires), sinon à la fin du fichier ;
+  // jamais à l'intérieur d'un bloc de modèle ni devant une clé racine ajoutée
+  // Before the first tunnel (and its comments), otherwise at the end of the file;
+  // never inside a template block nor in front of an added root key
+  const tablesAt = newTables.size ? outside(above(limit, 0, true), 0, true) : -1;
   if (rootAdds.length) {
     let q = firstHead;
     if (q < n) q = above(q);
@@ -1222,17 +1260,17 @@ export function mergeConnection(text, generated, touched) {
     // Pas entre une ligne de modèle et ce qu'elle gouverne ({{- if … }} + table)
     // Not between a template line and what it governs ({{- if … }} + table)
     q = outside(q);
-    add(q, ...rootAdds, ...(q < n && lines[q].trim() ? [''] : []));
+    rootAt = Math.max(rootAt, q);
+    // Les nouvelles tables suivent juste : elles apportent la ligne vide de séparation
+    // The new tables follow right after: they bring the separating blank line
+    const joined = newTables.size && tablesAt <= q;
+    add(q, ...rootAdds, ...(!joined && q < n && lines[q].trim() ? [''] : []));
   }
 
   if (newTables.size) {
-    // Avant le premier tunnel (et ses commentaires), sinon à la fin du fichier ;
-    // jamais à l'intérieur d'un bloc de modèle
-    // Before the first tunnel (and its comments), otherwise at the end of the file;
-    // never inside a template block
-    const q = outside(above(limit, 0, true), 0, true);
+    const q = Math.max(tablesAt, rootAt);
     const ls = [];
-    for (const [sec, body] of newTables) ls.push(...(ls.length || q > 0 ? [''] : []), `[${sec}]`, ...body);
+    for (const [sec, kv] of newTables) ls.push(...(ls.length || q > 0 || before.has(q) ? [''] : []), `[${sec}]`, ...kv);
     if (q < n && lines[q].trim()) ls.push('');
     add(q, ...ls);
   }

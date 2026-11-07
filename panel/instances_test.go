@@ -87,6 +87,14 @@ func TestSetTOMLKey(t *testing.T) {
 		{"a = 1\n", "bindPort", "9", "a = 1\nbindPort = 9\n"},
 		// Jamais dans un [[tableau]] / Never inside an [[array]]
 		{"[[visitors]]\nbindPort = 6000\n", "bindPort", "9", "bindPort = 9\n[[visitors]]\nbindPort = 6000\n"},
+		// Table et clé entre guillemets : la clé existante est réécrite à sa place,
+		// guillemets gardés / Quoted table and key: the existing key is rewritten in
+		// place, quotes kept
+		{"[ \"log\" ]\n\"to\" = \"a\"\n", "log.to", `"b"`, "[ \"log\" ]\n\"to\" = \"b\"\n"},
+		// Table entre guillemets sans la clé / Quoted table without the key
+		{"x = 1\n[ 'log' ]\n\"level\" = \"info\"\n", "log.to", `"c"`, "x = 1\n[ 'log' ]\nto = \"c\"\n\"level\" = \"info\"\n"},
+		// Clé racine entre guillemets / Quoted root key
+		{"\"bindPort\" = 7000\n", "bindPort", "9", "\"bindPort\" = 9\n"},
 	}
 	for _, c := range cases {
 		if got := setTOMLKey(c.in, c.key, c.value); got != c.want {

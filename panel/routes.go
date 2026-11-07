@@ -1358,23 +1358,27 @@ func readInstanceConfig(inst *Instance) (string, bool) {
 // ── Ports ───────────────────────────────────────────────────────────────────
 
 var (
-	nameLineRe     = regexp.MustCompile(`^name\s*=\s*["']?([^"']+)["']?`)
-	typeLineRe     = regexp.MustCompile(`^type\s*=\s*["']?(\w+)["']?`)
-	remotePortRe   = regexp.MustCompile(`^remotePort\s*=\s*(\d[\d_]*)`)
-	bindAddrLineRe = regexp.MustCompile(`^bindAddr\s*=\s*["']?([^"']+)["']?`)
-	bindPortLineRe = regexp.MustCompile(`^bindPort\s*=\s*(\d[\d_]*)`)
-	portLineRe     = regexp.MustCompile(`^port\s*=\s*(\d[\d_]*)`)
+	// La clé peut être entre guillemets, comme le lit le reste du panel
+	// ("name" = "a" vaut name = "a")
+	// The key may be quoted, as the rest of the panel reads it ("name" = "a"
+	// means name = "a")
+	nameLineRe     = regexp.MustCompile(`^["']?name["']?\s*=\s*["']?([^"']+)["']?`)
+	typeLineRe     = regexp.MustCompile(`^["']?type["']?\s*=\s*["']?(\w+)["']?`)
+	remotePortRe   = regexp.MustCompile(`^["']?remotePort["']?\s*=\s*(\d[\d_]*)`)
+	bindAddrLineRe = regexp.MustCompile(`^["']?bindAddr["']?\s*=\s*["']?([^"']+)["']?`)
+	bindPortLineRe = regexp.MustCompile(`^["']?bindPort["']?\s*=\s*(\d[\d_]*)`)
+	portLineRe     = regexp.MustCompile(`^["']?port["']?\s*=\s*(\d[\d_]*)`)
 	frpsTopPorts   = []struct {
 		re           *regexp.Regexp
 		proto, label string
 	}{
-		{regexp.MustCompile(`(?mi)^bindPort\s*=\s*(\d[\d_]*)`), "tcp", "Connexion frpc"},
-		{regexp.MustCompile(`(?mi)^kcpBindPort\s*=\s*(\d[\d_]*)`), "udp", "KCP"},
-		{regexp.MustCompile(`(?mi)^quicBindPort\s*=\s*(\d[\d_]*)`), "udp", "QUIC"},
-		{regexp.MustCompile(`(?mi)^vhostHTTPPort\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTP"},
-		{regexp.MustCompile(`(?mi)^vhostHTTPSPort\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTPS"},
+		{regexp.MustCompile(`(?mi)^["']?bindPort["']?\s*=\s*(\d[\d_]*)`), "tcp", "Connexion frpc"},
+		{regexp.MustCompile(`(?mi)^["']?kcpBindPort["']?\s*=\s*(\d[\d_]*)`), "udp", "KCP"},
+		{regexp.MustCompile(`(?mi)^["']?quicBindPort["']?\s*=\s*(\d[\d_]*)`), "udp", "QUIC"},
+		{regexp.MustCompile(`(?mi)^["']?vhostHTTPPort["']?\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTP"},
+		{regexp.MustCompile(`(?mi)^["']?vhostHTTPSPort["']?\s*=\s*(\d[\d_]*)`), "tcp", "vhost HTTPS"},
 	}
-	serverPortRe = regexp.MustCompile(`(?mi)^serverPort\s*=\s*(\d[\d_]*)`)
+	serverPortRe = regexp.MustCompile(`(?mi)^["']?serverPort["']?\s*=\s*(\d[\d_]*)`)
 )
 
 func atoi(s string) int { n, _ := strconv.Atoi(strings.ReplaceAll(s, "_", "")); return n }
@@ -1761,7 +1765,20 @@ func tomlHead(s string) string {
 	if i := strings.IndexByte(s, '#'); i >= 0 {
 		s = s[:i]
 	}
-	return strings.Join(strings.Fields(s), "")
+	return plainTOMLName(strings.Join(strings.Fields(s), ""))
+}
+
+// Segment de nom entre guillemets qui n'est qu'un simple nom : « "proxies" » se
+// lit comme « proxies »
+// Quoted name segment that is just a plain name: « "proxies" » reads as « proxies »
+var quotedSegRe = regexp.MustCompile(`"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'`)
+
+// plainTOMLName : nom de table (ou en-tête) sans les guillemets de ses segments
+// simples (« [["proxies"]] » devient « [[proxies]] »).
+// plainTOMLName: table name (or header) without the quotes of its plain
+// segments (« [["proxies"]] » becomes « [[proxies]] »).
+func plainTOMLName(s string) string {
+	return quotedSegRe.ReplaceAllString(s, "$1$2")
 }
 
 var inlineFormRe = regexp.MustCompile(`(?m)^[ \t]*["']?(proxies|visitors)["']?[ \t]*=[ \t]*\[`)

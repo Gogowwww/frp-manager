@@ -760,8 +760,10 @@ func TestCorruptDeflateMessageFrench(t *testing.T) {
 // Ports read despite a comment or spaces in the block header
 func TestExtractPortsCommentedHeader(t *testing.T) {
 	setup(t)
-	for _, head := range []string{"[[proxies]]", "[[proxies]] # note", "  [[ proxies ]]", "[[proxies]]\t# note"} {
-		content := "serverAddr = \"x\"\nserverPort = 7000\n\n" + head + "\nname = \"a\"\ntype = \"tcp\"\nlocalPort = 22\nremotePort = 18801\n\n[[visitors]] # v\nname = \"v\"\nbindAddr = \"0.0.0.0\"\nbindPort = 18999\n"
+	// Nom entre guillemets : [["proxies"]] et [[ 'proxies' ]] sont aussi des tunnels
+	// Quoted name: [["proxies"]] and [[ 'proxies' ]] are tunnels too
+	for _, head := range []string{"[[proxies]]", "[[proxies]] # note", "  [[ proxies ]]", "[[proxies]]\t# note", `[["proxies"]]`, "[[ 'proxies' ]] # n"} {
+		content := "serverAddr = \"x\"\nserverPort = 7000\n\n" + head + "\nname = \"a\"\ntype = \"tcp\"\nlocalPort = 22\nremotePort = 18801\n\n[[\"visitors\"]] # v\nname = \"v\"\nbindAddr = \"0.0.0.0\"\nbindPort = 18999\n"
 		ports := extractPortsFromConfig(content, "frpc")
 		var got []int
 		for _, p := range ports {
@@ -778,6 +780,94 @@ func TestExtractPortsCommentedHeader(t *testing.T) {
 		if !has(18801) || !has(18999) {
 			t.Errorf("en-tête %q : ports lus %v", head, got)
 		}
+	}
+}
+
+// Clés entre guillemets, à la racine, dans un bloc et dans une section : lues
+// comme les mêmes clés sans guillemets, plages de ports comprises
+// Quoted keys at the root, in a block and in a section: read like the same keys
+// without quotes, port ranges included
+func TestExtractPortsQuotedKeys(t *testing.T) {
+	setup(t)
+	c := `"serverAddr" = "x"
+'serverPort' = 7000
+
+[["proxies"]]
+"name" = "a"
+"type" = "udp"
+"localPort" = 53
+"remotePort" = 18_801
+
+[ "proxies" . 'transport' ]
+"useEncryption" = true
+
+[["visitors"]]
+'name' = 'v'
+"bindAddr" = "0.0.0.0"
+"bindPort" = 18_999
+
+[ "webServer" ]
+"port" = 7_400
+`
+	if _, err := parseFrpConfig(c); err != nil {
+		t.Fatalf("entrée invalide / invalid input: %v", err)
+	}
+	got := map[int]string{}
+	for _, p := range extractPortsFromConfig(c, "frpc") {
+		got[p["port"].(int)] = p["proto"].(string)
+	}
+	for port, proto := range map[int]string{7000: "tcp", 18801: "udp", 18999: "tcp", 7400: "tcp"} {
+		if got[port] != proto {
+			t.Errorf("port %d : proto %q, attendu %q (lus %v)", port, got[port], proto, got)
+		}
+	}
+	// Plages écrites par la page Ports avec des clés entre guillemets
+	// Ranges written by the Ports page with quoted keys
+	ranged := `serverAddr = "x"
+serverPort = 7000
+
+{{- range $_, $v := parseNumberRangePair "9000-9001" "19000-19001" }}
+[["proxies"]]
+"name" = "rg-{{ $v.First }}"
+"type" = "tcp"
+"localPort" = {{ $v.First }}
+"remotePort" = {{ $v.Second }}
+{{- end }}
+
+{{- range $_, $v := parseNumberRange "16000-16001" }}
+[["visitors"]]
+"name" = "acc-{{ $v }}"
+"bindAddr" = "0.0.0.0"
+"bindPort" = {{ $v }}
+{{- end }}
+`
+	if _, err := parseFrpConfig(ranged); err != nil {
+		t.Fatalf("plages invalides / invalid ranges: %v", err)
+	}
+	got = map[int]string{}
+	for _, p := range extractPortsFromConfig(ranged, "frpc") {
+		got[p["port"].(int)] = p["proto"].(string)
+	}
+	for port, proto := range map[int]string{19000: "tcp", 19001: "tcp", 16000: "tcp", 16001: "tcp"} {
+		if got[port] != proto {
+			t.Errorf("plage : port %d absent ou %q, attendu %q (lus %v)", port, got[port], proto, got)
+		}
+	}
+	// frps : clés entre guillemets à la racine
+	// frps: quoted keys at the root
+	frps := `"bindPort" = 7_000
+'kcpBindPort' = 7_000
+"vhostHTTPPort" = 80
+`
+	n := 0
+	for _, p := range extractPortsFromConfig(frps, "frps") {
+		n++
+		if port := p["port"].(int); port != 7000 && port != 80 {
+			t.Errorf("frps : port inattendu %d", port)
+		}
+	}
+	if n != 3 {
+		t.Errorf("frps : %d ports, attendu 3", n)
 	}
 }
 
@@ -842,6 +932,12 @@ func TestQuotedInlineKeyAndUnderscoreInts(t *testing.T) {
 	}
 	if out := clientConnectionOnly(c); strings.Contains(out, "proxies") {
 		t.Fatalf("tunnel gardé / tunnel kept: %q", out)
+	}
+	// En-têtes entre guillemets : le tunnel et sa sous-table partent à la copie
+	// Quoted headers: the tunnel and its sub-table are dropped by the copy
+	q := "serverAddr = \"x\"\n[[\"proxies\"]]\nname = \"a\"\n[ \"proxies\" . 'transport' ]\nuseEncryption = true\n[log]\nlevel = \"info\"\n"
+	if out := clientConnectionOnly(q); strings.Contains(out, "proxies") || strings.Contains(out, "useEncryption") || !strings.Contains(out, "[log]") {
+		t.Fatalf("en-têtes entre guillemets / quoted headers: %q", out)
 	}
 	b := "[[proxies]]\nname = \"a\"\ntype = \"tcp\"\nremotePort = 18_801\n"
 	ok := false

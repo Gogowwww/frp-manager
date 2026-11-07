@@ -39,8 +39,10 @@ var (
 	frpRangePairRe   = regexp.MustCompile(`parseNumberRangePair\s+"([^"]*)"\s+"([^"]*)"`)
 	frpRangeSingleRe = regexp.MustCompile(`parseNumberRange\s+"([^"]*)"`)
 	frpFirstRe       = regexp.MustCompile(`\{\{\s*\$v(?:\.First)?\s*\}\}`)
-	frpSecondRe      = regexp.MustCompile(`^remotePort\s*=\s*\{\{\s*\$v\.Second\s*\}\}`)
-	frpBindFirstRe   = regexp.MustCompile(`^bindPort\s*=\s*\{\{\s*\$v(?:\.First)?\s*\}\}`)
+	// Clé entre guillemets comprise : "remotePort" = {{ $v.Second }}
+	// Quoted key included: "remotePort" = {{ $v.Second }}
+	frpSecondRe    = regexp.MustCompile(`^["']?remotePort["']?\s*=\s*\{\{\s*\$v\.Second\s*\}\}`)
+	frpBindFirstRe = regexp.MustCompile(`^["']?bindPort["']?\s*=\s*\{\{\s*\$v(?:\.First)?\s*\}\}`)
 )
 
 // frpTOML : la config lisible en TOML. Les lignes faites seulement d'actions
