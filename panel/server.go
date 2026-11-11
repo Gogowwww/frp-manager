@@ -151,6 +151,11 @@ func (c *Ctx) HTML(status int, s string) {
 }
 
 func (c *Ctx) Redirect(url string) {
+	// Une redirection ne dit pas où mène la page suivante (jeton CSRF, session) :
+	// rien à garder en cache.
+	// A redirect says nothing about where it leads (CSRF token, session):
+	// nothing to cache.
+	c.W.Header().Set("Cache-Control", "no-store")
 	c.W.Header().Set("Location", url)
 	c.W.WriteHeader(http.StatusFound)
 }
@@ -296,6 +301,16 @@ func serve(w http.ResponseWriter, r *http.Request, name string, h func(*Ctx)) {
 	c.sess = loadSession(r)
 	c.bodyLimit = maxBodyFor(name)
 	r.Body = http.MaxBytesReader(c.W, r.Body, c.bodyLimit)
+	// Corps annoncé au-delà de la limite de la route : refusé tout de suite.
+	// Tronqué puis décodé en silence, il faisait répondre « Enregistré » à une
+	// requête dont rien n'était gardé.
+	// Body announced beyond the route limit: refused right away. Truncated and
+	// then silently undecoded, it made the panel answer "Saved" to a request
+	// where nothing was kept.
+	if r.ContentLength > c.bodyLimit {
+		c.Fail(http.StatusRequestEntityTooLarge, c.M("Requête trop volumineuse.", "Request too large."))
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !c.csrfValid() {
 		c.Fail(http.StatusForbidden, c.M("Jeton CSRF absent ou invalide : rechargez la page.",
 			"Missing or invalid CSRF token: reload the page."))

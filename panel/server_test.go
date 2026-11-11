@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -30,5 +31,23 @@ func TestBodyLimit(t *testing.T) {
 		bodyLimit: maxBodyFor("api_update_upload")}
 	if body := c.Body(); body["username"] == nil {
 		t.Fatal("corps de l'envoi d'archive non décodé")
+	}
+}
+
+func TestBodyTooLarge(t *testing.T) {
+	// Une requête dont le corps annoncé dépasse la limite de la route est
+	// refusée, au lieu d'être tronquée puis ignorée avec un « Enregistré ».
+	// A request whose announced body exceeds the route limit is refused,
+	// instead of being truncated then ignored with a "Saved".
+	e := setup(t)
+	r := e.client().post("/api/login", J{"username": strings.Repeat("a", int(maxJSONSize))})
+	if r.code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("code %d, attendu 413", r.code)
+	}
+	// Juste sous la limite : la route répond normalement (mauvais mot de passe).
+	// Just under the limit: the route answers normally (wrong password).
+	r = e.client().post("/api/login", J{"username": "admin", "password": "nope"})
+	if r.code == http.StatusRequestEntityTooLarge {
+		t.Fatal("petit corps refusé")
 	}
 }
