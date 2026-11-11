@@ -14,10 +14,6 @@ export default {
     open: 'Open menu',
     updateAvailable: 'Update available',
   },
-  footer: {
-    madeWith: 'Built with',
-  },
-
   common: {
     close: 'Close',
     confirm: 'Confirm',
