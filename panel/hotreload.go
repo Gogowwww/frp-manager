@@ -36,11 +36,12 @@ func proxiesOnlyChange(before, after string) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// frpcReload : POST /api/reload sur l'API d'administration de frpc. (false, "")
-// si [webServer] n'a pas de port (pas d'API à joindre) ; (false, message) si
-// l'appel échoue.
-// frpcReload: POST /api/reload on the frpc admin API. (false, "") when
-// [webServer] has no port (no API to reach); (false, message) when the call fails.
+// frpcReload : GET /api/reload sur l'API d'administration de frpc (seule
+// méthode acceptée, POST répond 405). (false, "") si [webServer] n'a pas de
+// port (pas d'API à joindre) ; (false, message) si l'appel échoue.
+// frpcReload: GET /api/reload on the frpc admin API (the only accepted method,
+// POST answers 405). (false, "") when [webServer] has no port (no API to
+// reach); (false, message) when the call fails.
 func frpcReload(content string) (bool, string) {
 	conf, err := parseFrpConfig(content)
 	if err != nil {
@@ -55,7 +56,7 @@ func frpcReload(content string) (bool, string) {
 	if addr == "" || addr == "0.0.0.0" || addr == "::" {
 		addr = "127.0.0.1"
 	}
-	req, err := http.NewRequest(http.MethodPost, "http://"+urlHostPort(addr, port)+"/api/reload", nil)
+	req, err := http.NewRequest(http.MethodGet, "http://"+urlHostPort(addr, port)+"/api/reload", nil)
 	if err != nil {
 		return false, short(err.Error(), 120)
 	}

@@ -33,7 +33,9 @@ func TestFrpcReload(t *testing.T) {
 	var calls int
 	var gotAuth bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/reload" {
+		// frpc rejette POST (405) : le rechargement se demande en GET.
+		// frpc rejects POST (405): the reload is asked for with GET.
+		if r.Method != http.MethodGet || r.URL.Path != "/api/reload" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
