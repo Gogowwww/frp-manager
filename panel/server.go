@@ -46,6 +46,7 @@ type Ctx struct {
 	userLoaded bool
 	nonce      string
 	body       map[string]any
+	bodyLimit  int64
 }
 
 func (c *Ctx) M(fr, en string) string { return c.Lang.M(fr, en) }
@@ -60,7 +61,11 @@ func (c *Ctx) Body() map[string]any {
 	if c.R.Body == nil {
 		return c.body
 	}
-	dec := json.NewDecoder(io.LimitReader(c.R.Body, maxBodySize))
+	limit := c.bodyLimit
+	if limit <= 0 {
+		limit = maxJSONSize
+	}
+	dec := json.NewDecoder(io.LimitReader(c.R.Body, limit))
 	dec.UseNumber()
 	var v any
 	if dec.Decode(&v) == nil {
@@ -74,16 +79,21 @@ func (c *Ctx) Body() map[string]any {
 func (c *Ctx) Query(k string) string { return c.R.URL.Query().Get(k) }
 func (c *Ctx) Param(k string) string { return c.R.PathValue(k) }
 
-// RemoteIP : adresse du client (sans port), comme request.remote_addr.
+// RemoteIP : adresse du client (sans port), comme request.remote_addr. Derrière
+// un proxy de confiance, vient de X-Forwarded-For (voir trusted_proxies).
+// RemoteIP: the client address (no port), like request.remote_addr. Behind a
+// trusted proxy it comes from X-Forwarded-For (see trusted_proxies).
 func (c *Ctx) RemoteIP() string {
-	host, _, err := net.SplitHostPort(c.R.RemoteAddr)
-	if err != nil {
-		if c.R.RemoteAddr == "" {
-			return "?"
-		}
-		return c.R.RemoteAddr
+	if c.R.RemoteAddr == "" {
+		return "?"
 	}
-	return host
+	if ip := clientIPFrom(c.R.RemoteAddr, c.R.Header.Get("X-Forwarded-For"), trustedProxyPrefixes()); ip != "" {
+		return ip
+	}
+	if host, _, err := net.SplitHostPort(c.R.RemoteAddr); err == nil {
+		return host
+	}
+	return c.R.RemoteAddr
 }
 
 func (c *Ctx) acceptsGzip() bool {
@@ -130,25 +140,49 @@ func (c *Ctx) JSON(v any, status ...int) {
 func (c *Ctx) Fail(status int, msg string) { c.JSON(J{"ok": false, "msg": msg}, status) }
 
 func (c *Ctx) Text(status int, s string) { c.send(status, "text/plain; charset=utf-8", []byte(s)) }
-func (c *Ctx) HTML(status int, s string) { c.send(status, "text/html; charset=utf-8", []byte(s)) }
+
+// HTML : page contenant le jeton CSRF et l'état initial : jamais de cache,
+// même via un proxy partagé.
+// HTML: page carrying the CSRF token and the boot state: never cached, even by a
+// shared proxy.
+func (c *Ctx) HTML(status int, s string) {
+	c.W.Header().Set("Cache-Control", "no-store")
+	c.send(status, "text/html; charset=utf-8", []byte(s))
+}
 
 func (c *Ctx) Redirect(url string) {
 	c.W.Header().Set("Location", url)
 	c.W.WriteHeader(http.StatusFound)
 }
 
+// scheme : http ou https, X-Forwarded-Proto compris derrière un proxy de
+// confiance (adresse de retour OIDC, HSTS).
+// scheme: http or https, X-Forwarded-Proto included behind a trusted proxy (OIDC
+// redirect URI, HSTS).
+func (c *Ctx) scheme() string { return requestScheme(c.R, trustedProxyPrefixes()) }
+
 // externalURL : adresse absolue d'un chemin du panel (url_for(..., _external=True)).
 func (c *Ctx) externalURL(p string) string {
-	scheme := "http"
-	if c.R.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + c.R.Host + p
+	return c.scheme() + "://" + c.R.Host + p
 }
 
 type J = map[string]any
 
-const maxBodySize = 128 << 20 // archive frp envoyée à la main (~15 Mo) : large marge
+const (
+	maxBodySize = 128 << 20 // archive du panel envoyée à la main (~15 Mo) : large marge
+	maxJSONSize = 1 << 20   // tout le reste (JSON de l'interface, formulaires)
+)
+
+// maxBodyFor : seul l'envoi manuel d'une archive a besoin de la grande limite ;
+// une requête ordinaire ne doit pas pouvoir faire allouer 128 Mo au serveur.
+// Only the manual archive upload needs the large limit; an ordinary request must
+// not be able to make the server allocate 128 MB.
+func maxBodyFor(route string) int64 {
+	if route == "api_update_upload" {
+		return maxBodySize
+	}
+	return maxJSONSize
+}
 
 // ── Réponse : en-têtes de sécurité et cookie de session posés au dernier moment
 
@@ -213,8 +247,8 @@ func (c *Ctx) beforeHeaders() {
 	setDefault("Content-Security-Policy", strings.Join([]string{
 		"default-src 'self'",
 		"script-src " + scriptSrc,
-		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-		"font-src 'self' https://fonts.gstatic.com",
+		"style-src 'self' 'unsafe-inline'",
+		"font-src 'self'",
 		"img-src 'self' data:",
 		"connect-src 'self' wss://" + host + " ws://" + host,
 		"object-src 'none'",
@@ -225,6 +259,13 @@ func (c *Ctx) beforeHeaders() {
 	setDefault("X-Content-Type-Options", "nosniff")
 	setDefault("X-Frame-Options", "DENY")
 	setDefault("Referrer-Policy", "no-referrer")
+	// HSTS : seulement en HTTPS, et sur demande (un certificat auto-signé ou un
+	// retour en HTTP rendraient le nom inaccessible au navigateur).
+	// HSTS: HTTPS only, and on demand (a self-signed certificate or a switch back
+	// to HTTP would make the name unreachable from the browser).
+	if c.scheme() == "https" && boolv(cfg(), "hsts", false) {
+		setDefault("Strict-Transport-Security", "max-age=31536000")
+	}
 	if strings.HasPrefix(c.R.URL.Path, "/api/") {
 		// Réponses de l'API (configs avec leurs tokens…) jamais gardées en cache
 		setDefault("Cache-Control", "no-store")
@@ -253,7 +294,8 @@ func serve(w http.ResponseWriter, r *http.Request, name string, h func(*Ctx)) {
 	c := &Ctx{R: r, Lang: requestLang(r), Route: name}
 	c.W = &respWriter{ResponseWriter: w, c: c}
 	c.sess = loadSession(r)
-	r.Body = http.MaxBytesReader(c.W, r.Body, maxBodySize)
+	c.bodyLimit = maxBodyFor(name)
+	r.Body = http.MaxBytesReader(c.W, r.Body, c.bodyLimit)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !c.csrfValid() {
 		c.Fail(http.StatusForbidden, c.M("Jeton CSRF absent ou invalide : rechargez la page.",
 			"Missing or invalid CSRF token: reload the page."))

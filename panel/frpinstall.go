@@ -667,7 +667,10 @@ func installFile(src, dst string, mode os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	os.Chmod(tmp, mode)
+	if err := os.Chmod(tmp, mode); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, dst)
 }
 

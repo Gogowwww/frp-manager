@@ -789,10 +789,13 @@ async function save(restart) {
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
     S.baseText = content;
     S.snapshot = snapshotOf();
-    toast(t('tunnels.saved'), 'success');
+    toast(d.applied ? t('common.applied') : (d.note || t('tunnels.saved')), d.note ? 'info' : 'success');
 
-    // Redémarrage (la réponse peut ne jamais arriver si le panel passe par ce tunnel)
-    if (restart) await restartFrpc();
+    // Redémarrage seulement si le rechargement à chaud n'a pas pu s'appliquer
+    // (la réponse peut ne jamais arriver si le panel passe par ce tunnel)
+    // Restart only when the live reload could not be applied (the reply may never
+    // arrive when the panel is reached through this tunnel)
+    if (restart && !d.applied) await restartFrpc();
   } catch (e) {
     toastError(e);
   }

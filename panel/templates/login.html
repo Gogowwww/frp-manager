@@ -10,12 +10,7 @@
 <script nonce="{{ csp_nonce() }}">
   try { var th = localStorage.getItem('frpm.theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Polices chargées sans bloquer l'affichage : sans accès à Google, la page
-     s'affiche tout de suite avec les polices du système. -->
-<link rel="stylesheet" id="fonts" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" media="print">
-<script nonce="{{ csp_nonce() }}">document.getElementById('fonts').addEventListener('load', function () { this.media = 'all'; });</script>
+<link rel="preload" href="{{ asset('fonts/ibm-plex-sans-var-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{ asset('css/app.css') }}">
 <link rel="modulepreload" href="{{ asset('js/i18n.js') }}">
 <link rel="modulepreload" href="{{ asset('locales/fr.js') }}">

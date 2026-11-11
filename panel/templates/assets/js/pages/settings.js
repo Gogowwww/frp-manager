@@ -292,7 +292,7 @@ const access = {
       host.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
       return;
     }
-    host.append(listenCard(cfg), downloadsCard(cfg), statsCard(cfg));
+    host.append(listenCard(cfg), httpsCard(cfg), downloadsCard(cfg), statsCard(cfg));
   },
 };
 
@@ -329,6 +329,47 @@ function listenCard(cfg) {
         field({ label: t('settings.network.port'), tomlKey: 'bind_port', control: port }),
         field({ label: t('settings.network.timeout'), hint: t('settings.network.timeoutHint'), control: timeout })),
       callout({ type: 'neutral', compact: true, text: t('settings.network.restartNote') })),
+    foot: [saveBtn],
+  });
+}
+
+// HTTPS et proxy inverse : HSTS, et adresses des proxys dont les en-têtes
+// X-Forwarded-For / X-Forwarded-Proto sont crus.
+// HTTPS and reverse proxy: HSTS, and the proxies whose X-Forwarded-For /
+// X-Forwarded-Proto headers are trusted.
+function httpsCard(cfg) {
+  const proxies = input({ value: cfg.trusted_proxies || '', mono: true, placeholder: '10.0.0.0/8, 192.168.1.10' });
+  const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'https-form' });
+
+  async function submit(e) {
+    e.preventDefault();
+    await busy(saveBtn, async () => {
+      try {
+        const d = await api('/api/manager/config', { method: 'POST', body: { trusted_proxies: proxies.value.trim() } });
+        if (d.ok) toast(t('settings.network.saved'), 'success');
+        else toastResult(d);
+      } catch (err) { toastError(err); }
+    });
+  }
+
+  return card({
+    title: t('settings.network.httpsTitle'), description: t('settings.network.httpsDesc'),
+    body: h('div', { class: 'form-stack' },
+      switchRow({
+        label: t('settings.network.hsts'),
+        description: t('settings.network.hstsDesc'),
+        checked: cfg.hsts === true,
+        onChange: async (checked) => {
+          try {
+            const d = await api('/api/manager/config', { method: 'POST', body: { hsts: checked } });
+            if (d.ok) toast(t('settings.network.saved'), 'success');
+            else toastResult(d);
+          } catch (err) { toastError(err); }
+        },
+      }),
+      h('form', { id: 'https-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+        field({ label: t('settings.network.proxies'), hint: t('settings.network.proxiesHint'), tomlKey: 'trusted_proxies', control: proxies })),
+      callout({ type: 'neutral', compact: true, text: t('settings.network.proxiesNote') })),
     foot: [saveBtn],
   });
 }

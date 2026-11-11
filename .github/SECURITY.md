@@ -63,8 +63,15 @@ soon as possible. The report is credited in the release notes if you wish.
   authenticate the server. For access from the Internet, put the panel behind
   a reverse proxy with a valid certificate, or only reach it through a VPN or
   an SSH tunnel.
-- Behind a reverse proxy, login rate limiting sees the proxy's address: filter
-  access at that level too.
+- Behind a reverse proxy, the panel sees the proxy's address unless the proxy is
+  listed in Settings → HTTPS and reverse proxy (`trusted_proxies`): only from a
+  listed address or network are `X-Forwarded-For` and `X-Forwarded-Proto`
+  honoured. Until it is, login rate limiting, audit logs and firewall verdicts
+  refer to the proxy: filter access at that level too.
+- HSTS is off by default. Turned on, it tells the browser to refuse HTTP for
+  that name for a year: only enable it with a valid certificate, and remember
+  that going back to plain HTTP will make the panel unreachable until the
+  browser's entry expires (or is cleared).
 - frp tokens are stored in plain text in the TOML files, as frp requires; the
   configuration editor shows them to administrators.
 - **Port assigned by the server**: frpc only gives it through its local

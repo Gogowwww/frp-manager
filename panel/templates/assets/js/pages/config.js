@@ -417,8 +417,10 @@ async function save(restart) {
     S.loaded = values();
     S.snapshot = JSON.stringify(S.loaded);
     updateSaveBar();
-    toast(t('config.saved'), 'success');
-    if (restart) {
+    toast(d.applied ? t('common.applied') : (d.note || t('config.saved')), d.note ? 'info' : 'success');
+    // Rechargement à chaud réussi : rien à redémarrer, donc aucune coupure
+    // Live reload succeeded: nothing to restart, so no cut
+    if (restart && !d.applied) {
       toast(t('tunnels.restarting', { name: displayName(S.iid) }), 'info');
       post(`/api/service/${encodeURIComponent(S.iid)}/restart`).catch(() => {});
       const up = await waitRunning(S.iid);

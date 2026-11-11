@@ -61,6 +61,10 @@ func defaultManagerConfig() Cfg {
 		"secret_key":      tokenHex(32),
 		"session_timeout": float64(3600),
 		"ssl_enabled":     true,
+		// HSTS et proxys de confiance : désactivés par défaut (voir proxy.go)
+		// HSTS and trusted proxies: off by default (see proxy.go)
+		"hsts":            false,
+		"trusted_proxies": "",
 		// Miroirs tiers (ghproxy, ghfast, gh-proxy) en repli de github.com pour
 		// télécharger frp : pratique quand GitHub est filtré, mais c'est un
 		// intermédiaire de plus dans la chaîne d'approvisionnement.
@@ -116,7 +120,14 @@ func saveManagerConfig(c Cfg) error {
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
-	_ = os.Chmod(tmp, 0o600)
+	// WriteFile ne restreint pas un fichier existant : sans ce chmod, un ancien
+	// fichier plus permissif garderait ses droits (hash du mot de passe, clé).
+	// WriteFile does not restrict an existing file: without this chmod, an older
+	// more permissive file would keep its mode (password hash, session key).
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		os.Remove(tmp)
+		return err
+	}
 	return os.Rename(tmp, mgrConfFile)
 }
 

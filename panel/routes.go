@@ -137,6 +137,21 @@ func init() {
 			c.Fail(http.StatusBadRequest, c.M("Action invalide", "Invalid action"))
 			return
 		}
+		// frpc sait relire sa config sans s'arrêter (API [webServer]) ; frps non.
+		// frpc can reread its config without stopping (the [webServer] API); frps cannot.
+		if action == "reload" && inst.Type == "frpc" && inst.Source != "docker" && inst.Config != "" {
+			if b, err := os.ReadFile(inst.Config); err == nil {
+				if ok, rmsg := frpcReload(string(b)); ok {
+					invalidateCache(false)
+					c.JSON(J{"ok": true, "msg": c.M("Rechargé sans redémarrage.", "Reloaded without a restart.")})
+					return
+				} else if rmsg != "" {
+					c.Fail(http.StatusBadGateway, c.M("Rechargement à chaud impossible ("+rmsg+") : redémarrage nécessaire.",
+						"Live reload failed ("+rmsg+"): restart needed."))
+					return
+				}
+			}
+		}
 		ok, msg := c.Lang.serviceAction(inst.Service, action)
 		invalidateCache(false)
 		if msg == "" {
@@ -282,13 +297,23 @@ func init() {
 			}
 			content = s
 		}
+		// Config d'avant l'écriture : sert à savoir si frpc peut l'appliquer à chaud
+		// Previous config: tells whether frpc can apply the new one live
+		before := ""
+		if inst.Config != "" {
+			if b, err := os.ReadFile(inst.Config); err == nil {
+				before = string(b)
+			}
+		}
 		done, msg, status := c.Lang.writeInstanceConfig(inst, content)
+		applied, note := false, ""
 		if done {
+			applied, note = c.Lang.applyConfigLive(inst, before, content)
 			invalidateCache(true) // serverAddr, fichier créé…
 			webhookEmitInstance("config.saved", [2]string{"Configuration de " + iid + " modifiée", "Configuration of " + iid + " changed"},
 				[2]string{"La configuration a été enregistrée depuis le panel.", "The configuration was saved from the panel."}, iid, iid)
 		}
-		c.JSON(J{"ok": done, "msg": msg}, status)
+		c.JSON(J{"ok": done, "applied": applied, "note": note, "msg": msg}, status)
 	}))
 
 	route("GET /api/logs/{iid}", "api_logs", perm(P("logs.view"), func(c *Ctx) {
@@ -460,6 +485,22 @@ func init() {
 		}
 		if v, ok := data["ssl_enabled"]; ok {
 			patch["ssl_enabled"] = truthy(v)
+		}
+		if v, ok := data["hsts"]; ok {
+			patch["hsts"] = truthy(v)
+		}
+		if v, ok := data["trusted_proxies"]; ok {
+			raw := strings.TrimSpace(pyStr(v))
+			for _, f := range proxyFields(raw) {
+				if _, err := netip.ParsePrefix(f); err != nil {
+					if _, err := netip.ParseAddr(f); err != nil {
+						c.Fail(http.StatusBadRequest, c.M("Proxy de confiance invalide : adresse ou réseau attendu (ex. 10.0.0.0/8, 192.168.1.10).",
+							"Invalid trusted proxy: address or network expected (e.g. 10.0.0.0/8, 192.168.1.10)."))
+						return
+					}
+				}
+			}
+			patch["trusted_proxies"] = raw
 		}
 		if v, ok := data["download_mirrors"]; ok {
 			patch["download_mirrors"] = truthy(v)
