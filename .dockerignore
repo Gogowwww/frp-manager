@@ -6,6 +6,7 @@
 !go.mod
 !go.sum
 !panel/*.go
+!panel/*.mjs
 !panel/netaddr/
 !panel/templates/
 !panel/testdata/

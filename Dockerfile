@@ -15,11 +15,22 @@ COPY panel/ panel/
 ARG PANEL_VERSION=unknown
 ENV CGO_ENABLED=0 LDFLAGS="-s -w -X main.buildVersion=${PANEL_VERSION}"
 
-# Tests (release.yml les lance avant toute publication) : docker buildx build --target test .
+# Tests (ci.yml et release.yml les lancent avant toute publication) :
+# docker buildx build --target test .
 # ./panel/... : le panel et ses sous-paquets (panel/netaddr).
+# Tests (ci.yml and release.yml run them before any publication):
+# docker buildx build --target test .
 # ./panel/...: the panel and its sub-packages (panel/netaddr).
 FROM source AS test
 RUN go vet ./panel/... && go test -count=1 ./panel/...
+
+# Le test de l'interface (panel/toml.test.mjs) vérifie le toml.js que le
+# navigateur exécute tel quel : nodejs suffit, sans dépendance ni build. Il ne
+# pèse que sur l'image de test, pas sur l'image finale.
+# The interface test (panel/toml.test.mjs) checks the toml.js the browser runs as
+# is: nodejs is enough, without any dependency or build. It only weighs on the
+# test image, not on the final one.
+RUN apk add --no-cache nodejs && node panel/toml.test.mjs
 
 # Binaire de l'architecture de l'image
 FROM source AS build
