@@ -610,8 +610,9 @@ func ipASNLookup(ips []string) map[string]any {
 // ── Configuration et ports connus ───────────────────────────────────────────
 
 type fwConfig struct {
-	Enabled bool
-	Rules   []J
+	Enabled      bool
+	Rules        []J
+	VhostAllowed string
 }
 
 func fwCfg() fwConfig {
@@ -622,7 +623,7 @@ func fwCfg() fwConfig {
 			rules = append(rules, m)
 		}
 	}
-	return fwConfig{truthy(fw["enabled"]), rules}
+	return fwConfig{truthy(fw["enabled"]), rules, str(fw, "vhost_allowed", "")}
 }
 
 func frpsInstances() []*Instance {
@@ -814,7 +815,11 @@ func fwKnownPortsRead() []J {
 		if toml.Unmarshal([]byte(text), &conf) != nil || conf == nil {
 			// Config illisible : lecture simple
 			for _, p := range extractPortsFromConfig(text, "frps") {
-				add(p["port"].(int), p["port"].(int), p["proto"].(string), p["label"].(string), "config", nil)
+				kind := "config"
+				if strings.Contains(strings.ToLower(p["label"].(string)), "vhost") {
+					kind = "vhost"
+				}
+				add(p["port"].(int), p["port"].(int), p["proto"].(string), p["label"].(string), kind, nil)
 			}
 			continue
 		}
@@ -829,7 +834,11 @@ func fwKnownPortsRead() []J {
 			{"tcpmuxHTTPConnectPort", "tcp", "TCP mux"},
 		} {
 			if p := tomlInt(conf[e.key]); p != 0 {
-				add(p, p, e.proto, e.label, "config", nil)
+				kind := "config"
+				if e.key == "vhostHTTPPort" || e.key == "vhostHTTPSPort" {
+					kind = "vhost"
+				}
+				add(p, p, e.proto, e.label, kind, nil)
 			}
 		}
 		ws := mapv(conf, "webServer")
@@ -1084,6 +1093,20 @@ type RuleError struct{ msg string }
 
 func (e *RuleError) Error() string { return e.msg }
 
+// fwCheckVhostAllowed : chaque entrée de la liste des sites HTTP/HTTPS doit
+// être une adresse ou un réseau (pas d'AS : le filtrage s'applique aussitôt).
+// fwCheckVhostAllowed: every HTTP/HTTPS sites list entry must be an address or
+// a network (no AS: filtering applies right away).
+func (l Lang) fwCheckVhostAllowed(raw string) error {
+	for _, f := range proxyFields(raw) {
+		if _, ok := parseNetwork(f); !ok {
+			return &RuleError{l.M("Adresse autorisée « "+f+" » invalide : indiquez une IP ou un réseau (ex. 192.168.1.0/24).",
+				"Invalid allowed address “"+f+"”: enter an IP or a network (e.g. 192.168.1.0/24).")}
+		}
+	}
+	return nil
+}
+
 var nonHexRe = regexp.MustCompile(`[^0-9a-f]`)
 
 // fwNormalizeRule : valide une règle venue de l'interface.
@@ -1234,17 +1257,94 @@ func fwRuleNets(rule J) []netip.Prefix {
 
 func ruleEnabled(r J) bool { v, ok := r["enabled"]; return !ok || truthy(v) }
 
-// fwRuleset : texte nft qui remplace la table (ou la supprime si rien n'est à filtrer).
-func fwRuleset(c fwConfig, known []J, seen bool) string {
-	head := "table inet " + fwTable + "\ndelete table inet " + fwTable + "\n"
-	var rules []J
-	if c.Enabled {
-		for _, r := range c.Rules {
-			if ruleEnabled(r) {
-				rules = append(rules, r)
+// ── Sites HTTP/HTTPS : adresses autorisées ─────────────────────────────────
+
+// isVhostPort : port des sites HTTP/HTTPS (vhost) de frps.
+func isVhostPort(k J) bool {
+	return str(k, "kind", "") == "vhost" || strings.Contains(strings.ToLower(str(k, "label", "")), "vhost")
+}
+
+// fwVhostAllowedNets : adresses et réseaux de la liste enregistrée
+// (séparateurs : virgules, espaces ou retours à la ligne).
+// fwVhostAllowedNets: addresses and networks of the saved list (separators:
+// commas, spaces or newlines).
+func fwVhostAllowedNets(raw string) []netip.Prefix {
+	var nets []netip.Prefix
+	for _, f := range proxyFields(raw) {
+		if p, ok := parseNetwork(f); ok {
+			nets = append(nets, p)
+		}
+	}
+	return nets
+}
+
+// fwVhostPortsSpec : ports vhost connus, distincts et triés (« 80, 443 »).
+// fwVhostPortsSpec: known vhost ports, distinct and sorted ("80, 443").
+func fwVhostPortsSpec(known []J) string {
+	seen := map[int]bool{}
+	var ports []int
+	for _, k := range known {
+		if !isVhostPort(k) {
+			continue
+		}
+		start, _ := pyInt(k["start"])
+		end, _ := pyInt(k["end"])
+		for p := start; p <= end && p-start < 64; p++ {
+			if p > 0 && !seen[p] {
+				seen[p] = true
+				ports = append(ports, p)
 			}
 		}
 	}
+	sort.Ints(ports)
+	parts := make([]string, len(ports))
+	for i, p := range ports {
+		parts[i] = strconv.Itoa(p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// fwVhostAllowRule : règle implicite « seules ces adresses ouvrent les sites
+// HTTP/HTTPS ». Absente si la liste est vide ou si aucun port vhost n'est connu.
+// fwVhostAllowRule: implicit “only these addresses open the HTTP/HTTPS sites”
+// rule. Absent when the list is empty or no vhost port is known.
+func fwVhostAllowRule(raw string, known []J) (J, bool) {
+	nets := fwVhostAllowedNets(raw)
+	ports := fwVhostPortsSpec(known)
+	if len(nets) == 0 || ports == "" {
+		return nil, false
+	}
+	sources := make([]any, len(nets))
+	for i, p := range nets {
+		sources[i] = J{"cidr": p.String()}
+	}
+	return J{"id": "vhost", "mode": "allow", "ports": ports, "sources": sources, "enabled": true}, true
+}
+
+// fwActiveRules : règles actives, plus la règle implicite des sites HTTP/HTTPS
+// quand sa liste est renseignée.
+// fwActiveRules: active rules, plus the implicit HTTP/HTTPS sites rule when its
+// list is filled in.
+func fwActiveRules(c fwConfig, known []J) []J {
+	if !c.Enabled {
+		return nil
+	}
+	var out []J
+	for _, r := range c.Rules {
+		if ruleEnabled(r) {
+			out = append(out, r)
+		}
+	}
+	if r, ok := fwVhostAllowRule(c.VhostAllowed, known); ok {
+		out = append(out, r)
+	}
+	return out
+}
+
+// fwRuleset : texte nft qui remplace la table (ou la supprime si rien n'est à filtrer).
+func fwRuleset(c fwConfig, known []J, seen bool) string {
+	head := "table inet " + fwTable + "\ndelete table inet " + fwTable + "\n"
+	rules := fwActiveRules(c, known)
 	var sets, chain []string
 	for n, rule := range rules {
 		ranges, err := FR.fwRuleRanges(rule, known)
@@ -1561,10 +1661,7 @@ func fwVerdicts(ipText string, c fwConfig, known []J) []J {
 		name   string
 	}
 	var blockers []blocker
-	for _, rule := range c.Rules {
-		if !ruleEnabled(rule) {
-			continue
-		}
+	for _, rule := range fwActiveRules(c, known) {
 		ranges, err := FR.fwRuleRanges(rule, known)
 		if err != nil {
 			continue
@@ -1871,7 +1968,8 @@ func init() {
 		c.JSON(J{
 			"ok": true, "has_frps": hasFrps, "frps": frpsIDs, "available": ok, "nft": nft,
 			"no_netfilter": !ok && nftNetfilterMissing(e), "enabled": fc.Enabled, "rules": rules,
-			"ports": c.Lang.withPortLabels(known), "active": ok && fwTablePresent(), "counters": counters,
+			"vhost_allowed": fc.VhostAllowed,
+			"ports":         c.Lang.withPortLabels(known), "active": ok && fwTablePresent(), "counters": counters,
 			"asns": asnInfo(fwRuleASNs(fc.Rules)), "lists": listsInfo(fc.Rules),
 			"client_ip": nullable(client), "client_verdicts": verdicts,
 			"panel_port": fwPanelPort(), "in_docker": inDocker, "standalone": standalone,
@@ -1956,6 +2054,16 @@ func init() {
 			c.Fail(http.StatusBadRequest, err.Error())
 			return
 		}
+		// Absente du corps (interface antérieure) : la liste enregistrée reste.
+		// Missing from the body (older interface): the saved list is kept.
+		vhostAllowed := fwCfg().VhostAllowed
+		if v, ok := data["vhost_allowed"]; ok {
+			vhostAllowed = strings.TrimSpace(pyStr(v))
+			if err := c.Lang.fwCheckVhostAllowed(vhostAllowed); err != nil {
+				c.Fail(http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		if msg := c.Lang.fwEnsureLists(rules); msg != "" {
 			c.Fail(http.StatusBadGateway, msg+c.M(". Rien n'a changé.", ". Nothing was changed."))
 			return
@@ -1967,7 +2075,7 @@ func init() {
 				return
 			}
 		}
-		next := fwConfig{truthy(data["enabled"]), rules}
+		next := fwConfig{truthy(data["enabled"]), rules, vhostAllowed}
 		if ok, msg := fwApply(&next); !ok {
 			if msg == "" {
 				msg = c.M("erreur inconnue", "unknown error")
@@ -1979,7 +2087,7 @@ func init() {
 		for i, r := range rules {
 			ruleList[i] = r
 		}
-		if _, err := cfgUpdate(Cfg{"firewall": map[string]any{"enabled": next.Enabled, "rules": ruleList}}); err != nil {
+		if _, err := cfgUpdate(Cfg{"firewall": map[string]any{"enabled": next.Enabled, "rules": ruleList, "vhost_allowed": vhostAllowed}}); err != nil {
 			c.Fail(http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -2025,7 +2133,7 @@ func init() {
 				return
 			}
 		}
-		verdicts := fwVerdicts(ipText, fwConfig{true, rules}, fwKnownPorts())
+		verdicts := fwVerdicts(ipText, fwConfig{true, rules, str(data, "vhost_allowed", fwCfg().VhostAllowed)}, fwKnownPorts())
 		c.JSON(J{"ok": true, "verdicts": c.Lang.withPortLabels(verdicts)})
 	}))
 

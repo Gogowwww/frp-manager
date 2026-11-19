@@ -23,6 +23,7 @@ const S = {
   frps: '',             // frps affiché : ses règles et ses ports / frps shown: its rules and ports
   enabled: false,
   rules: [],
+  vhostAllowed: '',
   snapshot: '',
   live: null,
   catalog: null,        // listes communautaires, une fois le catalogue ouvert
@@ -34,7 +35,7 @@ function stopLive() {
   S.live = null;
 }
 
-const snapshotOf = () => JSON.stringify([S.enabled, S.rules]);
+const snapshotOf = () => JSON.stringify([S.enabled, S.rules, S.vhostAllowed]);
 
 // Règle ou port du frps choisi ; une règle sans frps (créée avant ce choix) ou
 // un port sans frps connu vaut pour tous.
@@ -96,6 +97,7 @@ async function load() {
   }
   S.enabled = S.data.enabled;
   S.rules = S.data.rules.map((r) => ({ ...r, sources: r.sources.map((s) => ({ ...s })) }));
+  S.vhostAllowed = S.data.vhost_allowed || '';
   S.snapshot = snapshotOf();
   const list = S.data.frps || [];
   let saved = '';
@@ -197,6 +199,7 @@ function build() {
     head,
     // État et test d'adresse côte à côte, règles et tableaux en pleine largeur
     h('div', { class: 'grid-2 card-pair' }, S.els.status, testSection()),
+    vhostCard(),
     h('section', null,
       h('div', { class: 'section-head' },
         h('div', null,
@@ -220,6 +223,7 @@ function build() {
 function render() {
   if (!S.els.status) return;
   renderStatus();
+  renderVhost();
   renderRules();
   renderPorts();
   S.els.savebar.hidden = !isDirty();
@@ -371,14 +375,54 @@ function renderPorts() {
       h('th', null, t('firewall.col.port')), h('th', null, t('firewall.col.use')), h('th', null, t('firewall.col.access')))),
     h('tbody', null, ports.map((p) => {
       const rules = active.filter((r) => ruleCovers(r, p));
+      const labels = rules.map(ruleTitle);
+      if (S.enabled && S.vhostAllowed.trim() && (p.kind === 'vhost' || /vhost/i.test(p.label || ''))) {
+        labels.push(t('firewall.vhost.ruleName'));
+      }
       return h('tr', null,
         h('td', { class: 'mono' }, portText(p), p.proto !== 'any' ? h('span', { class: 'muted' }, ` /${p.proto}`) : null),
         h('td', null, p.label,
           p.kind === 'proxy' ? badge(t(p.online ? 'firewall.online' : 'firewall.offline'), p.online ? 'success' : '', { style: { marginLeft: '8px' } }) : null),
-        h('td', null, rules.length
-          ? h('span', { class: 'fw-filtered' }, icon('shield'), rules.map(ruleTitle).join(', '))
+        h('td', null, labels.length
+          ? h('span', { class: 'fw-filtered' }, icon('shield'), labels.join(', '))
           : h('span', { class: 'muted' }, t('firewall.openToAll'))));
     })))));
+}
+
+// ── Sites HTTP/HTTPS ───────────────────────────────────────────────────────
+
+let renderVhost = () => {};
+
+/** Liste des adresses autorisées sur les ports HTTP/HTTPS (vhost) de frps.
+ *  Allowed addresses on the frps HTTP/HTTPS (vhost) ports. */
+function vhostCard() {
+  const area = h('textarea', {
+    class: 'input input-mono fw-textarea', rows: 4, spellcheck: 'false',
+    placeholder: '203.0.113.4\n192.168.1.0/24', 'aria-label': t('firewall.vhost.label'),
+  });
+  area.value = S.vhostAllowed;
+  area.addEventListener('input', () => { S.vhostAllowed = area.value; render(); });
+  S.els.vhostInput = area;
+  const note = h('div', { class: 'form-stack' });
+  S.els.vhostNote = note;
+
+  renderVhost = () => {
+    const ports = (S.data.ports || []).filter((p) => p.kind === 'vhost' || /vhost/i.test(p.label || ''));
+    note.replaceChildren(
+      !S.enabled ? callout({ type: 'warn', compact: true, text: t('firewall.vhost.off') }) : null,
+      ports.length
+        ? h('p', { class: 'field-hint' }, t('firewall.vhost.ports', { ports: ports.map(portText).join(', ') }))
+        : callout({ type: 'neutral', compact: true, text: t('firewall.vhost.noPorts') }));
+  };
+  renderVhost();
+
+  return card({
+    title: t('firewall.vhost.title'), description: t('firewall.vhost.desc'),
+    body: h('div', { class: 'form-stack' },
+      field({ label: t('firewall.vhost.label'), hint: t('firewall.vhost.hint'), control: area }),
+      note,
+      h('p', { class: 'field-hint' }, t('firewall.vhost.note'))),
+  });
 }
 
 // ── Tester une adresse ─────────────────────────────────────────────────────
@@ -390,12 +434,17 @@ function testSection() {
   const run = async (e) => {
     e.preventDefault();
     try {
-      const d = await api('/api/firewall/test', { method: 'POST', body: { ip: ip.value.trim(), rules: S.enabled ? S.rules : [] } });
+      const d = await api('/api/firewall/test', {
+        method: 'POST',
+        body: { ip: ip.value.trim(), rules: S.enabled ? S.rules : [], vhost_allowed: S.enabled ? S.vhostAllowed : '' },
+      });
       if (!d.ok) { toastResult(d); return; }
       out.replaceChildren(h('ul', { class: 'fw-verdicts' }, d.verdicts.filter(ofFrps).map((v) => h('li', null,
         h('span', { class: `fw-dot ${v.blocked_by.length ? 'is-blocked' : 'is-ok'}` }),
         h('span', { class: 'mono' }, portText(v)), ' ', h('span', { class: 'muted' }, v.label), ' — ',
-        v.blocked_by.length ? t('firewall.testBlocked', { rules: v.blocked_by.join(', ') }) : t('firewall.testOk')))));
+        v.blocked_by.length
+          ? t('firewall.testBlocked', { rules: v.blocked_by.map((x) => (x === 'vhost' ? t('firewall.vhost.ruleName') : x)).join(', ') })
+          : t('firewall.testOk')))));
     } catch (err) { toastError(err); }
   };
   const btn = button(t('firewall.test'), { type: 'submit', form: 'fw-test' });
@@ -431,6 +480,7 @@ function blockedSection() {
     if (!d.entries.length) { note(t('firewall.blockedEmpty')); return; }
     const now = Date.now() / 1000 + skew;
     const byId = Object.fromEntries(S.rules.map((r) => [r.id, ruleTitle(r)]));
+    if (S.vhostAllowed.trim()) byId.vhost = t('firewall.vhost.ruleName');
     body.replaceChildren(
       h('div', { class: 'fw-table-wrap' }, h('table', { class: 'fw-table' },
         h('thead', null, h('tr', null,
@@ -913,6 +963,8 @@ async function removeRule(rule) {
 function discard() {
   S.enabled = S.data.enabled;
   S.rules = S.data.rules.map((r) => ({ ...r, sources: r.sources.map((s) => ({ ...s })) }));
+  S.vhostAllowed = S.data.vhost_allowed || '';
+  if (S.els.vhostInput) S.els.vhostInput.value = S.vhostAllowed;
   render();
 }
 
@@ -920,7 +972,7 @@ async function save() {
   // Votre propre adresse serait-elle bloquée ? (seulement si le panel la connaît)
   if (S.enabled && S.data.client_ip) {
     try {
-      const d = await api('/api/firewall/test', { method: 'POST', body: { ip: S.data.client_ip, rules: S.rules } });
+      const d = await api('/api/firewall/test', { method: 'POST', body: { ip: S.data.client_ip, rules: S.rules, vhost_allowed: S.vhostAllowed } });
       const blocked = d.ok ? d.verdicts.filter((v) => v.blocked_by.length) : [];
       if (blocked.length) {
         const go = await confirmDialog({
@@ -933,7 +985,7 @@ async function save() {
     } catch { /* test indisponible : on laisse le serveur valider */ }
   }
   try {
-    const d = await api('/api/firewall', { method: 'POST', body: { enabled: S.enabled, rules: S.rules } });
+    const d = await api('/api/firewall', { method: 'POST', body: { enabled: S.enabled, rules: S.rules, vhost_allowed: S.vhostAllowed } });
     toastResult(d, t('firewall.applied'));
     if (d.ok) await load();
   } catch (e) { toastError(e); }

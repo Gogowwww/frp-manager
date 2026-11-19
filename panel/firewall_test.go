@@ -107,9 +107,9 @@ func TestFirewallRulesetLikePython(t *testing.T) {
 	for name, c := range map[string]struct {
 		got, want string
 	}{
-		"seen":     {fwRuleset(fwConfig{true, rules}, known, true), p.RulesetSeen},
-		"noseen":   {fwRuleset(fwConfig{true, rules}, known, false), p.RulesetNoSeen},
-		"disabled": {fwRuleset(fwConfig{false, rules}, known, true), p.RulesetDisabled},
+		"seen":     {fwRuleset(fwConfig{true, rules, ""}, known, true), p.RulesetSeen},
+		"noseen":   {fwRuleset(fwConfig{true, rules, ""}, known, false), p.RulesetNoSeen},
+		"disabled": {fwRuleset(fwConfig{false, rules, ""}, known, true), p.RulesetDisabled},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s :\n--- Go ---\n%s\n--- Python ---\n%s", name, c.got, c.want)
@@ -122,7 +122,7 @@ func TestFirewallVerdictsLikePython(t *testing.T) {
 	rules, known := normalizedRules(t, p), knownFrom(p)
 	for ip, want := range p.Verdicts {
 		var a, b any
-		json.Unmarshal([]byte(asJSON(fwVerdicts(ip, fwConfig{true, rules}, known))), &a)
+		json.Unmarshal([]byte(asJSON(fwVerdicts(ip, fwConfig{true, rules, ""}, known))), &a)
 		json.Unmarshal([]byte(asJSON(want)), &b)
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s :\nGo : %s\nPython : %s", ip, asJSON(a), asJSON(b))
@@ -238,12 +238,12 @@ func TestFirewallSaveAppliesWithNft(t *testing.T) {
 		return false, "", "absent"
 	}
 	c := e.owner()
-	r := c.post("/api/firewall", J{"enabled": true, "rules": []any{J{"name": "SSH", "mode": "block", "ports": "7000", "sources": []any{J{"cidr": "203.0.113.4"}}}}})
+	r := c.post("/api/firewall", J{"enabled": true, "rules": []any{J{"name": "SSH", "mode": "block", "ports": "7000", "sources": []any{J{"cidr": "203.0.113.4"}}}}, "vhost_allowed": "198.51.100.0/24"})
 	expectCode(t, r, 200)
 	if len(applied) != 1 || !strings.Contains(applied[0], "elements = { 203.0.113.4/32 }") {
 		t.Fatalf("%v", applied)
 	}
-	if fw := e.savedConfig()["firewall"].(map[string]any); fw["enabled"] != true || len(fw["rules"].([]any)) != 1 {
+	if fw := e.savedConfig()["firewall"].(map[string]any); fw["enabled"] != true || len(fw["rules"].([]any)) != 1 || fw["vhost_allowed"] != "198.51.100.0/24" {
 		t.Fatalf("%v", fw)
 	}
 	g := c.get("/api/firewall").json()
@@ -260,6 +260,53 @@ func TestFirewallSaveAppliesWithNft(t *testing.T) {
 	}
 	// Règle invalide
 	expectCode(t, c.post("/api/firewall", J{"enabled": true, "rules": []any{J{"mode": "block", "ports": "7000"}}}), 400)
+	// Adresse autorisée invalide pour les sites HTTP/HTTPS
+	expectCode(t, c.post("/api/firewall", J{"enabled": true, "rules": []any{}, "vhost_allowed": "nawak"}), 400)
+}
+
+// Liste blanche des sites HTTP/HTTPS : une règle implicite « autoriser » sur
+// les ports vhost, sans toucher aux autres ports ni au port du panel.
+// HTTP/HTTPS sites allow list: an implicit "allow" rule on the vhost ports,
+// leaving other ports and the panel port untouched.
+func TestFirewallVhostAllowList(t *testing.T) {
+	setup(t)
+	known := []J{
+		{"start": 80, "end": 80, "proto": "tcp", "label": "Sites HTTP (vhost)", "kind": "vhost", "frps": "frps"},
+		{"start": 443, "end": 443, "proto": "tcp", "label": "Sites HTTPS (vhost)", "kind": "vhost", "frps": "frps"},
+		{"start": 7000, "end": 7000, "proto": "tcp", "label": "Connexion des clients frpc", "kind": "config", "frps": "frps"},
+	}
+	c := fwConfig{Enabled: true, VhostAllowed: "203.0.113.4, 10.0.0.0/8"}
+	nft := fwRuleset(c, known, false)
+	for _, want := range []string{"elements = { 80, 443 }", "203.0.113.4/32", "10.0.0.0/8", "saddr != @r0_v4"} {
+		if !strings.Contains(nft, want) {
+			t.Fatalf("%q manquant dans\n%s", want, nft)
+		}
+	}
+	if strings.Contains(nft, "7000") {
+		t.Fatalf("port frpc filtré :\n%s", nft)
+	}
+	if strings.Contains(fwRuleset(fwConfig{Enabled: true}, known, false), "chain filter") {
+		t.Fatal("liste vide : filtrage appliqué")
+	}
+	if strings.Contains(fwRuleset(fwConfig{Enabled: false, VhostAllowed: "203.0.113.4"}, known, false), "chain filter") {
+		t.Fatal("pare-feu désactivé : filtrage appliqué")
+	}
+	for _, v := range fwVerdicts("198.51.100.9", c, known) {
+		if isVhostPort(v) && len(v["blocked_by"].([]string)) == 0 {
+			t.Fatalf("adresse non autorisée acceptée sur le port %v", v["start"])
+		}
+	}
+	for _, v := range fwVerdicts("203.0.113.4", c, known) {
+		if len(v["blocked_by"].([]string)) != 0 {
+			t.Fatalf("adresse autorisée bloquée sur le port %v", v["start"])
+		}
+	}
+	if err := FR.fwCheckVhostAllowed("192.168.1.0/24, 2001:db8::1"); err != nil {
+		t.Fatalf("liste valide refusée : %v", err)
+	}
+	if err := FR.fwCheckVhostAllowed("nawak"); err == nil {
+		t.Fatal("adresse invalide acceptée")
+	}
 }
 
 // Démarrage du panel (table absente, rien d'appliqué par ce processus) : la
@@ -352,7 +399,7 @@ func TestFirewallRulePerFrps(t *testing.T) {
 	}
 	// Ruleset : la règle de frps-secours ne touche que 17307
 	// Ruleset: the frps-secours rule only touches 17307
-	nft := fwRuleset(fwConfig{true, []J{{"id": "ab", "mode": "allow", "ports": "*", "frps": "frps-secours", "sources": []any{}}}}, known, false)
+	nft := fwRuleset(fwConfig{true, []J{{"id": "ab", "mode": "allow", "ports": "*", "frps": "frps-secours", "sources": []any{}}}, ""}, known, false)
 	if !strings.Contains(nft, "elements = { 17307 }") || strings.Contains(nft, "7000") {
 		t.Fatalf("%s", nft)
 	}
