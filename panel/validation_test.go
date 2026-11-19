@@ -316,7 +316,7 @@ func TestReinstallOnlyOneBinary(t *testing.T) {
 	saved := frpBinDir
 	defer func() { frpBinDir = saved }()
 	frpBinDir = t.TempDir()
-	os.WriteFile(filepath.Join(frpBinDir, "frps"), []byte("ancien frps"), 0o755)
+	os.WriteFile(filepath.Join(frpBinDir, binFile("frps")), []byte("ancien frps"), 0o755)
 	saveState(map[string]any{"installed_version": "0.70.0"})
 	var calls []string
 	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
@@ -337,10 +337,10 @@ func TestReinstallOnlyOneBinary(t *testing.T) {
 	if !installFromArchive(FR, arc, "0.70.0", []string{"frpc"}, func(string) {}) {
 		t.Fatal("échec")
 	}
-	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frps")); string(b) != "ancien frps" {
+	if b, _ := os.ReadFile(filepath.Join(frpBinDir, binFile("frps"))); string(b) != "ancien frps" {
 		t.Fatal("frps remplacé")
 	}
-	if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frpc")); !bytes.Equal(b, elfBin) {
+	if b, _ := os.ReadFile(filepath.Join(frpBinDir, binFile("frpc"))); !bytes.Equal(b, elfBin) {
 		t.Fatal("frpc non installé")
 	}
 	if !reflect.DeepEqual(calls, []string{"systemctl stop frpc-maison", "systemctl start frpc-maison"}) {
@@ -370,7 +370,7 @@ func TestBadArchiveKeepsServicesRunning(t *testing.T) {
 	saved := frpBinDir
 	defer func() { frpBinDir = saved }()
 	frpBinDir = t.TempDir()
-	os.WriteFile(filepath.Join(frpBinDir, "frps"), []byte("ancien frps"), 0o755)
+	os.WriteFile(filepath.Join(frpBinDir, binFile("frps")), []byte("ancien frps"), 0o755)
 	var calls []string
 	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
 		switch {
@@ -410,7 +410,7 @@ func TestBadArchiveKeepsServicesRunning(t *testing.T) {
 		if len(calls) != 0 {
 			t.Errorf("%s : services touchés %v", name, calls)
 		}
-		if b, _ := os.ReadFile(filepath.Join(frpBinDir, "frps")); string(b) != "ancien frps" {
+		if b, _ := os.ReadFile(filepath.Join(frpBinDir, binFile("frps"))); string(b) != "ancien frps" {
 			t.Errorf("%s : frps remplacé", name)
 		}
 		if len(lines) == 0 || !strings.HasPrefix(lines[len(lines)-1], "[ERROR]") {
@@ -423,6 +423,55 @@ func TestBadArchiveKeepsServicesRunning(t *testing.T) {
 	}
 	if !reflect.DeepEqual(calls, []string{"systemctl stop frps", "systemctl stop frpc", "systemctl start frps", "systemctl start frpc"}) {
 		t.Fatalf("%v", calls)
+	}
+}
+
+// Archive .zip de la release Windows : frps.exe et frpc.exe extraits, chemins
+// qui sortent du dossier refusés.
+// Windows release .zip archive: frps.exe and frpc.exe extracted, paths escaping
+// the folder rejected.
+func TestExtractWindowsZip(t *testing.T) {
+	dir := t.TempDir()
+	makeZip := func(file string, members map[string]string) string {
+		p := filepath.Join(dir, file)
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw := zip.NewWriter(f)
+		for name, body := range members {
+			w, err := zw.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write([]byte(body))
+		}
+		zw.Close()
+		f.Close()
+		return p
+	}
+	out := filepath.Join(dir, "out")
+	os.MkdirAll(out, 0o755)
+	arc := makeZip("frp.zip", map[string]string{
+		"frp_0.72.0_windows_amd64/frps.exe": "MZfrps",
+		"frp_0.72.0_windows_amd64/frpc.exe": "MZfrpc",
+	})
+	got, err := extractFrpBinaries(FR, arc, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["frps"] == "" || got["frpc"] == "" || !fileExists(filepath.Join(out, "frps.exe")) || !fileExists(filepath.Join(out, "frpc.exe")) {
+		t.Fatalf("%v", got)
+	}
+	out2 := filepath.Join(dir, "out2")
+	os.MkdirAll(out2, 0o755)
+	bad := makeZip("evil.zip", map[string]string{"../frps.exe": "MZfrps"})
+	if _, err := extractFrpBinaries(FR, bad, out2); err == nil {
+		t.Fatal("chemin suspect accepté")
+	}
+	notExe := makeZip("sh.zip", map[string]string{"frp/frps.exe": "#!/bin/sh\n"})
+	if _, err := extractFrpBinaries(FR, notExe, out2); err == nil {
+		t.Fatal("non-exécutable Windows accepté")
 	}
 }
 
@@ -456,7 +505,7 @@ func TestReinstallService(t *testing.T) {
 		t.Fatal(updateLog.snapshot())
 	}
 	unit, _ := os.ReadFile(unitDir + "frpc.service")
-	exec := "ExecStart=" + filepath.Join(frpBinDir, "frpc") + " -c " + filepath.Join(frpConfDir, "frpc.toml") + "\n"
+	exec := "ExecStart=" + filepath.Join(frpBinDir, binFile("frpc")) + " -c " + filepath.Join(frpConfDir, "frpc.toml") + "\n"
 	if !strings.Contains(string(unit), exec) || !strings.Contains(string(unit), "Description=frp client (frpc)") {
 		t.Fatalf("unité :\n%s", unit)
 	}
@@ -477,11 +526,8 @@ func TestReinstallService(t *testing.T) {
 
 	// frps : programme présent, config conservée et rendue à la détection
 	os.MkdirAll(frpBinDir, 0o755)
-	os.WriteFile(filepath.Join(frpBinDir, "frps"), elfBin, 0o755)
+	os.WriteFile(filepath.Join(frpBinDir, binFile("frps")), elfBin, 0o755)
 	os.WriteFile(frpsConf, []byte("bindPort = 7100\n"), 0o600)
-	if !isExecutable(filepath.Join(frpBinDir, "frps")) {
-		binarySearchPaths = nil // Windows : pas de bit exécutable, le programme passe pour absent
-	}
 	if !reinstallService(FR, "frps", "0.70.0") {
 		t.Fatal(updateLog.snapshot())
 	}

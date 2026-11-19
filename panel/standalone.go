@@ -114,7 +114,7 @@ func linkDataDirs(data string) {
 // panel) comes before the image's one, unless the image brings a newer one (new
 // image pulled since).
 func standaloneBinary(name string) string {
-	persist, embedded := filepath.Join(frpPersistDir, name), filepath.Join(frpEmbeddedDir, name)
+	persist, embedded := filepath.Join(frpPersistDir, binFile(name)), filepath.Join(frpEmbeddedDir, binFile(name))
 	switch {
 	case !isExecutable(persist) && !isExecutable(embedded):
 		return ""
@@ -181,7 +181,7 @@ func standaloneInstances() map[string]*Instance {
 		if bin != "" {
 			version = readVersion(bin)
 		} else {
-			bin = filepath.Join(frpEmbeddedDir, binType)
+			bin = filepath.Join(frpEmbeddedDir, binFile(binType))
 		}
 		for _, conf := range findAllConfigs(binType) {
 			id := standaloneID(conf, binType)

@@ -250,7 +250,7 @@ func standaloneEnv(t *testing.T, mode *string) *testEnv {
 	os.MkdirAll(frpEmbeddedDir, 0o755)
 	os.MkdirAll(frpConfDir, 0o755)
 	for _, b := range frpBinaries {
-		os.WriteFile(filepath.Join(frpEmbeddedDir, b), []byte("#!/bin/sh\n"), 0o755)
+		os.WriteFile(filepath.Join(frpEmbeddedDir, binFile(b)), []byte("#!/bin/sh\n"), 0o755)
 	}
 	restartBase, startObserve, stopTimeout = 50*time.Millisecond, 400*time.Millisecond, 3*time.Second
 	frpCommand = func(inst *Instance) *exec.Cmd {
@@ -412,14 +412,14 @@ func TestStandaloneBinaryChoice(t *testing.T) {
 	mode := "run"
 	standaloneEnv(t, &mode)
 	// Image seule / Image only
-	if got := findBinary("frps"); got != filepath.Join(frpEmbeddedDir, "frps") {
+	if got := findBinary("frps"); got != filepath.Join(frpEmbeddedDir, binFile("frps")) {
 		t.Fatalf("image : %s", got)
 	}
 	// Mise à jour depuis le panel : le dossier persistant passe avant
 	// Update from the panel: the persistent folder comes first
 	os.MkdirAll(frpPersistDir, 0o755)
-	os.WriteFile(filepath.Join(frpPersistDir, "frps"), []byte("#!/bin/sh\n"), 0o755)
-	versions := map[string]string{filepath.Join(frpPersistDir, "frps"): "0.72.0", filepath.Join(frpEmbeddedDir, "frps"): "0.71.1"}
+	os.WriteFile(filepath.Join(frpPersistDir, binFile("frps")), []byte("#!/bin/sh\n"), 0o755)
+	versions := map[string]string{filepath.Join(frpPersistDir, binFile("frps")): "0.72.0", filepath.Join(frpEmbeddedDir, binFile("frps")): "0.71.1"}
 	execCmd = func(args []string, _ time.Duration, _ *string) (bool, string, string) {
 		if v, ok := versions[args[0]]; ok && len(args) == 2 && args[1] == "--version" {
 			return true, v, ""
@@ -429,7 +429,7 @@ func TestStandaloneBinaryChoice(t *testing.T) {
 	versionCacheMu.Lock()
 	versionCache = map[string]versionEntry{}
 	versionCacheMu.Unlock()
-	if got := findBinary("frps"); got != filepath.Join(frpPersistDir, "frps") {
+	if got := findBinary("frps"); got != filepath.Join(frpPersistDir, binFile("frps")) {
 		t.Fatalf("persistant : %s", got)
 	}
 	if v := frpInstalledVersion(); v != "0.72.0" {
@@ -437,11 +437,11 @@ func TestStandaloneBinaryChoice(t *testing.T) {
 	}
 	// Nouvelle image plus récente que la mise à jour : l'image reprend la main
 	// New image newer than the update: the image takes over again
-	versions[filepath.Join(frpEmbeddedDir, "frps")] = "0.73.0"
+	versions[filepath.Join(frpEmbeddedDir, binFile("frps"))] = "0.73.0"
 	versionCacheMu.Lock()
 	versionCache = map[string]versionEntry{}
 	versionCacheMu.Unlock()
-	if got := findBinary("frps"); got != filepath.Join(frpEmbeddedDir, "frps") {
+	if got := findBinary("frps"); got != filepath.Join(frpEmbeddedDir, binFile("frps")) {
 		t.Fatalf("image plus récente : %s", got)
 	}
 }

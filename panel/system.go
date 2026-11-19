@@ -206,6 +206,15 @@ func hostRemoveFile(p string) bool {
 	return ok
 }
 
+// binFile : nom de fichier du programme frp sur cette plateforme (frps.exe sous Windows).
+// binFile: file name of the frp program on this platform (frps.exe under Windows).
+func binFile(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
 func getArch() string {
 	switch runtime.GOARCH {
 	case "arm64":
@@ -232,7 +241,16 @@ func (l Lang) serviceAction(name, action string) (bool, string) {
 
 func isExecutable(p string) bool {
 	st, err := os.Stat(p)
-	return err == nil && !st.IsDir() && st.Mode()&0o111 != 0
+	if err != nil || st.IsDir() {
+		return false
+	}
+	// Windows : le mode d'un fichier ne porte jamais de bit exécutable, un
+	// fichier existant suffit. / Windows: a file's mode never carries an
+	// execute bit, an existing file is enough.
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	return st.Mode()&0o111 != 0
 }
 
 // ── Socket Docker ───────────────────────────────────────────────────────────
@@ -537,7 +555,7 @@ func findBinary(name string) string {
 		return standaloneBinary(name)
 	}
 	for _, d := range binarySearchPaths {
-		if c := filepath.Join(d, name); isExecutable(c) {
+		if c := filepath.Join(d, binFile(name)); isExecutable(c) {
 			return c
 		}
 	}
@@ -783,7 +801,7 @@ func buildInstances() map[string]*Instance {
 				}
 				b := bin
 				if b == "" {
-					b = filepath.Join(frpBinDir, binType)
+					b = filepath.Join(frpBinDir, binFile(binType))
 				}
 				// Journal : le log.to de la config s'il est donné (une config déposée à
 				// la main peut garder celui d'une autre instance)

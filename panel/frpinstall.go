@@ -5,6 +5,7 @@ package main
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"compress/flate"
 	"compress/gzip"
 	"crypto/sha256"
@@ -373,9 +374,20 @@ func downloadToTemp(l Lang, url, suffix string, maxBytes int64) (string, string,
 	return tmp.Name(), hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// frpArchive : nom du fichier de la release pour cette plateforme (.zip de la
+// release Windows, .tar.gz sinon).
+// frpArchive: release file name for this platform (.zip from the Windows
+// release, .tar.gz otherwise).
+func frpArchive(version string) string {
+	if runtime.GOOS == "windows" {
+		return fmt.Sprintf("frp_%s_windows_%s.zip", version, getArch())
+	}
+	return fmt.Sprintf("frp_%s_linux_%s.tar.gz", version, getArch())
+}
+
 // downloadArchive : archive frp téléchargée ET vérifiée (SHA-256) → (chemin, nom).
 func downloadArchive(l Lang, version, tag string, logf func(string)) (string, string) {
-	filename := fmt.Sprintf("frp_%s_linux_%s.tar.gz", version, getArch())
+	filename := frpArchive(version)
 	sums, trusted := fetchFrpChecksums(l, tag, logf)
 	expected := sums[filename]
 	if expected == "" {
@@ -515,6 +527,16 @@ func isFlateErr(err error) bool {
 }
 
 func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error) {
+	// Release Windows : archive .zip (MZ), pas .tar.gz (ELF)
+	// Windows release: a .zip archive (MZ), not .tar.gz (ELF)
+	if f, err := os.Open(archive); err == nil {
+		head := make([]byte, 4)
+		io.ReadFull(f, head)
+		f.Close()
+		if string(head) == "PK\x03\x04" {
+			return extractFrpZip(l, archive, dest)
+		}
+	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return nil, err
@@ -645,6 +667,77 @@ func extractFrpBinaries(l Lang, archive, dest string) (map[string]string, error)
 	return found, nil
 }
 
+// extractFrpZip : frps.exe et frpc.exe d'une archive .zip (release Windows) →
+// {nom sans extension: chemin extrait}. Mêmes refus que pour le tar.gz :
+// chemins absolus ou avec « .. », liens, taille décompressée plafonnée.
+// extractFrpZip: frps.exe and frpc.exe from a .zip archive (Windows release) →
+// {name without extension: extracted path}. Same rejections as for the tar.gz:
+// absolute or “..” paths, links, capped decompressed size.
+func extractFrpZip(l Lang, archive, dest string) (map[string]string, error) {
+	zr, err := zip.OpenReader(archive)
+	if err != nil {
+		return nil, errors.New(l.M("archive illisible (pas un .zip valide, tronquée ou abîmée) : "+err.Error(),
+			"unreadable archive (not a valid .zip, truncated or damaged): "+err.Error()))
+	}
+	defer zr.Close()
+	found := map[string]string{}
+	var total int64
+	for i, f := range zr.File {
+		if i >= archiveMaxMembers {
+			return nil, errors.New(l.M("archive refusée : trop d'entrées", "archive rejected: too many entries"))
+		}
+		if strings.HasPrefix(f.Name, "/") || strings.Contains(f.Name, "..") || strings.Contains(f.Name, "\\") {
+			return nil, errors.New(l.M("archive refusée : chemin suspect « "+f.Name+" »", "archive rejected: suspicious path “"+f.Name+"”"))
+		}
+		parts := posixParts(f.Name)
+		if len(parts) == 0 {
+			continue
+		}
+		base := parts[len(parts)-1]
+		name := strings.TrimSuffix(base, ".exe")
+		if (name != "frps" && name != "frpc") || len(parts) > 2 || found[name] != "" {
+			continue
+		}
+		if f.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New(l.M("archive refusée : "+f.Name+" est un lien", "archive rejected: "+f.Name+" is a link"))
+		}
+		total += int64(f.UncompressedSize64)
+		if total > archiveMaxUnpacked {
+			return nil, errors.New(l.M("archive refusée : trop volumineuse une fois décompressée", "archive rejected: too large once decompressed"))
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, err
+		}
+		out := filepath.Join(dest, base)
+		w, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+		if err != nil {
+			rc.Close()
+			return nil, err
+		}
+		n, err := io.Copy(w, io.LimitReader(rc, int64(f.UncompressedSize64)+1))
+		rc.Close()
+		w.Close()
+		if err != nil {
+			return nil, err
+		}
+		if n > int64(f.UncompressedSize64) {
+			return nil, errors.New(l.M("archive refusée : taille incohérente", "archive rejected: inconsistent size"))
+		}
+		head := make([]byte, 2)
+		if r, err := os.Open(out); err == nil {
+			io.ReadFull(r, head)
+			r.Close()
+		}
+		if string(head) != "MZ" {
+			return nil, errors.New(l.M("archive refusée : "+f.Name+" n'est pas un exécutable Windows",
+				"archive rejected: "+f.Name+" is not a Windows executable"))
+		}
+		found[name] = out
+	}
+	return found, nil
+}
+
 // installFile copie src vers dst par un fichier voisin renommé : jamais de
 // binaire à moitié écrit, et pas d'erreur « text file busy ».
 func installFile(src, dst string, mode os.FileMode) error {
@@ -671,7 +764,15 @@ func installFile(src, dst string, mode os.FileMode) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := os.Rename(tmp, dst); err != nil {
+		// Remplacement refusé (programme en cours, droits) : pas de fichier
+		// temporaire laissé à côté du binaire.
+		// Replacement refused (program running, rights): no temporary file left
+		// next to the binary.
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // installFromArchive installe les programmes only de l'archive (tous si nil) :
@@ -738,7 +839,7 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 	os.MkdirAll(frpBinDir, 0o755) // dossier persistant du mode autonome / standalone mode persistent folder
 	for _, b := range bins {
 		src := extracted[b]
-		dst := filepath.Join(frpBinDir, b)
+		dst := filepath.Join(frpBinDir, binFile(b))
 		if err := installFile(src, dst, 0o755); err != nil {
 			logf("[ERROR] " + err.Error())
 			return false
@@ -779,7 +880,7 @@ func installFromArchive(l Lang, archive, version string, only []string, logf fun
 // si frps/frpc manquent (utilisé par install.sh). → code de sortie.
 func installFrpCLI() int {
 	l := systemLang()
-	if fileExists(filepath.Join(frpBinDir, "frps")) && fileExists(filepath.Join(frpBinDir, "frpc")) {
+	if fileExists(filepath.Join(frpBinDir, binFile("frps"))) && fileExists(filepath.Join(frpBinDir, binFile("frpc"))) {
 		fmt.Println(l.M("frps et frpc sont déjà installés.", "frps and frpc are already installed."))
 		return 0
 	}
