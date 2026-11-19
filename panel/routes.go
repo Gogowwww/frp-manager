@@ -502,6 +502,29 @@ func init() {
 			}
 			patch["trusted_proxies"] = raw
 		}
+		// Ports HTTPS en reverse proxy avec certificats (voir sitecerts.go)
+		// HTTPS ports as a reverse proxy with certificates (see sitecerts.go)
+		if v, ok := data["https_proxy_cert"]; ok {
+			patch["https_proxy_cert"] = truthy(v)
+		}
+		if v, ok := data["https_proxy_cert_mode"]; ok {
+			m := strings.TrimSpace(pyStr(v))
+			if m != "https2http" && m != "https2https" {
+				c.Fail(http.StatusBadRequest, c.M("Mode invalide : https2http ou https2https attendu.",
+					"Invalid mode: https2http or https2https expected."))
+				return
+			}
+			patch["https_proxy_cert_mode"] = m
+		}
+		if v, ok := data["https_proxy_cert_id"]; ok {
+			id := strings.TrimSpace(pyStr(v))
+			if id != "" && !siteCertExists(id) {
+				c.Fail(http.StatusBadRequest, c.M("Certificat introuvable : importez-le dans Réglages → Proxy inverse HTTPS.",
+					"Certificate not found: import it in Settings → HTTPS reverse proxy."))
+				return
+			}
+			patch["https_proxy_cert_id"] = id
+		}
 		if v, ok := data["download_mirrors"]; ok {
 			patch["download_mirrors"] = truthy(v)
 		}
@@ -654,7 +677,7 @@ func frpInstalledVersion() any {
 	re := regexp.MustCompile(`(\d+\.\d+\.\d+)`)
 	for _, name := range frpBinaries {
 		for _, d := range binarySearchPaths {
-			b := filepath.Join(d, name)
+			b := filepath.Join(d, binFile(name))
 			if !isExecutable(b) {
 				continue
 			}
@@ -675,6 +698,19 @@ func frpInstalledVersion() any {
 // Seules les unités créées par l'admin sont supprimées ; celles d'un paquet
 // (/usr/lib, /lib) seraient réinstallées à la prochaine mise à jour.
 var unitDir = "/etc/systemd/system/"
+
+// systemdAvailable : le panel peut créer des unités systemd sur cette machine.
+// Faux sous Windows (session de test), où /etc/systemd/system ne serait lu par
+// personne : les services frp ne peuvent pas y être créés.
+// systemdAvailable: the panel can create systemd units on this machine. False
+// under Windows (test session), where /etc/systemd/system would be read by
+// nobody: frp services cannot be created there.
+func systemdAvailable() bool {
+	if dockerEnv {
+		return true // Docker : systemctl passe par nsenter vers l'hôte / via nsenter to the host
+	}
+	return fileExists("/run/systemd/system")
+}
 
 var configSuffixes = []string{".toml", ".ini", ".yaml", ".yml"}
 
@@ -1086,6 +1122,16 @@ func reinstallInstance(c *Ctx) {
 		c.Fail(http.StatusConflict, c.M("Le service "+bin+".service existe déjà.", "The "+bin+".service service already exists."))
 		return
 	}
+	// Avant tout téléchargement : sans systemd, le service ne pourrait pas être
+	// créé et un binaire Linux serait installé pour rien.
+	// Before any download: without systemd the service cannot be created, and a
+	// Linux binary would be installed for nothing.
+	if !standalone && !systemdAvailable() {
+		c.Fail(http.StatusBadRequest, c.M(
+			"Le panel crée les services frps et frpc avec systemd, absent de cette machine : "+bin+".service ne peut pas être créé. Installez frp à la main, ou utilisez le mode autonome (Docker).",
+			"The panel creates the frps and frpc services with systemd, which this machine does not have: "+bin+".service cannot be created. Install frp by hand, or use standalone mode (Docker)."))
+		return
+	}
 	if !updateMu.TryLock() {
 		c.JSON(J{"ok": false, "msg": c.M("Mise à jour déjà en cours", "An update is already running")})
 		return
@@ -1121,7 +1167,7 @@ func reinstallService(l Lang, bin, installed string) bool {
 		if !installMissingBinary(l, bin, installed) {
 			return false
 		}
-		program = filepath.Join(frpBinDir, bin)
+		program = filepath.Join(frpBinDir, binFile(bin))
 	}
 	logf(l.M("[INFO] Programme : "+program, "[INFO] Program: "+program))
 	conf := filepath.Join(frpConfDir, bin+".toml")
@@ -1145,6 +1191,14 @@ func reinstallService(l Lang, bin, installed string) bool {
 		return true
 	}
 	role := map[string]string{"frps": "server", "frpc": "client"}[bin]
+	// Dossier d'unités absent (image minimale) : créé avant d'écrire, sinon
+	// l'écriture échoue sur un chemin brut.
+	// Missing unit folder (minimal image): created before writing, otherwise the
+	// write fails on a raw path.
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		logf("[ERROR] " + err.Error())
+		return false
+	}
 	if err := os.WriteFile(unitDir+unit, []byte(fmt.Sprintf(frpUnitTemplate, role, bin, program, conf)), 0o644); err != nil {
 		logf("[ERROR] " + err.Error())
 		return false

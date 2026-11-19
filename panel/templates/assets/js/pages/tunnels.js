@@ -29,6 +29,9 @@ const S = {
   visitors: [],
   snapshot: '',
   status: null, // état des proxys lu sur l'API de frpc (adresse attribuée par frps)
+  certs: [], // certificats du panel (Réglages → Accès)
+  proxy: null, // réglage « ports HTTPS en reverse proxy avec certificats »
+  certsLoaded: false,
   els: {},
 };
 
@@ -515,8 +518,19 @@ function domainError(kind, ranged, text) {
 const rangeHintKey = (kind) => (hasRemotePort(kind) ? 'tunnels.fields.rangeHint'
   : hasDomains(kind) ? 'tunnels.fields.rangeHintDomains' : 'tunnels.fields.rangeHintPrivate');
 
-function editProxy(existing) {
+async function editProxy(existing) {
   const draft = existing ? { ...existing, extras: existing.extras } : newProxy();
+  // Certificats du panel, lus une fois : ils alimentent le choix du certificat
+  // des tunnels HTTPS.
+  // Panel certificates, read once: they feed the HTTPS tunnel certificate choice.
+  if (!S.certsLoaded) {
+    try {
+      const d = await api('/api/manager/certs');
+      S.certs = d.certs || [];
+      S.proxy = d.proxy || null;
+    } catch { S.certs = []; S.proxy = null; }
+    S.certsLoaded = true;
+  }
 
   openDialog({
     title: existing ? t('tunnels.editTitle', { name: existing.name }) : t('tunnels.newTitle'),
@@ -540,6 +554,62 @@ function editProxy(existing) {
       const rangeHint = h('p', { class: 'field-hint' });
       const domains = input({ value: draft.domains, placeholder: 'app.example.com', mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
+
+      // Certificat du site (tunnels HTTPS) : frpc le présente lui-même via le
+      // plugin https2http / https2https, frps ne fait que router par SNI.
+      // Site certificate (HTTPS tunnels): frpc presents it itself through the
+      // https2http / https2https plugin, frps only routes by SNI.
+      const certOptions = [
+        { value: '', label: t('tunnels.fields.certNone') },
+        ...S.certs.map((c) => ({ value: c.id, label: (c.domains || []).join(', ') || c.id })),
+      ];
+      // Certificat déjà déclaré dans le tunnel mais absent du panel : gardé tel quel
+      // Certificate already declared in the tunnel but missing from the panel: kept as is
+      if (draft.certCrt && !S.certs.some((c) => c.crt_path === draft.certCrt)) {
+        certOptions.push({ value: '__existing', label: draft.certCrt });
+      }
+      // Réglage « ports HTTPS en reverse proxy avec certificats » : son
+      // certificat et son mode sont les valeurs par défaut d'un tunnel nouveau ;
+      // un tunnel existant garde ce qu'il déclare.
+      // "HTTPS ports as a reverse proxy with certificates" setting: its
+      // certificate and mode are the defaults for a new tunnel; an existing
+      // tunnel keeps what it declares.
+      const proxy = S.proxy && S.proxy.ready ? S.proxy : null;
+      const proxyCertID = proxy && S.certs.some((c) => c.id === proxy.cert_id) ? proxy.cert_id : '';
+      const certSelect = select(certOptions,
+        S.certs.find((c) => c.crt_path === draft.certCrt)?.id || (draft.certCrt ? '__existing' : proxyCertID));
+      const certMode = segmented([
+        { value: 'https2http', label: t('tunnels.fields.certModeHttp') },
+        { value: 'https2https', label: t('tunnels.fields.certModeHttps') },
+      ], draft.certPlugin || (proxy ? proxy.mode : '') || 'https2http', () => sync(), { label: t('tunnels.fields.certMode') });
+      const certField = field({ label: t('tunnels.fields.cert'),
+        hint: S.certs.length ? t('tunnels.fields.certHint') : t('tunnels.fields.certMissing'), control: certSelect });
+      const certModeField = field({ label: t('tunnels.fields.certMode'), hint: t('tunnels.fields.certModeHint'), control: certMode });
+      certSelect.addEventListener('change', () => sync());
+
+      // Bandeau jaune des tunnels HTTPS : un port HTTPS n'est servi en reverse
+      // proxy avec certificats que si un certificat est choisi ; le réglage
+      // correspondant vit dans Réglages → Proxy inverse HTTPS.
+      // Yellow banner for HTTPS tunnels: an HTTPS port is only served as a
+      // reverse proxy with certificates when one is chosen; the matching
+      // setting lives in Settings → HTTPS reverse proxy.
+      const httpsNote = h('div');
+      function syncHttpsNote() {
+        if (kindOf(type.value) !== 'https') {
+          httpsNote.replaceChildren();
+          httpsNote.hidden = true;
+          return;
+        }
+        httpsNote.hidden = false;
+        httpsNote.replaceChildren(callout({
+          type: 'warn', compact: true,
+          text: certSelect.value ? t('tunnels.fields.certProxyOn') : t('tunnels.fields.certProxyOff'),
+          actions: [button(t('tunnels.fields.certProxySettings'), {
+            size: 'sm', variant: 'secondary',
+            onClick: () => { close(false); navigate('settings', { s: 'proxy' }); },
+          })],
+        }));
+      }
 
       const nameField = field({ label: t('tunnels.fields.name'), hint: t('tunnels.fields.nameHint'), tomlKey: 'name', control: name });
       const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
@@ -576,6 +646,11 @@ function editProxy(existing) {
         rangeHint.textContent = t(rangeHintKey(kind), { token: PORT_TOKEN });
         domainsField.hidden = !hasDomains(kind);
         secretField.hidden = !hasSecret(kind);
+        // Certificat : seulement pour un tunnel https, et si le panel en a un
+        // Certificate: only for an https tunnel, and when the panel has one
+        certField.hidden = kind !== 'https' || !S.certs.length;
+        certModeField.hidden = kind !== 'https' || !certSelect.value;
+        syncHttpsNote();
         syncNameHint();
         syncDomainsHint();
       }
@@ -641,6 +716,11 @@ function editProxy(existing) {
 
         // TCP + UDP reste une seule entrée : splitPair écrit ses deux tunnels
         // TCP + UDP stays a single entry: splitPair writes its two tunnels
+        // Certificat choisi : chemins du panel, ou ceux déjà écrits dans le tunnel
+        // Chosen certificate: panel paths, or those already written in the tunnel
+        const chosenCert = tp === 'https' && certSelect.value && certSelect.value !== '__existing'
+          ? S.certs.find((c) => c.id === certSelect.value) : null;
+        const keepCert = tp === 'https' && certSelect.value === '__existing';
         Object.assign(draft, values, {
           type: tp,
           domains: domains.value.trim(),
@@ -648,6 +728,10 @@ function editProxy(existing) {
           proxyProtocol: ppv.value,
           encryption: encryption.input.checked,
           compression: compression.input.checked,
+          certPlugin: chosenCert ? (certMode.value || 'https2http') : keepCert ? draft.certPlugin || 'https2http' : '',
+          certCrt: chosenCert ? chosenCert.crt_path : keepCert ? draft.certCrt : '',
+          certKey: chosenCert ? chosenCert.key_path : keepCert ? draft.certKey : '',
+          certHost: chosenCert || keepCert ? (values.localIP || '127.0.0.1') : '',
         });
         if (existing) S.proxies = S.proxies.map((p) => (p.uid === draft.uid ? draft : p));
         else S.proxies = [...S.proxies, draft];
@@ -671,7 +755,7 @@ function editProxy(existing) {
             rangeHint),
           h('fieldset', { class: 'fieldset' },
             h('legend', { class: 'fieldset-title' }, t('tunnels.fields.publicAccess')),
-            remoteField, domainsField, secretField),
+            httpsNote, remoteField, domainsField, certField, certModeField, secretField),
           h('details', { class: 'fieldset disclosure-inline', open: draft.encryption || draft.compression || !!draft.proxyProtocol || null },
             h('summary', null, icon('chevron-down'), t('tunnels.fields.options')),
             h('div', { class: 'form-stack', style: { paddingTop: '12px' } }, ppField, encryption, compression)),

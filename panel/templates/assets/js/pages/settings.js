@@ -292,7 +292,7 @@ const access = {
       host.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
       return;
     }
-    host.append(listenCard(cfg), httpsCard(cfg), downloadsCard(cfg), statsCard(cfg));
+    host.append(listenCard(cfg), downloadsCard(cfg), statsCard(cfg));
   },
 };
 
@@ -333,10 +333,186 @@ function listenCard(cfg) {
   });
 }
 
-// HTTPS et proxy inverse : HSTS, et adresses des proxys dont les en-têtes
-// X-Forwarded-For / X-Forwarded-Proto sont crus.
-// HTTPS and reverse proxy: HSTS, and the proxies whose X-Forwarded-For /
-// X-Forwarded-Proto headers are trusted.
+// Certificats des sites : paires certificat/clé utilisées par les tunnels HTTPS
+// de frpc (plugin https2http / https2https). frps ne termine pas le TLS des
+// sites : le certificat vit donc sur la machine du tunnel. La carte est
+// affichée dans la section Proxy inverse HTTPS, qui choisit l'un d'eux.
+// Site certificates: certificate/key pairs used by frpc HTTPS tunnels
+// (https2http / https2https plugin). frps does not terminate site TLS: the
+// certificate therefore lives on the tunnel machine. The card is shown in the
+// HTTPS reverse proxy section, which picks one of them.
+function siteCertsCard({ onChange } = {}) {
+  const list = h('div', { class: 'form-stack' }, h('p', { class: 'muted' }, t('common.loading')));
+  const note = h('div', { class: 'form-stack' });
+  const refreshBtn = button('', { variant: 'ghost', size: 'sm', iconName: 'refresh', title: t('settings.network.siteCertRefresh'), onClick: () => load() });
+  const importBtn = button(t('settings.network.siteCertAdd'), { variant: 'primary', iconName: 'upload', onClick: importCert });
+  const acmeBtn = button(t('settings.network.siteCertAcme'), { variant: 'secondary', iconName: 'shield', onClick: acme });
+  let certs = [];
+  let acmeState = {};
+
+  const when = (iso) => (iso ? new Date(iso).toLocaleDateString(getLocale(), { year: 'numeric', month: 'short', day: 'numeric' }) : '—');
+
+  async function load() {
+    try {
+      const d = await apiOk('/api/manager/certs');
+      certs = d.certs || [];
+      acmeState = d.acme || {};
+      render();
+      onChange?.(certs);
+    } catch (e) {
+      list.replaceChildren(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+    }
+  }
+
+  function render() {
+    const rows = certs.map((c) => {
+      const soon = !c.expired && c.expires_in_days <= 30;
+      return h('div', { class: 'form-stack', style: { padding: '10px 0', borderTop: '1px solid rgba(128,128,128,.25)' } },
+        h('div', { class: 'row-actions' },
+          h('strong', { class: 'mono' }, (c.domains || []).join(', ') || c.id),
+          c.expired ? badge(t('settings.network.siteCertExpired'), 'danger')
+            : soon ? badge(t('settings.network.siteCertExpires', { days: c.expires_in_days }), 'warn')
+              : badge(t('settings.network.siteCertValid', { days: c.expires_in_days }), 'success'),
+          c.managed ? badge(t('settings.network.siteCertManaged'), 'info') : null,
+          button('', {
+            variant: 'ghost-danger', size: 'sm', iconName: 'trash', title: t('common.delete'),
+            onClick: () => remove(c),
+          })),
+        h('p', { class: 'field-hint' },
+          `${t('settings.network.siteCertIssuer')} : ${c.issuer || '—'} — ${t('settings.network.siteCertValidity')} : ${when(c.not_before)} → ${when(c.not_after)}`),
+        h('p', { class: 'field-hint mono' }, c.crt_path || ''));
+    });
+    list.replaceChildren(...(rows.length ? rows : [h('p', { class: 'muted' }, t('settings.network.siteCertEmpty'))]));
+    note.replaceChildren(...(acmeState.configured ? [h('p', { class: 'field-hint' }, t('settings.network.acmeRenewNote'))] : []));
+  }
+
+  async function remove(c) {
+    const ok = await confirmDialog({
+      title: t('settings.network.siteCertDeleteTitle'),
+      message: t('settings.network.siteCertDeleteText'),
+      confirmLabel: t('common.delete'),
+    });
+    if (!ok) return;
+    try {
+      const d = await api(`/api/manager/certs/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+      if (!d.ok) { toastResult(d); return; }
+      toast(t('settings.network.siteCertDeleted'), 'success');
+      load();
+    } catch (err) { toastError(err); }
+  }
+
+  function importCert() {
+    const name = input({ placeholder: t('settings.network.siteCertNamePlaceholder'), mono: true });
+    const certArea = h('textarea', { class: 'input fw-textarea', rows: 7, spellcheck: 'false', placeholder: '-----BEGIN CERTIFICATE-----' });
+    const keyArea = h('textarea', { class: 'input fw-textarea', rows: 7, spellcheck: 'false', placeholder: '-----BEGIN PRIVATE KEY-----' });
+    const saveBtn = button(t('settings.network.siteCertAdd'), { variant: 'primary', type: 'submit', form: 'site-cert-form' });
+    const picker = (area) => {
+      const file = h('input', { type: 'file', accept: '.pem,.crt,.cer,.key,.txt', hidden: true });
+      file.addEventListener('change', async () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        try { area.value = await f.text(); setFieldError(area, ''); }
+        catch { toast(t('settings.network.siteCertFileRead'), 'error'); }
+      });
+      return h('div', { class: 'row-actions' },
+        button(t('settings.network.siteCertChooseFile'), { size: 'sm', iconName: 'upload', onClick: () => file.click() }), file);
+    };
+
+    openDialog({
+      title: t('settings.network.siteCertImportTitle'),
+      description: t('settings.network.siteCertImportDesc'),
+      build: ({ close }) => {
+        async function submit(e) {
+          e.preventDefault();
+          const cert = certArea.value.trim();
+          const key = keyArea.value.trim();
+          setFieldError(certArea, cert ? '' : t('settings.network.siteCertMissing'));
+          setFieldError(keyArea, key ? '' : t('settings.network.siteCertMissing'));
+          if (!cert || !key) return;
+          await busy(saveBtn, async () => {
+            try {
+              const d = await api('/api/manager/certs', {
+                method: 'POST',
+                body: { name: name.value.trim(), cert, key },
+              });
+              if (!d.ok) { toastResult(d); return; }
+              toast(d.msg || t('settings.network.siteCertSaved'), 'success');
+              close(true);
+            } catch (err) { toastError(err); }
+          });
+        }
+        return {
+          body: [h('form', { id: 'site-cert-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+            field({ label: t('settings.network.siteCertName'), hint: t('settings.network.siteCertNameHint'), control: name }),
+            field({ label: t('settings.network.siteCertCertLabel'), hint: t('settings.network.siteCertCertHint'), control: certArea }),
+            picker(certArea),
+            field({ label: t('settings.network.siteCertKeyLabel'), hint: t('settings.network.siteCertKeyHint'), control: keyArea }),
+            picker(keyArea))],
+          foot: [button(t('common.cancel'), { onClick: () => close(false) }), saveBtn],
+        };
+      },
+      onClose: (saved) => { if (saved) load(); },
+    });
+  }
+
+  function acme() {
+    const domains = input({ placeholder: 'site.example.com, www.site.example.com', mono: true });
+    const token = secretInput({ placeholder: t('settings.network.acmeTokenPlaceholder') });
+    const staging = switchRow({
+      label: t('settings.network.acmeStaging'),
+      description: t('settings.network.acmeStagingDesc'),
+      checked: acmeState.staging === true,
+    });
+    const goBtn = button(t('settings.network.acmeIssue'), { variant: 'primary', type: 'submit', form: 'acme-cert-form' });
+
+    openDialog({
+      title: t('settings.network.acmeTitle'),
+      description: t('settings.network.acmeDesc'),
+      build: ({ close }) => {
+        async function submit(e) {
+          e.preventDefault();
+          const list = domains.value.trim();
+          setFieldError(domains, list ? '' : t('settings.network.acmeNoDomains'));
+          setFieldError(token.input, token.input.value.trim() ? '' : t('settings.network.acmeNoToken'));
+          if (!list || !token.input.value.trim()) return;
+          await busy(goBtn, async () => {
+            try {
+              const d = await api('/api/manager/certs/acme', {
+                method: 'POST',
+                body: { domains: list, token: token.input.value.trim(), staging: staging.input.checked },
+              });
+              if (!d.ok) { toastResult(d); return; }
+              toast(d.msg || t('settings.network.siteCertSaved'), 'success');
+              close(true);
+            } catch (err) { toastError(err); }
+          });
+        }
+        return {
+          body: [h('form', { id: 'acme-cert-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+            field({ label: t('settings.network.acmeDomains'), hint: t('settings.network.acmeDomainsHint'), control: domains }),
+            field({ label: t('settings.network.acmeToken'), hint: t('settings.network.acmeTokenHint'), control: token.input }),
+            staging)],
+          foot: [button(t('common.cancel'), { onClick: () => close(false) }), goBtn],
+        };
+      },
+      onClose: (saved) => { if (saved) load(); },
+    });
+  }
+
+  load();
+  return card({
+    title: t('settings.network.siteCertTitle'),
+    description: t('settings.network.siteCertDesc'),
+    headActions: refreshBtn,
+    body: h('div', { class: 'form-stack' }, list, note),
+    foot: [importBtn, acmeBtn],
+  });
+}
+
+// HSTS du panel, et adresses des proxys dont les en-têtes X-Forwarded-For /
+// X-Forwarded-Proto sont crus : carte de la section Proxy inverse HTTPS.
+// The panel's HSTS, and the proxies whose X-Forwarded-For / X-Forwarded-Proto
+// headers are trusted: a card of the HTTPS reverse proxy section.
 function httpsCard(cfg) {
   const proxies = input({ value: cfg.trusted_proxies || '', mono: true, placeholder: '10.0.0.0/8, 192.168.1.10' });
   const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'https-form' });
@@ -416,11 +592,113 @@ function statsCard(cfg) {
   });
 }
 
+// ── Proxy inverse HTTPS ────────────────────────────────────────────────────
+
+// Ports HTTPS servis en reverse proxy avec certificats : le certificat et le
+// mode choisis ici sont repris par défaut par chaque tunnel HTTPS (frpc
+// présente le certificat lui-même, frps ne fait que router par SNI).
+// HTTPS ports served as a reverse proxy with certificates: the certificate and
+// mode chosen here are reused by default by every HTTPS tunnel (frpc presents
+// the certificate itself, frps only routes by SNI).
+const httpsProxy = {
+  id: 'proxy',
+  icon: 'shield',
+  title: () => t('settings.httpsProxy.title'),
+  description: () => t('settings.httpsProxy.desc'),
+  visible: () => can('settings.manage'),
+  async mount(host) {
+    let cfg;
+    try {
+      cfg = (await apiOk('/api/manager/config')).config || {};
+    } catch (e) {
+      host.append(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+      return;
+    }
+    // Le certificat se choisit parmi ceux listés juste en dessous : chaque
+    // rechargement de la liste rafraîchit le sélecteur sans perdre un choix en
+    // cours. HSTS et proxys de confiance du panel se règlent ici aussi.
+    // The certificate is picked among the ones listed just below: each reload
+    // of the list refreshes the picker without losing an in-progress choice.
+    // The panel's HSTS and trusted proxies are set here as well.
+    const proxy = httpsProxyCard(cfg);
+    host.append(proxy.el, siteCertsCard({ onChange: proxy.setCerts }), httpsCard(cfg));
+  },
+};
+
+function httpsProxyCard(cfg) {
+  // Chaque réglage s'enregistre seul : le bandeau des tunnels lit ensuite la
+  // réponse de /api/manager/certs (« proxy »).
+  // Each setting saves on its own: the tunnel banner then reads the "proxy"
+  // field of /api/manager/certs.
+  const save = async (body) => {
+    try {
+      const d = await api('/api/manager/config', { method: 'POST', body });
+      if (!d.ok) { toastResult(d); return false; }
+      Object.assign(cfg, body);
+      toast(t('settings.httpsProxy.saved'), 'success');
+      return true;
+    } catch (err) { toastError(err); return false; }
+  };
+
+  const enabled = switchRow({
+    label: t('settings.httpsProxy.enable'),
+    description: t('settings.httpsProxy.enableDesc'),
+    checked: cfg.https_proxy_cert === true,
+    onChange: (checked) => save({ https_proxy_cert: checked }),
+  });
+
+  // Le sélecteur est rempli par setCerts(), avec les certificats des sites
+  // affichés en dessous : un import ou une suppression le met à jour.
+  // The picker is filled by setCerts(), with the site certificates shown
+  // below: an import or a deletion updates it.
+  const cert = select([], '');
+  const certHint = h('p', { class: 'field-hint' });
+  const certField = field({ label: t('settings.httpsProxy.cert'), control: cert });
+  // L'indication reste au-dessus de l'emplacement du message d'erreur.
+  // The hint stays above the error message slot.
+  certField.insertBefore(certHint, certField.querySelector('.field-error'));
+
+  function setCerts(items) {
+    const list = items || [];
+    const keep = cert.value;
+    cert.replaceChildren(
+      h('option', { value: '' }, t('settings.httpsProxy.noCert')),
+      ...list.map((c) => h('option', { value: c.id }, (c.domains || []).join(', ') || c.id)));
+    const wanted = keep || cfg.https_proxy_cert_id || '';
+    cert.value = list.some((c) => c.id === wanted) ? wanted : '';
+    certHint.textContent = list.length ? t('settings.httpsProxy.certHint') : t('settings.httpsProxy.certMissing');
+  }
+
+  const mode = segmented([
+    { value: 'https2http', label: t('tunnels.fields.certModeHttp') },
+    { value: 'https2https', label: t('tunnels.fields.certModeHttps') },
+  ], cfg.https_proxy_cert_mode === 'https2https' ? 'https2https' : 'https2http', () => {},
+  { label: t('settings.httpsProxy.mode') });
+  const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'https-proxy-form' });
+
+  async function submit(e) {
+    e.preventDefault();
+    await busy(saveBtn, () => save({ https_proxy_cert_id: cert.value, https_proxy_cert_mode: mode.value }));
+  }
+
+  const el = card({
+    title: t('settings.httpsProxy.cardTitle'), description: t('settings.httpsProxy.cardDesc'),
+    body: h('div', { class: 'form-stack' },
+      enabled,
+      h('form', { id: 'https-proxy-form', class: 'form-stack', onSubmit: submit, novalidate: true },
+        certField,
+        field({ label: t('settings.httpsProxy.mode'), hint: t('settings.httpsProxy.modeHint'), control: mode })),
+      callout({ type: 'neutral', compact: true, text: t('settings.httpsProxy.note') })),
+    foot: [saveBtn],
+  });
+  return { el, setCerts };
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 const GROUPS = [
   ['personal', [account, appearance]],
-  ['frp', [config]],
+  ['frp', [config, httpsProxy]],
   ['access', [access, users, sso]],
   ['system', [notifications, updates]],
 ];

@@ -65,6 +65,13 @@ func defaultManagerConfig() Cfg {
 		// HSTS and trusted proxies: off by default (see proxy.go)
 		"hsts":            false,
 		"trusted_proxies": "",
+		// Ports HTTPS servis en reverse proxy avec certificats : certificat et
+		// mode par défaut des tunnels HTTPS (voir sitecerts.go, httpsProxyCert).
+		// HTTPS ports served as a reverse proxy with certificates: default
+		// certificate and mode of HTTPS tunnels (see sitecerts.go, httpsProxyCert).
+		"https_proxy_cert":      false,
+		"https_proxy_cert_id":   "",
+		"https_proxy_cert_mode": "https2http",
 		// Miroirs tiers (ghproxy, ghfast, gh-proxy) en repli de github.com pour
 		// télécharger frp : pratique quand GitHub est filtré, mais c'est un
 		// intermédiaire de plus dans la chaîne d'approvisionnement.

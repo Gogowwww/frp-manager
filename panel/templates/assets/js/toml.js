@@ -1322,6 +1322,8 @@ export const hasRemotePort = (type) => type === 'tcp' || type === 'udp' || type 
 export const hasDomains = (type) => type === 'http' || type === 'https';
 export const hasSecret = (type) => type === 'stcp' || type === 'xtcp';
 
+export const HTTPS_PLUGIN_TYPES = ['https2http', 'https2https'];
+
 const PROXY_KEYS = new Set([
   'name', 'type', 'localIP', 'localPort', 'remotePort', 'customDomains', 'secretKey',
   'transport.useCompression', 'transport.useEncryption', 'transport.proxyProtocolVersion',
@@ -1502,6 +1504,12 @@ export function proxyFromBlock(block) {
   // ("-{{ $v }}" for a single range); in the domains, the port becomes {port} again
   const range = block.range || null;
   const domains = (v.customDomains || '').replace(/["'[\]]/g, '').split(',').map((s) => s.trim()).filter(Boolean).join(', ');
+  // Plugin TLS géré par l'interface (https2http / https2https) : ses clés sont
+  // reprises dans les champs du tunnel ; tout autre plugin reste dans extras, tel quel.
+  // TLS plugin managed by the interface (https2http / https2https): its keys are
+  // read into the tunnel fields; any other plugin stays in extras, untouched.
+  const managed = HTTPS_PLUGIN_TYPES.includes(v['plugin.type']);
+  const pluginKeys = ['plugin.type', 'plugin.localAddr', 'plugin.crtPath', 'plugin.keyPath', 'plugin.hostHeaderRewrite'];
   return {
     uid: uid(),
     name: range ? (v.name || '').replace(new RegExp(`-?${LOOP_FIRST}$`), '') : v.name || '',
@@ -1515,7 +1523,11 @@ export function proxyFromBlock(block) {
     proxyProtocol: v['transport.proxyProtocolVersion'] || '',
     compression: v['transport.useCompression'] === 'true',
     encryption: v['transport.useEncryption'] === 'true',
-    extras: extrasOf(block, PROXY_KEYS),
+    certPlugin: managed ? v['plugin.type'] : '',
+    certCrt: managed ? v['plugin.crtPath'] || '' : '',
+    certKey: managed ? v['plugin.keyPath'] || '' : '',
+    certHost: managed ? v['plugin.hostHeaderRewrite'] || '' : '',
+    extras: extrasOf(block, PROXY_KEYS).filter(([k]) => !(managed && pluginKeys.includes(k))),
     comments: block.comments || [],
     notes: block.notes || {},
   };
@@ -1580,6 +1592,7 @@ export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',
     domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [], comments: [],
+    certPlugin: '', certCrt: '', certKey: '', certHost: '',
   };
 }
 
@@ -1642,6 +1655,16 @@ export function generateProxy(p) {
   if (p.compression) L.push('transport.useCompression = true');
   if (p.encryption) L.push('transport.useEncryption = true');
   if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
+  if (p.certPlugin && p.certCrt && p.certKey) {
+    // Certificat du site : frpc termine le TLS (https2http / https2https), frps
+    // ne fait que router par SNI — le certificat vit donc côté frpc.
+    // Site certificate: frpc terminates TLS (https2http / https2https), frps only
+    // routes by SNI — the certificate therefore lives on the frpc side.
+    L.push('', '[proxies.plugin]', `type = ${str(p.certPlugin)}`,
+      `localAddr = ${str(joinHostPort(unbracket(p.localIP || '127.0.0.1'), p.localPort))}`,
+      `crtPath = ${str(p.certCrt)}`, `keyPath = ${str(p.certKey)}`);
+    if (p.certHost) L.push(`hostHeaderRewrite = ${str(p.certHost)}`);
+  }
   for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
   return [...(p.comments || []), ...annotate(L, p.notes)].join('\n');

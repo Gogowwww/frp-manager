@@ -145,6 +145,7 @@ func main() {
 		go standaloneBoot()
 	}
 	go fwSyncLoop()
+	go siteCertRenewLoop()
 	go webhookWorker()
 	go webhookMonitorLoop()
 	go statsLoop()
