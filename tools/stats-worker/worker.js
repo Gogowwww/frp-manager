@@ -45,7 +45,7 @@ async function ipHash(ip, day, salt) {
 }
 
 async function ping(request, env, ctx) {
-  if (request.method !== 'POST') return text(405, '405 Method Not Allowed', { Allow: 'POST' });
+  if (request.method !== 'POST') return text(405, '405 Method Not Allowed', { ...ROBOTS, Allow: 'POST' });
   const raw = await request.text();
   const key = raw.length > MAX_BODY ? null : pingKey(raw);
   if (!key) return text(400, '400 Bad Request');
