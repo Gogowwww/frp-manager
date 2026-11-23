@@ -1,17 +1,18 @@
-name: Bug report
-description: Something does not work as expected
+name: Bug
+description: Quelque chose ne fonctionne pas comme prévu / Something does not work as expected
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. **Security issues are not reported here**: see .github/SECURITY.md.
-        Remove tokens, public IP addresses and domain names from what you paste.
+        Merci pour le signalement. **Une faille de sécurité ne se signale pas ici** : voir .github/SECURITY.md.
+        Retirez tokens, adresses IP publiques et noms de domaine de ce que vous collez.
+        *Thanks for the report. Security issues go through .github/SECURITY.md, not here. English is fine.*
   - type: input
     id: version
     attributes:
-      label: Panel version
-      description: Shown under the name at the top of the sidebar
+      label: Version du panel / Panel version
+      description: Affichée sous le nom, en haut de la barre latérale / Shown under the name in the sidebar
       placeholder: "0.0.51"
     validations:
       required: true
@@ -22,29 +23,29 @@ body:
       options:
         - Script (install.sh)
         - Docker / Portainer
-        - Other
+        - Autre / Other
     validations:
       required: true
   - type: input
     id: frp
     attributes:
-      label: frp version and distribution
+      label: Version de frp et distribution / frp version and distribution
       placeholder: "frp 0.71.0, Debian 12"
   - type: textarea
     id: what
     attributes:
-      label: What happens?
-      description: Steps to reproduce, actual and expected result
+      label: Que se passe-t-il ? / What happens?
+      description: Étapes pour reproduire, résultat obtenu et résultat attendu / Steps to reproduce, actual and expected result
       placeholder: |
         1. …
         2. …
-        Actual: …
-        Expected: …
+        Obtenu : …
+        Attendu : …
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: Logs
-      description: "journalctl -u frp-manager -n 100 (or docker logs frp-manager), without secrets"
+      label: Journaux / Logs
+      description: "journalctl -u frp-manager -n 100 (ou docker logs frp-manager), sans secrets"
       render: text
