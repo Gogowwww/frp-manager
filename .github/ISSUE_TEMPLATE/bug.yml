@@ -1,5 +1,5 @@
 name: Bug
-description: Quelque chose ne fonctionne pas comme prévu / Something does not work as expected
+description: Quelque chose ne fonctionne pas comme prévu / Something does not work as expected / 某些功能未按预期工作
 labels: [bug]
 body:
   - type: markdown
@@ -8,44 +8,45 @@ body:
         Merci pour le signalement. **Une faille de sécurité ne se signale pas ici** : voir .github/SECURITY.md.
         Retirez tokens, adresses IP publiques et noms de domaine de ce que vous collez.
         *Thanks for the report. Security issues go through .github/SECURITY.md, not here. English is fine.*
+        *感谢反馈。安全问题请通过 .github/SECURITY.md 报告，不要在这里提交。中文也可以。*
   - type: input
     id: version
     attributes:
-      label: Version du panel / Panel version
-      description: Affichée sous le nom, en haut de la barre latérale / Shown under the name in the sidebar
+      label: Version du panel / Panel version / 面板版本
+      description: Affichée sous le nom, en haut de la barre latérale / Shown under the name in the sidebar / 显示在侧边栏顶部名称下方
       placeholder: "0.0.51"
     validations:
       required: true
   - type: dropdown
     id: install
     attributes:
-      label: Installation
+      label: Installation / 安装方式
       options:
         - Script (install.sh)
         - Docker / Portainer
-        - Autre / Other
+        - Autre / Other / 其他
     validations:
       required: true
   - type: input
     id: frp
     attributes:
-      label: Version de frp et distribution / frp version and distribution
+      label: Version de frp et distribution / frp version and distribution / frp 版本和发行版
       placeholder: "frp 0.71.0, Debian 12"
   - type: textarea
     id: what
     attributes:
-      label: Que se passe-t-il ? / What happens?
-      description: Étapes pour reproduire, résultat obtenu et résultat attendu / Steps to reproduce, actual and expected result
+      label: Que se passe-t-il ? / What happens? / 发生了什么？
+      description: Étapes pour reproduire, résultat obtenu et résultat attendu / Steps to reproduce, actual and expected result / 复现步骤、实际结果和预期结果
       placeholder: |
         1. …
         2. …
-        Obtenu : …
-        Attendu : …
+        Obtenu / Actual / 实际：…
+        Attendu / Expected / 预期：…
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: Journaux / Logs
+      label: Journaux / Logs / 日志
       description: "journalctl -u frp-manager -n 100 (ou docker logs frp-manager), sans secrets"
       render: text

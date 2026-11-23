@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Faille de sécurité / Security vulnerability
+  - name: Faille de sécurité / Security vulnerability / 安全漏洞
     url: https://github.com/Gogowwww/frp-manager/security/advisories/new
-    about: Signalement privé, jamais en issue publique / Private report, never in a public issue
+    about: Signalement privé, jamais en issue publique / Private report, never in a public issue / 私密报告，切勿公开发布
