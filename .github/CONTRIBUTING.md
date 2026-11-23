@@ -8,8 +8,8 @@ requests are welcome, in English or French. By taking part, you agree to the
 
 - Search the existing [issues](https://github.com/Gogowwww/frp-manager/issues)
   first.
-- Use the "Bug" or "Feature request" template: panel version, install method
-  (script or Docker), frp version, steps to reproduce.
+- Use the bug-report or feature-request template, in English or French: panel
+  version, install method (script or Docker), frp version, steps to reproduce.
 - Remove tokens, public IP addresses and domain names from what you paste
   (TOML configurations, logs).
 - **Security issues are not reported in a public issue**: see
