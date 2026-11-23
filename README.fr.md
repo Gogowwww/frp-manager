@@ -9,7 +9,7 @@ Interface web et tableau de bord auto-hébergés pour [frp](https://github.com/f
 [![Site](https://img.shields.io/badge/site-frp--manager.org-0e9f6e)](https://frp-manager.org/fr/)
 [![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
-[English](README.md) · **Français**
+[English](README.md) · **Français** · [简体中文](README.zh.md)
 
 ![Tableau de bord de FRP Manager](.github/img/dashboard-fr.png)
 

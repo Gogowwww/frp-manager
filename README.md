@@ -9,7 +9,7 @@ A self-hosted web UI and dashboard for [frp](https://github.com/fatedier/frp): r
 [![Website](https://img.shields.io/badge/website-frp--manager.org-0e9f6e)](https://frp-manager.org)
 [![Plumber Score](https://score.getplumber.io/github.com/Gogowwww/frp-manager.svg)](https://score.getplumber.io/github.com/Gogowwww/frp-manager)
 
-**English** · [Français](README.fr.md)
+**English** · [Français](README.fr.md) · [简体中文](README.zh.md)
 
 ![FRP Manager dashboard](.github/img/dashboard-en.png)
 
