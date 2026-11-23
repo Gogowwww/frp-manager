@@ -24,8 +24,12 @@ func TestNotes(t *testing.T) {
 	en := "# Changelog\n\n## [Unreleased]\n\n## [0.0.58] - 2026-10-12\n\nThe panel moves to Go.\n\n" +
 		"Pre-release, then final release.\n\n### Changed\n\n- **Go**: rewritten.\n\n### Added\n\n- **apt**: repository.\n\n" +
 		"## [0.0.57] - 2026-10-12\n"
+	zh := "# 更新日志\n\n## [未发布]\n\n### 新增\n\n- 还没有。\n\n## [0.0.58] - 2026-10-12\n\n" +
+		"面板改用 Go。\n\n预发布版。\n\n### 变更\n\n- **Go**：完全重写。\n\n### 新增\n\n- **apt**：软件仓库。\n\n" +
+		"## [0.0.57] - 2026-10-12\n"
 	os.WriteFile(filepath.Join(dir, "CHANGELOG.fr.md"), []byte(fr), 0o644)
 	os.WriteFile(filepath.Join(dir, "CHANGELOG.md"), []byte(en), 0o644)
+	os.WriteFile(filepath.Join(dir, "CHANGELOG.zh.md"), []byte(zh), 0o644)
 	name, body, err := notes(dir, "o/r", "v0.0.58")
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +39,8 @@ func TestNotes(t *testing.T) {
 	}
 	order := []string{"Le panel passe en Go.", "## Nouveautés", "- **apt** : dépôt.", "## Changements",
 		"- **Go** : réécrit entièrement.", "## Mettre à jour", ":0.0.58", "compare/v0.0.57...v0.0.58",
-		"## 🇬🇧 English", "The panel moves to Go.", "### New", "### Changes", "### Updating"}
+		"## 🇬🇧 English", "The panel moves to Go.", "### New", "### Changes", "### Updating",
+		"## 🇨🇳 中文", "面板改用 Go。", "### 新增", "- **apt**：软件仓库。", "### 更新", "预发布版"}
 	pos := 0
 	for _, w := range order {
 		i := strings.Index(body[pos:], w)
@@ -44,7 +49,7 @@ func TestNotes(t *testing.T) {
 		}
 		pos += i
 	}
-	for _, absent := range []string{"Pré-release", "Pre-release", "Pas encore", "Ancien", "example.org"} {
+	for _, absent := range []string{"Pré-release", "Pre-release", "预发布版。", "Pas encore", "Ancien", "还没有", "example.org"} {
 		if strings.Contains(body, absent) {
 			t.Errorf("%q ne devrait pas figurer", absent)
 		}
@@ -54,5 +59,9 @@ func TestNotes(t *testing.T) {
 	}
 	if _, _, err := notes(dir, "o/r", "latest"); err == nil {
 		t.Error("tag invalide accepté")
+	}
+	os.Remove(filepath.Join(dir, "CHANGELOG.zh.md"))
+	if _, _, err := notes(dir, "o/r", "v0.0.58"); err == nil {
+		t.Error("CHANGELOG chinois absent accepté")
 	}
 }

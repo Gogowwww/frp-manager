@@ -75,11 +75,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Notes (titre, résumé, sections, en français puis en anglais) tirées des
-      # deux CHANGELOG (dépôt privé du site) : une section absente bloque la release avant
-      # toute construction.
-      # Notes taken from both CHANGELOGs (website private repository): a missing section blocks the
-      # release before anything is built.
+      # Notes (titre, résumé, sections, en français, en anglais puis en chinois)
+      # tirées des trois CHANGELOG (dépôt privé du site) : une section absente
+      # bloque la release avant toute construction.
+      # Notes taken from the three CHANGELOGs (website private repository): a
+      # missing section blocks the release before anything is built.
       - name: Préparer
         env:
           GH_TOKEN: ${{ github.token }}

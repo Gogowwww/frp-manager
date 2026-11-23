@@ -1,11 +1,11 @@
-// Notes d'une release GitHub, tirées des deux CHANGELOG (français puis anglais),
-// dans la forme des releases précédentes : titre, résumé, sections, « Mettre à
-// jour », lien de comparaison, puis la version anglaise.
+// Notes d'une release GitHub, tirées des trois CHANGELOG (français, anglais et
+// chinois), dans la forme des releases précédentes : titre, résumé, sections,
+// « Mettre à jour », lien de comparaison, puis les versions anglaise et chinoise.
 //
-// Les CHANGELOG (CHANGELOG.fr.md, CHANGELOG.md) sont lus dans le dossier donné
-// par -dir : ils vivent dans le dépôt privé du site.
-// The CHANGELOGs (CHANGELOG.fr.md, CHANGELOG.md) are read from the folder given
-// by -dir: they live in the website's private repository.
+// Les CHANGELOG (CHANGELOG.fr.md, CHANGELOG.md, CHANGELOG.zh.md) sont lus dans
+// le dossier donné par -dir : ils vivent dans le dépôt privé du site.
+// The CHANGELOGs (CHANGELOG.fr.md, CHANGELOG.md, CHANGELOG.zh.md) are read from
+// the folder given by -dir: they live in the website's private repository.
 //
 //	go run ./tools/releasenotes [-dir dossier] [-repo Gogowwww/frp-manager] [-json] v0.0.58
 //
@@ -86,7 +86,8 @@ func parseSection(changelog, version string) (*section, error) {
 	}
 	for _, para := range strings.Split(strings.Join(intro, "\n"), "\n\n") {
 		para = strings.Join(strings.Fields(para), " ")
-		if para == "" || strings.HasPrefix(para, "Pré-release") || strings.HasPrefix(para, "Pre-release") {
+		if para == "" || strings.HasPrefix(para, "Pré-release") || strings.HasPrefix(para, "Pre-release") ||
+			strings.HasPrefix(para, "预发布版") {
 			continue
 		}
 		sec.summary = para
@@ -128,6 +129,8 @@ var (
 		{"Retiré", "Retiré"}, {"Obsolète", "Obsolète"}, {"Sécurité", "Sécurité"}}
 	partsEN = [][2]string{{"Added", "New"}, {"Changed", "Changes"}, {"Fixed", "Fixes"},
 		{"Removed", "Removed"}, {"Deprecated", "Deprecated"}, {"Security", "Security"}}
+	partsZH = [][2]string{{"新增", "新增"}, {"变更", "变更"}, {"修复", "修复"},
+		{"移除", "移除"}, {"弃用", "弃用"}, {"安全", "安全"}}
 )
 
 func writeParts(b *strings.Builder, sec *section, names [][2]string, level string) {
@@ -172,8 +175,12 @@ func notes(dir, repo, tag string) (name, body string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	if len(fr.parts) == 0 && len(en.parts) == 0 {
-		return "", "", errors.New("section vide dans les deux CHANGELOG")
+	zh, err := read("CHANGELOG.zh.md")
+	if err != nil {
+		return "", "", err
+	}
+	if len(fr.parts) == 0 && len(en.parts) == 0 && len(zh.parts) == 0 {
+		return "", "", errors.New("section vide dans les trois CHANGELOG")
 	}
 
 	name = "v" + version
@@ -210,11 +217,22 @@ func notes(dir, repo, tag string) (name, body string, err error) {
 		"- **apt package**: `sudo apt update && sudo apt upgrade` (`stable` distribution; `testing` gets pre-releases).\n"+
 		"- **Install script**: the panel's \"Update\" button, or `sudo bash install.sh` from the new archive.\n",
 		version)
+	b.WriteString("\n---\n\n## 🇨🇳 中文\n\n")
+	if zh.summary != "" {
+		b.WriteString(zh.summary + "\n\n")
+	}
+	writeParts(&b, zh, partsZH, "###")
+	fmt.Fprintf(&b, "### 更新\n\n"+
+		"- **Docker**：`docker compose pull && docker compose up -d`（`:latest` 镜像，或用 `:%[1]s` 固定版本；"+
+		"预发布版只有 `:%[1]s`）。\n"+
+		"- **apt 软件包**：`sudo apt update && sudo apt upgrade`（`stable` 发行版；`testing` 接收预发布版）。\n"+
+		"- **脚本安装**：面板中的「更新」按钮，或用新压缩包执行 `sudo bash install.sh`。\n",
+		version)
 	return name, b.String(), nil
 }
 
 func main() {
-	dir := flag.String("dir", ".", "dossier des deux CHANGELOG (CHANGELOG.md, CHANGELOG.fr.md)")
+	dir := flag.String("dir", ".", "dossier des CHANGELOG (CHANGELOG.md, CHANGELOG.fr.md, CHANGELOG.zh.md)")
 	repo := flag.String("repo", "Gogowwww/frp-manager", "dépôt GitHub (lien de comparaison)")
 	asJSON := flag.Bool("json", false, `sortie {"name": …, "body": …}`)
 	flag.Usage = func() {
