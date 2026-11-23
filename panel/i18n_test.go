@@ -30,6 +30,20 @@ func TestMessagesFollowXLang(t *testing.T) {
 	}
 }
 
+// Le chinois n'a pas encore de messages du serveur : l'anglais, comme pour les
+// autres langues non prises en charge ; l'interface, elle, est traduite.
+// Chinese has no server messages yet: English, as for other unsupported
+// languages; the interface itself is translated.
+func TestChineseServerMessagesInEnglish(t *testing.T) {
+	e := setup(t)
+	e.setPassword(testPassword, "admin", false)
+	for _, lang := range []string{"zh", "zh-CN", "zh-Hans"} {
+		if m := badLogin(e.client(), map[string]string{"X-Lang": lang}).json()["msg"]; m != "Wrong username or password" {
+			t.Fatalf("%s : %v", lang, m)
+		}
+	}
+}
+
 func TestAcceptLanguageFallback(t *testing.T) {
 	e := setup(t)
 	e.setPassword(testPassword, "admin", false)

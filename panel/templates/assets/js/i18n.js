@@ -11,6 +11,7 @@
 export const LOCALES = {
   fr: 'Français',
   en: 'English',
+  zh: '简体中文',
 };
 // Langues en préparation : proposées dans Réglages (marquées « aperçu »), mais
 // jamais choisies d'après la langue du navigateur. Retirer le code à sa sortie
@@ -34,6 +35,7 @@ function detectLocale() {
     if (saved && LOCALES[saved]) return saved;
   } catch { /* stockage indisponible */ }
   for (const lang of navigator.languages || [navigator.language]) {
+    // zh-CN, zh-Hans… donnent le code « zh » / zh-CN, zh-Hans… give the code "zh"
     const code = String(lang || '').slice(0, 2).toLowerCase();
     if (LOCALES[code] && !PREVIEW_LOCALES.has(code)) return code;
   }

@@ -47,7 +47,7 @@ Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the re
 - **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included.
 - **Single sign-on**: OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), with accounts prepared by email or created on first sign-in, and roles taken from the provider's groups.
 - **Passkeys**: sign in without a password, with your phone, computer or security key (fingerprint, face, PIN); several passkeys per account.
-- **Interface**: light and dark themes, desktop and mobile, in English and French (picked from your browser, changeable in Settings).
+- **Interface**: light and dark themes, desktop and mobile, in English, French and Simplified Chinese (picked from your browser, changeable in Settings).
 
 | Ports | Port editor |
 |:---:|:---:|

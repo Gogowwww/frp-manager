@@ -53,7 +53,12 @@ func errIn(err error, l Lang) string {
 }
 
 func normLang(v string) Lang {
-	if strings.HasPrefix(strings.ToLower(v), "en") {
+	low := strings.ToLower(v)
+	// Pas encore de messages du serveur en chinois : l'anglais, comme pour les
+	// autres langues non prises en charge (l'interface est traduite).
+	// No server messages in Chinese yet: English, as for other unsupported
+	// languages (the interface itself is translated).
+	if strings.HasPrefix(low, "en") || strings.HasPrefix(low, "zh") {
 		return EN
 	}
 	return FR

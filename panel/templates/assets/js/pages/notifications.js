@@ -162,7 +162,7 @@ async function remove(hook) {
 
 async function edit(existing) {
   const isNew = !existing;
-  const draft = existing ? { ...existing } : { id: '', name: '', enabled: true, format: 'discord', events: ['instance.down', 'instance.up'], instances: [], lang: getLocale() === 'en' ? 'en' : 'fr', cooldown: 60, template: '', chat_id: '' };
+  const draft = existing ? { ...existing } : { id: '', name: '', enabled: true, format: 'discord', events: ['instance.down', 'instance.up'], instances: [], lang: getLocale() === 'fr' ? 'fr' : 'en', cooldown: 60, template: '', chat_id: '' };
   const formId = 'nt-form';
 
   await openDialog({

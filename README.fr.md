@@ -47,7 +47,7 @@ Pas encore prêt à installer ? La [démo en ligne](https://frp-manager.org/demo
 - **Utilisateurs et permissions** : plusieurs comptes, chacun avec un rôle (administrateur, opérateur, lecteur) ou des permissions choisies une à une, éventuellement limités à certaines instances ; les changements s'appliquent aussitôt, sessions ouvertes comprises.
 - **Connexion unique** : OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), avec des comptes préparés par e-mail ou créés à la première connexion, et des rôles tirés des groupes du fournisseur.
 - **Passkeys** : connexion sans mot de passe, avec votre téléphone, votre ordinateur ou une clé de sécurité (empreinte, visage, code PIN) ; plusieurs passkeys par compte.
-- **Interface** : thèmes clair et sombre, ordinateur et mobile, en français et en anglais (d'après le navigateur, modifiable dans Réglages).
+- **Interface** : thèmes clair et sombre, ordinateur et mobile, en français, en anglais et en chinois simplifié (d'après le navigateur, modifiable dans Réglages).
 
 | Ports | Éditeur de port |
 |:---:|:---:|
