@@ -184,6 +184,7 @@ export default {
   tunnels: {
     title: 'Ports',
     description: 'Each open port makes a service on this machine reachable from the Internet, through your frp server.',
+    instanceUser: 'Instance identifier: “{user}”. On the server, its tunnels appear as “{user}.name”.',
     add: 'Open a port',
     filterPlaceholder: 'Filter by identifier',
     filterEmptyTitle: 'No port for this identifier',
@@ -592,6 +593,7 @@ export default {
       logMaxDays: { label: 'Retention (days)' },
       serverAddr: { label: 'Server address', hint: 'IP or domain name of the machine running frps.' },
       serverPort: { label: 'Server port', hint: 'The “listening port” configured on frps.' },
+      user: { label: 'Instance identifier', hint: 'Sent to the server on connection; the tunnel names there are prefixed with it.' },
       protocol: { label: 'Protocol', hint: 'tcp unless the server has enabled KCP, QUIC or websocket.' },
       poolCount: { label: 'Pre-opened connections' },
       heartbeatInterval: { label: 'Heartbeat interval (s)' },

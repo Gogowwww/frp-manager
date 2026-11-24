@@ -91,6 +91,7 @@ const SCHEMA = {
       fields: [
         { name: 'serverAddr', key: 'serverAddr', kind: 'text', addr: true, def: '', placeholder: 'vps.example.com' },
         { name: 'serverPort', key: 'serverPort', kind: 'number', def: '7000' },
+        { name: 'user', key: 'user', kind: 'text', def: '', optional: true, placeholder: 'alice' },
         { name: 'protocol', key: 'transport.protocol', kind: 'select', options: ['tcp', 'kcp', 'quic', 'websocket', 'wss'], def: 'tcp' },
       ],
     },

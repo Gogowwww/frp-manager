@@ -25,6 +25,11 @@ const S = {
   filter: '', // recherche par identifiant d'utilisateur / search by user identifier
   baseText: '',
   serverAddr: '',
+  // Identifiant de l'instance (clé frpc « user ») : frp en préfixe les noms de
+  // tunnels côté serveur
+  // Instance identifier (frpc "user" key): frp prefixes the tunnel names with it
+  // on the server side
+  instanceUser: '',
   baseFix: false,
   docker: false,
   proxies: [],
@@ -90,6 +95,7 @@ export default {
     if (S.iid && can('config.write')) actions.push(addBtn);
 
     S.els.statusHint = h('div');
+    S.els.instanceUser = h('div');
     // Filtre par identifiant : la barre reste en place pendant la frappe, seules
     // les lignes sont redessinées
     // Filter by identifier: the bar stays in place while typing, only the rows
@@ -113,6 +119,7 @@ export default {
     view.append(h('div', { class: 'page' },
       pageHeader({ title: t('tunnels.title'), description: t('tunnels.description'), actions }),
       !can('config.write') && callout({ type: 'neutral', compact: true, iconName: 'eye', title: t('common.readOnly'), text: t('config.readOnly') }),
+      S.els.instanceUser,
       S.els.statusHint,
       S.els.proxies,
       h('section', null,
@@ -172,6 +179,7 @@ async function load(discarded = false) {
     S.docker = !!d.docker;
     const cfg = parseToml(S.baseText);
     S.serverAddr = cfg.values.serverAddr || '';
+    S.instanceUser = cfg.values.user || '';
     const proxies = cfg.proxies.map(proxyFromBlock);
     const visitors = cfg.visitors.map(visitorFromBlock);
     // Paires X-tcp / X-udp écrites par « TCP + UDP » : une seule ligne
@@ -208,6 +216,16 @@ async function load(discarded = false) {
 // Port ouvert sans numéro : frps en choisit un à chaque démarrage de frpc
 const serverPicked = (p) => hasRemotePort(p.type) && !p.remotePort;
 
+/** État d'un tunnel sur l'API de frpc : avec un identifiant d'instance, frp
+ *  préfixe le nom des tunnels (« identifiant.nom »), les deux formes sont vues.
+ *  Tunnel status from frpc's API: with an instance identifier frp prefixes the
+ *  tunnel names ("identifier.name"), both forms are looked up. */
+function liveStatus(name) {
+  const st = S.status?.proxies;
+  if (!st || !name) return undefined;
+  return st[name] ?? (S.instanceUser ? st[`${S.instanceUser}.${name}`] : undefined);
+}
+
 /** Adresses attribuées par frps, lues sur l'API de frpc. frpc vient peut-être de
  *  (re)démarrer : un proxy pas encore enregistré est redemandé une fois. */
 async function loadStatus(retry = true) {
@@ -219,7 +237,7 @@ async function loadStatus(retry = true) {
     S.status = d;
   } catch { S.status = null; }
   render();
-  const pending = S.status?.reachable && S.proxies.some((p) => serverPicked(p) && !S.status.proxies?.[p.name]?.remote_addr);
+  const pending = S.status?.reachable && S.proxies.some((p) => serverPicked(p) && !liveStatus(p.name)?.remote_addr);
   if (retry && pending) statusTimer = setTimeout(() => loadStatus(false), 2500);
 }
 
@@ -232,10 +250,23 @@ function discard() {
 
 function render() {
   if (!S.els.proxies) return;
+  renderInstanceUser();
   renderStatusHint();
   renderProxies();
   renderVisitors();
   S.els.savebar.hidden = !isDirty();
+}
+
+/** Identifiant de l'instance : frp en préfixe les noms de tunnels côté serveur,
+ *  la page le dit pour que les noms vus dans frps ne surprennent pas.
+ *  Instance identifier: frp prefixes the tunnel names with it on the server; the
+ *  page says so that the names seen in frps are not a surprise. */
+function renderInstanceUser() {
+  const host = S.els.instanceUser;
+  if (!host) return;
+  host.replaceChildren(...(S.instanceUser ? [callout({
+    type: 'neutral', compact: true, text: t('tunnels.instanceUser', { user: S.instanceUser }),
+  })] : []));
 }
 
 function stateOf(item, list) {
@@ -344,7 +375,7 @@ async function restartFrpc() {
 function publicEndpoint(p) {
   if (hasRemotePort(p.type)) {
     if (p.remotePort) return joinHostPort(S.serverAddr || t('tunnels.server'), p.remotePort);
-    return fixHostPort(S.status?.proxies?.[p.name]?.remote_addr) || t('tunnels.randomPort');
+    return fixHostPort(liveStatus(p.name)?.remote_addr) || t('tunnels.randomPort');
   }
   if (hasDomains(p.type)) return p.domains || t('tunnels.noDomain');
   return t('tunnels.privateOnly');
@@ -362,7 +393,7 @@ function publicCopyValue(p) {
     if (p.remotePort) return S.serverAddr ? joinHostPort(S.serverAddr, p.remotePort) : '';
     // frpc peut rendre « :port » sans hôte : on y ajoute l'adresse du serveur
     // frpc may return ":port" without a host: the server address is added
-    const live = S.status?.proxies?.[p.name]?.remote_addr || '';
+    const live = liveStatus(p.name)?.remote_addr || '';
     // « ::1:6000 » commence aussi par « : » : seul « :port » seul est complété
     // "::1:6000" also starts with ":": only a bare ":port" is completed
     if (/^:\d+$/.test(live)) return S.serverAddr ? joinHostPort(S.serverAddr, live.slice(1)) : '';
@@ -441,8 +472,8 @@ function proxyRow(p) {
   // Range or TCP + UDP: frpc has several tunnels, the first error is shown
   const names = frpcNames(p);
   const live = names.length > 1
-    ? names.map((n) => S.status?.proxies?.[n]).find((x) => x?.err)
-    : S.status?.proxies?.[p.name];
+    ? names.map((n) => liveStatus(n)).find((x) => x?.err)
+    : liveStatus(p.name);
   if (serverPicked(p) && live?.remote_addr) flags.push(badge(t('tunnels.flags.assigned'), 'info', { title: t('tunnels.flags.assignedHint') }));
   if (live?.err) flags.push(badge(t('tunnels.flags.error'), 'danger', { title: live.err }));
 

@@ -184,6 +184,7 @@ export default {
   tunnels: {
     title: '端口',
     description: '每个开放的端口都会让本机上的服务通过 frp 服务器从互联网可访问。',
+    instanceUser: '实例标识“{user}”：在服务器上，其端口显示为“{user}.端口名”。',
     add: '开放端口',
     filterPlaceholder: '按标识筛选',
     filterEmptyTitle: '该标识下没有端口',
@@ -592,6 +593,7 @@ export default {
       logMaxDays: { label: '保留天数' },
       serverAddr: { label: '服务器地址', hint: '运行 frps 的机器 IP 或域名。' },
       serverPort: { label: '服务器端口', hint: 'frps 上配置的“监听端口”。' },
+      user: { label: '实例标识', hint: '连接时发送给服务器，服务器上的端口名会以其为前缀。' },
       protocol: { label: '协议', hint: '除非服务器启用了 KCP、QUIC 或 websocket，否则为 tcp。' },
       poolCount: { label: '预连接数' },
       heartbeatInterval: { label: '心跳间隔（秒）' },
