@@ -1327,6 +1327,7 @@ export const HTTPS_PLUGIN_TYPES = ['https2http', 'https2https'];
 const PROXY_KEYS = new Set([
   'name', 'type', 'localIP', 'localPort', 'remotePort', 'customDomains', 'secretKey',
   'transport.useCompression', 'transport.useEncryption', 'transport.proxyProtocolVersion',
+  'annotations.user',
 ]);
 const VISITOR_KEYS = new Set(['name', 'type', 'serverName', 'secretKey', 'bindAddr', 'bindPort']);
 
@@ -1527,6 +1528,9 @@ export function proxyFromBlock(block) {
     certCrt: managed ? v['plugin.crtPath'] || '' : '',
     certKey: managed ? v['plugin.keyPath'] || '' : '',
     certHost: managed ? v['plugin.hostHeaderRewrite'] || '' : '',
+    // Identifiant de l'utilisateur du tunnel, gardé dans l'annotation frp « user »
+    // Tunnel user identifier, kept in the frp "user" annotation
+    user: v['annotations.user'] || '',
     extras: extrasOf(block, PROXY_KEYS).filter(([k]) => !(managed && pluginKeys.includes(k))),
     comments: block.comments || [],
     notes: block.notes || {},
@@ -1591,7 +1595,7 @@ export function randomPort() {
 export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',
-    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [], comments: [],
+    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, user: '', extras: [], comments: [],
     certPlugin: '', certCrt: '', certKey: '', certHost: '',
   };
 }
@@ -1641,6 +1645,7 @@ export function generateProxy(p) {
   const L = ranged
     ? [head, '[[proxies]]', `name = ${str(`${p.name}-${port}`)}`, `type = ${str(p.type)}`]
     : ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
+  if (p.user) L.push(`annotations.user = ${str(p.user)}`);
   if (p.localIP) L.push(`localIP = ${str(unbracket(p.localIP))}`);
   if (ranged) L.push(`localPort = ${port}`);
   else if (p.localPort) L.push(`localPort = ${p.localPort}`);
@@ -1655,6 +1660,11 @@ export function generateProxy(p) {
   if (p.compression) L.push('transport.useCompression = true');
   if (p.encryption) L.push('transport.useEncryption = true');
   if (p.proxyProtocol) L.push(`transport.proxyProtocolVersion = ${str(p.proxyProtocol)}`);
+  // Réglages avancés au niveau du tunnel : avant la sous-table [proxies.plugin],
+  // sinon ils seraient lus dans cette table (annotations.key1, healthCheck.type…)
+  // Advanced settings at the tunnel level: before the [proxies.plugin] sub-table,
+  // otherwise they would be read inside it (annotations.key1, healthCheck.type…)
+  for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   if (p.certPlugin && p.certCrt && p.certKey) {
     // Certificat du site : frpc termine le TLS (https2http / https2https), frps
     // ne fait que router par SNI — le certificat vit donc côté frpc.
@@ -1665,7 +1675,6 @@ export function generateProxy(p) {
       `crtPath = ${str(p.certCrt)}`, `keyPath = ${str(p.certKey)}`);
     if (p.certHost) L.push(`hostHeaderRewrite = ${str(p.certHost)}`);
   }
-  for (const [k, raw] of p.extras) L.push(`${k} = ${raw}`);
   if (ranged) L.push('{{- end }}');
   return [...(p.comments || []), ...annotate(L, p.notes)].join('\n');
 }
