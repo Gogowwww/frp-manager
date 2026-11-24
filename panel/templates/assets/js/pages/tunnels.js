@@ -44,6 +44,10 @@ const S = {
 
 let statusTimer = null;
 
+// URL de la configuration d'une instance, en lecture comme en écriture
+// Configuration URL of an instance, for reading as well as writing
+const configURL = (iid) => `/api/config/${encodeURIComponent(iid)}`;
+
 const snapshotOf = () => JSON.stringify([S.proxies, S.visitors]);
 // Lecture seule (pas de config.write) : jamais de modification à enregistrer
 // baseFix : adresse de la connexion entre crochets, corrigée à l'enregistrement
