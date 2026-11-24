@@ -4,8 +4,10 @@
 
 import { t } from '../i18n.js';
 import { api } from '../api.js';
-import { instanceIds, displayName } from '../store.js';
-import { h, button, busy, select, badge, emptyState, pageHeader, card, callout, toastError } from '../ui.js';
+import { instanceIds, displayName, can } from '../store.js';
+import {
+  h, button, busy, select, badge, emptyState, pageHeader, card, callout, toast, toastError, confirmDialog,
+} from '../ui.js';
 
 const FRPS_KEY = 'frpm.clients.frps';
 const POLL_MS = 10000;
@@ -98,9 +100,17 @@ function body(frps) {
     }));
   }
   if (!frps.reachable) {
+    // Tableau de bord absent : on propose de l'ajouter, plutôt que de laisser
+    // l'utilisateur chercher où écrire le bloc dans la config.
+    // Missing dashboard: offer to add it, instead of leaving the user to find
+    // where the block goes in the config.
+    const enable = frps.needs_dashboard && can('config.write') ? dashboardButton() : null;
     return card({
       title: displayName(frps.iid),
-      body: callout({ type: 'warn', title: t('clients.unavailableTitle'), text: frps.error || t('errors.generic') }),
+      body: callout({
+        type: 'warn', title: t('clients.unavailableTitle'), text: frps.error || t('errors.generic'),
+        actions: enable ? [enable] : null,
+      }),
     });
   }
   return table(frps);
@@ -154,6 +164,56 @@ export default {
     S.els = {};
   },
 };
+
+/** Bouton d'activation : il porte lui-même la référence passée à busy(), le
+ *  gestionnaire de clic ne recevant que l'événement. */
+function dashboardButton() {
+  const btn = button(t('clients.enable'), { variant: 'primary', iconName: 'shield' });
+  btn.addEventListener('click', () => enableDashboard(btn));
+  return btn;
+}
+
+/** Ajoute le bloc [webServer] local à la config du frps, puis propose de le
+ *  redémarrer (il ne relit pas sa configuration à chaud). */
+async function enableDashboard(btn) {
+  // L'attente ne couvre que l'écriture : le bouton reprend son libellé avant
+  // la question du redémarrage, sinon il tourne pendant que l'utilisateur lit.
+  // Waiting covers the write only: the button gets its label back before the
+  // restart question, instead of spinning while the user reads.
+  let port = 0;
+  let host = '127.0.0.1';
+  await busy(btn, async () => {
+    try {
+      const d = await api(`/api/clients/dashboard/${encodeURIComponent(S.iid)}`, { method: 'POST' });
+      if (!d.ok) {
+        toast(d.msg || t('errors.generic'), 'error');
+        return;
+      }
+      if (!d.changed) {
+        toast(t('clients.enableAlready'), 'info');
+        return;
+      }
+      port = d.port || 0;
+      host = d.addr || host;
+    } catch (e) {
+      toastError(e);
+    }
+  });
+  if (!port) return;
+
+  toast(t('clients.enabled', { host, port }));
+  const restart = await confirmDialog({
+    title: t('clients.restartTitle'), message: t('clients.restartText', { host, port }), confirmLabel: t('clients.restart'),
+  });
+  if (!restart) return;
+  try {
+    await api(`/api/service/${encodeURIComponent(S.iid)}/restart`, { method: 'POST' });
+    toast(t('clients.restarting'), 'info');
+    setTimeout(load, 4000);
+  } catch (e) {
+    toastError(e);
+  }
+}
 
 function render() {
   if (!S.els.body) return;

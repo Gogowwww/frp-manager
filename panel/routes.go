@@ -253,7 +253,7 @@ func init() {
 			if allowed != nil && !allowed[inst.ID] {
 				continue
 			}
-			entry := J{"iid": inst.ID, "reachable": false, "error": "", "clients": []frpsClient{}}
+			entry := J{"iid": inst.ID, "reachable": false, "error": "", "needs_dashboard": false, "clients": []frpsClient{}}
 			text, ok := frpsConfigText(inst)
 			var conf map[string]any
 			if !ok || toml.Unmarshal([]byte(text), &conf) != nil || conf == nil {
@@ -261,9 +261,19 @@ func init() {
 				out = append(out, entry)
 				continue
 			}
+			// Conteneur : son 127.0.0.1 n'est pas celui du panel, on vise son
+			// adresse sur le réseau Docker.
+			// Container: its 127.0.0.1 is not the panel's, so aim at its Docker
+			// network address.
+			if reach := frpsAPIAddr(inst); reach != "" {
+				if ws := mapv(conf, "webServer"); len(ws) > 0 {
+					ws["addr"] = reach
+				}
+			}
 			clients, err := frpsClients(conf)
 			if err != nil {
 				if errors.Is(err, errNoDashboard) {
+					entry["needs_dashboard"] = true
 					entry["error"] = c.M("Tableau de bord frps désactivé : ajoutez un bloc [webServer] à sa configuration pour voir ses clients.",
 						"frps dashboard disabled: add a [webServer] block to its configuration to see its clients.")
 				} else {
@@ -277,6 +287,68 @@ func init() {
 			out = append(out, entry)
 		}
 		c.JSON(J{"ok": true, "frps": out})
+	}))
+
+	// Active, à la demande, le tableau de bord de frps (mot de passe tiré au
+	// hasard) : la page Clients y lit les clients connectés. Pour un conteneur,
+	// le bloc écoute sur son réseau Docker (le panel n'atteint pas son 127.0.0.1).
+	// Pris en compte au prochain redémarrage de frps, qui ne relit pas sa config
+	// à chaud.
+	// Turns on frps's dashboard on demand (random password): the Clients page
+	// reads connected clients from it. For a container, the block listens on its
+	// Docker network (the panel cannot reach its 127.0.0.1). Applies at the next
+	// frps restart, as it does not reread its config live.
+	route("POST /api/clients/dashboard/{iid}", "api_clients_dashboard", perm(P("config.write"), func(c *Ctx) {
+		detectFrp(false)
+		inst := getInstance(c.Param("iid"))
+		if inst == nil || inst.Type != "frps" {
+			c.Fail(http.StatusNotFound, c.M("Instance inconnue", "Unknown instance"))
+			return
+		}
+		text, ok := frpsConfigText(inst)
+		if !ok {
+			c.Fail(http.StatusBadRequest, c.M("Configuration illisible ou introuvable : ", "Unreadable or missing configuration: ")+inst.ID)
+			return
+		}
+		docker := inst.Source == "docker"
+		cfgPath := frpsConfigPath(inst)
+		if docker && cfgPath == "" {
+			c.Fail(http.StatusBadRequest, c.M("Aucun fichier de configuration monté pour ce conteneur : montez frps.toml pour que le panel puisse l’écrire.",
+				"No mounted configuration file for this container: mount frps.toml so the panel can write it."))
+			return
+		}
+		// Un conteneur en réseau Docker n'est joignable qu'à sa propre adresse
+		// A container on a Docker network is only reachable at its own address
+		listen := "127.0.0.1"
+		if docker && inst.NetworkMode != "host" && inst.NetworkMode != "" {
+			listen = "0.0.0.0"
+		}
+		port := freeFrpsDashboardPort(frpsConfigPath(inst))
+		content, changed, err := enableFrpsDashboard(c.Lang, text, port, listen)
+		if err != nil {
+			c.Fail(http.StatusBadRequest, c.M("Config illisible : ", "Unreadable config: ")+err.Error())
+			return
+		}
+		if !changed {
+			c.JSON(J{"ok": true, "changed": false})
+			return
+		}
+		var done bool
+		var msg string
+		status := http.StatusOK
+		if docker {
+			done = hostWriteFile(cfgPath, content)
+			msg = c.M("Sauvegardé : "+cfgPath, "Saved: "+cfgPath)
+			if !done {
+				msg, status = c.M("Erreur écriture : "+cfgPath, "Write error: "+cfgPath), http.StatusInternalServerError
+			}
+		} else {
+			done, msg, status = c.Lang.writeInstanceConfig(inst, content)
+		}
+		if done {
+			invalidateCache(true)
+		}
+		c.JSON(J{"ok": done, "changed": done, "port": port, "addr": listen, "msg": msg}, status)
 	}))
 
 	// Active, à la demande, l'API d'administration de frpc (127.0.0.1, mot de

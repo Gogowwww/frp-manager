@@ -280,7 +280,13 @@ func dockerAPI(method, path string, body any, timeout ...time.Duration) (int, an
 		b, _ := json.Marshal(body)
 		rd = bytes.NewReader(b)
 	}
-	req, _ := http.NewRequest(method, "http://localhost/v1.41"+path, rd)
+	// Chemin non versionné : le démon répond dans sa propre version d'API. Un
+	// numéro figé (1.41) est refusé par les démons récents, qui imposent une
+	// version minimale plus haute.
+	// Unversioned path: the daemon answers with its own API version. A fixed
+	// number (1.41) is rejected by recent daemons, which require a higher
+	// minimum version.
+	req, _ := http.NewRequest(method, "http://localhost"+path, rd)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -327,7 +333,7 @@ func dockerLogsRaw(container string, tail int) string {
 	if !fileExists(dockerSocket) {
 		return ""
 	}
-	resp, err := dockerClient(15 * time.Second).Get(fmt.Sprintf("http://localhost/v1.41/containers/%s/logs?stdout=1&stderr=1&tail=%d", container, tail))
+	resp, err := dockerClient(15 * time.Second).Get(fmt.Sprintf("http://localhost/containers/%s/logs?stdout=1&stderr=1&tail=%d", container, tail))
 	if err != nil {
 		return ""
 	}
@@ -442,7 +448,7 @@ func dockerFollow(ctx context.Context, l Lang, container string, history int, se
 		return
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("http://localhost/v1.41/containers/%s/logs?stdout=1&stderr=1&follow=1&tail=%d", container, history), nil)
+		fmt.Sprintf("http://localhost/containers/%s/logs?stdout=1&stderr=1&follow=1&tail=%d", container, history), nil)
 	resp, err := dockerClient(0).Do(req)
 	if err != nil {
 		return

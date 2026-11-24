@@ -15,10 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // errNoDashboard : frps sans [webServer], donc sans API à interroger.
@@ -271,4 +276,118 @@ func frpsClients(conf map[string]any) ([]frpsClient, error) {
 		return a.ClientID < b.ClientID
 	})
 	return clients, nil
+}
+
+// freeFrpsDashboardPort : port libre sur la boucle locale pour le tableau de
+// bord d'un frps, en évitant ceux déjà pris par les autres instances.
+// freeFrpsDashboardPort: free port on loopback for an frps dashboard, avoiding
+// the ones already used by other instances.
+func freeFrpsDashboardPort(self string) int {
+	taken := map[int]bool{}
+	for _, inst := range instancesSnapshot() {
+		if inst.Config == "" || inst.Config == self {
+			continue
+		}
+		var conf map[string]any
+		if b, err := os.ReadFile(inst.Config); err == nil && toml.Unmarshal([]byte(frpTOML(string(b))), &conf) == nil {
+			if p := tomlInt(mapv(conf, "webServer")["port"]); p != 0 {
+				taken[p] = true
+			}
+		}
+	}
+	for p := 7500; p < 7600; p++ {
+		if taken[p] {
+			continue
+		}
+		if ln, err := net.Listen("tcp", netJoin("127.0.0.1", p)); err == nil {
+			ln.Close()
+			return p
+		}
+	}
+	return 7500
+}
+
+// enableFrpsDashboard : ajoute à une configuration frps le bloc [webServer]
+// local (127.0.0.1, mot de passe tiré au hasard) d'où la page Clients lit les
+// connexions. changed vaut false si le tableau de bord est déjà configuré.
+// enableFrpsDashboard: adds to an frps configuration the local [webServer] block
+// (127.0.0.1, random password) the Clients page reads connections from.
+// changed is false when the dashboard is already configured.
+func enableFrpsDashboard(l Lang, content string, port int, listen string) (string, bool, error) {
+	if listen == "" {
+		listen = "127.0.0.1"
+	}
+	var conf map[string]any
+	if err := toml.Unmarshal([]byte(frpTOML(content)), &conf); err != nil {
+		return "", false, err
+	}
+	if _, ok := conf["webServer"]; ok {
+		if tomlInt(mapv(conf, "webServer")["port"]) != 0 {
+			return content, false, nil
+		}
+		return "", false, errors.New(l.M("webServer sans port : ajoutez-lui un port (7500 par exemple), ou retirez le bloc",
+			"webServer without a port: give it one (7500 for example), or remove the block"))
+	}
+	block := "# " + l.M("Tableau de bord local de frps : FRP-Manager y lit les clients connectés",
+		"Local frps dashboard: FRP-Manager reads the connected clients from it") + "\n" +
+		fmt.Sprintf("[webServer]\naddr = %q\nport = %d\nuser = \"frp-manager\"\npassword = %q\n", listen, port, tokenHex(16))
+	out := strings.TrimRight(content, "\n") + "\n\n" + block
+	// Le bloc s'ajoute à la fin : on vérifie que le résultat se relit, pour ne
+	// jamais laisser un frps avec une configuration que frps refuserait.
+	// The block goes at the end: check the result parses, so an frps is never
+	// left with a configuration frps would refuse.
+	var check map[string]any
+	if err := toml.Unmarshal([]byte(out), &check); err != nil {
+		return "", false, err
+	}
+	return out, true, nil
+}
+
+// frpsConfigPath : fichier de configuration à modifier, conteneur compris (le
+// fichier de l'hôte derrière le montage).
+// frpsConfigPath: configuration file to change, containers included (the host
+// file behind the mount).
+func frpsConfigPath(inst *Instance) string {
+	if inst.Source != "docker" {
+		return inst.Config
+	}
+	st, data := dockerAPI("GET", "/containers/"+inst.ContainerName+"/json", nil)
+	ins, ok := data.(map[string]any)
+	if st != 200 || !ok {
+		return ""
+	}
+	return dockerMountedConfig(ins, "frps")
+}
+
+// frpsAPIAddr : adresse à laquelle le panel joint le tableau de bord d'un frps.
+// Vide pour une installation classique (l'adresse vient de sa configuration) ;
+// pour un conteneur, la boucle locale s'il partage celle de l'hôte, sinon son
+// adresse sur le réseau Docker — 127.0.0.1 y désignerait le conteneur lui-même.
+// frpsAPIAddr: address the panel uses to reach an frps dashboard. Empty for a
+// regular install (the address comes from its configuration); for a container,
+// loopback if it shares the host's, otherwise its Docker network address —
+// 127.0.0.1 there would mean the container itself.
+func frpsAPIAddr(inst *Instance) string {
+	if inst.Source != "docker" {
+		return ""
+	}
+	if inst.NetworkMode == "host" || inst.NetworkMode == "" {
+		return "127.0.0.1"
+	}
+	st, data := dockerAPI("GET", "/containers/"+inst.ContainerName+"/json", nil)
+	ins, ok := data.(map[string]any)
+	if st != 200 || !ok {
+		return ""
+	}
+	if ip := str(mapv(ins, "NetworkSettings"), "IPAddress", ""); ip != "" {
+		return ip
+	}
+	for _, net := range mapv(mapv(ins, "NetworkSettings"), "Networks") {
+		if m, ok := net.(map[string]any); ok {
+			if ip := str(m, "IPAddress", ""); ip != "" {
+				return ip
+			}
+		}
+	}
+	return ""
 }
