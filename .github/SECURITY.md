@@ -105,9 +105,10 @@ soon as possible. The report is credited in the release notes if you wish.
 
 **Recommendations**
 
-1. Keep the panel on `127.0.0.1` (the default for a new install) and reach it
-   through an SSH tunnel, a VPN or a reverse proxy.
-2. If you open it to the network, create the account right away and filter
+1. A new install listens on `0.0.0.0`. Set `bind_host` to `127.0.0.1` (or
+   `FRP_MANAGER_HOST=127.0.0.1` with Docker) to keep it on the machine, and
+   reach it through an SSH tunnel, a VPN or a reverse proxy.
+2. If it stays open to the network, create the account right away and filter
    access by IP.
 3. Use a long, unique password, and a long, unique frp token per server.
 4. Disable third-party mirrors (Settings → Panel access) if github.com is
