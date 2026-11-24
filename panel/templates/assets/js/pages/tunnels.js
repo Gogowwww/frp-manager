@@ -18,9 +18,11 @@ import {
   tunnelNameOk,
 } from '../toml.js';
 import { navigate, replaceParams } from '../router.js';
+import { importCertDialog, acmeCertDialog } from '../certs.js';
 
 const S = {
   iid: '',
+  filter: '', // recherche par identifiant d'utilisateur / search by user identifier
   baseText: '',
   serverAddr: '',
   baseFix: false,
@@ -56,6 +58,7 @@ export default {
     const ids = frpcIds();
     S.iid = ids.includes(params.iid) ? params.iid : ids[0] || '';
     S.snapshot = '';
+    S.filter = '';
     window.addEventListener('beforeunload', beforeUnload);
 
     const actions = [];
@@ -66,16 +69,39 @@ export default {
       sel.addEventListener('change', async () => {
         if (isDirty() && !(await confirmLeave())) { sel.value = S.iid; return; }
         S.iid = sel.value;
+        // Le filtre porte sur les identifiants de l'instance quittée
+        // The filter applies to the identifiers of the instance being left
+        S.filter = '';
+        if (S.els.filter) S.els.filter.value = '';
         replaceParams({ iid: S.iid });
         load();
       });
       actions.push(sel);
     }
+    // Export et import TOML de la liste : l'export écrit ce qui est affiché,
+    // l'import y ajoute les tunnels du fichier (voir exportToml, importDialog)
+    // TOML export and import of the list: the export writes what is displayed,
+    // the import adds the file's tunnels to it (see exportToml, importDialog)
+    if (S.iid) {
+      actions.push(button(t('tunnels.export'), { iconName: 'download', onClick: exportToml }));
+      if (can('config.write')) actions.push(button(t('tunnels.import'), { iconName: 'upload', onClick: importDialog }));
+    }
     const addBtn = button(t('tunnels.add'), { variant: 'primary', iconName: 'plus', onClick: () => editProxy(null) });
     if (S.iid && can('config.write')) actions.push(addBtn);
 
     S.els.statusHint = h('div');
-    S.els.proxies = h('div', { class: 'card' });
+    // Filtre par identifiant : la barre reste en place pendant la frappe, seules
+    // les lignes sont redessinées
+    // Filter by identifier: the bar stays in place while typing, only the rows
+    // are redrawn
+    S.els.filter = input({
+      type: 'search', placeholder: t('tunnels.filterPlaceholder'), 'aria-label': t('tunnels.filterPlaceholder'),
+    });
+    S.els.filter.addEventListener('input', () => { S.filter = S.els.filter.value.trim(); renderProxies(); });
+    S.els.filterBar = h('div', { class: 'toolbar', hidden: true },
+      h('div', { class: 'input-affix' }, icon('search'), S.els.filter));
+    S.els.proxyList = h('div');
+    S.els.proxies = h('div', { class: 'card' }, S.els.filterBar, S.els.proxyList);
     S.els.visitors = h('div', { class: 'card' });
     S.els.savebar = saveBar({
       onDiscard: discard,
@@ -99,7 +125,7 @@ export default {
       S.els.savebar));
 
     if (!S.iid) {
-      S.els.proxies.append(emptyState({
+      S.els.proxyList.append(emptyState({
         iconName: 'laptop', title: t('tunnels.noClientTitle'), text: t('tunnels.noClientText'),
         actions: [button(t('nav.dashboard'), { onClick: () => navigate('dashboard') })],
       }));
@@ -133,7 +159,12 @@ function confirmLeave() {
 // discarded: after "Discard", the reference is the already fixed config, so the
 // bar does not come back without a change by the user
 async function load(discarded = false) {
-  S.els.proxies.replaceChildren(h('div', { class: 'skeleton', style: { height: '120px', margin: '16px' } }));
+  // Page quittée pendant la requête : plus rien à redessiner
+  // Page left during the request: nothing left to redraw
+  if (!S.els.proxyList) return;
+  // Seul le conteneur des lignes est remplacé : la barre de filtre reste en place
+  // Only the rows container is replaced: the filter bar stays in place
+  S.els.proxyList.replaceChildren(h('div', { class: 'skeleton', style: { height: '120px', margin: '16px' } }));
   S.baseFix = false;
   try {
     const d = await apiOk(`/api/config/${encodeURIComponent(S.iid)}`);
@@ -215,7 +246,15 @@ function stateOf(item, list) {
 }
 
 function renderProxies() {
-  const host = S.els.proxies;
+  const host = S.els.proxyList;
+  if (!host) return;
+  // Le filtre ne s'affiche qu'une fois un identifiant saisi quelque part ; le
+  // retirer du dernier tunnel vide aussi la recherche en cours
+  // The filter only shows once an identifier has been set somewhere; removing it
+  // from the last tunnel also clears the current search
+  const anyUser = S.proxies.some((p) => p.user);
+  if (!anyUser && S.filter) clearFilter();
+  S.els.filterBar.hidden = !anyUser;
   if (!S.proxies.length) {
     host.replaceChildren(emptyState({
       iconName: 'tunnels', title: t('tunnels.emptyTitle'), text: t('tunnels.emptyText'),
@@ -223,7 +262,23 @@ function renderProxies() {
     }));
     return;
   }
-  host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, S.proxies.map(proxyRow)));
+  const q = S.filter.toLowerCase();
+  const shown = q ? S.proxies.filter((p) => (p.user || '').toLowerCase().includes(q)) : S.proxies;
+  if (!shown.length) {
+    host.replaceChildren(emptyState({
+      iconName: 'search', title: t('tunnels.filterEmptyTitle'), text: t('tunnels.filterEmptyText'),
+      actions: [button(t('tunnels.filterClear'), { onClick: clearFilter })],
+    }));
+    return;
+  }
+  host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, shown.map(proxyRow)));
+}
+
+/** Vide le filtre par identifiant et redessine la liste.
+ *  Clears the identifier filter and redraws the list. */
+function clearFilter() {
+  S.filter = '';
+  if (S.els.filter) S.els.filter.value = '';
 }
 
 /** Port attribué par le serveur : comment le connaître quand l'API de frpc manque. */
@@ -402,7 +457,8 @@ function proxyRow(p) {
   },
   h('div', { class: 'row-name' },
     h('span', { title: halves.length > 1 ? halves.map((x) => x.name).join(', ') : null }, p.name || t('tunnels.unnamed')),
-    halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase()))),
+    halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase())),
+    p.user ? badge(p.user, 'user', { title: t('tunnels.fields.user') }) : null),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), joinHostPort(p.localIP || '127.0.0.1', p.localPort || '?'),
     hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains), publicCopyValue(p)),
   h('div', { class: 'row-flags' }, flags),
@@ -538,6 +594,11 @@ async function editProxy(existing) {
     size: 'lg',
     build: ({ close }) => {
       const name = input({ value: draft.name, placeholder: t('tunnels.fields.namePlaceholder'), mono: true, autocomplete: 'off' });
+      // Identifiant de l'utilisateur du tunnel : annotation frp, reprise dans la
+      // liste et sur le tableau de bord de frps
+      // Tunnel user identifier: frp annotation, shown in the list and on the
+      // frps dashboard
+      const user = input({ value: draft.user, placeholder: t('tunnels.fields.userPlaceholder'), maxlength: '64' });
       const typeHint = h('p', { class: 'field-hint' });
       // « TCP + UDP » à la création, et pour une paire déjà regroupée (elle peut
       // redevenir un seul type) : pas pour un tunnel seul, que cela renommerait
@@ -587,6 +648,29 @@ async function editProxy(existing) {
       const certModeField = field({ label: t('tunnels.fields.certMode'), hint: t('tunnels.fields.certModeHint'), control: certMode });
       certSelect.addEventListener('change', () => sync());
 
+      // Après un import ou une obtention Let’s Encrypt depuis cet écran, la
+      // liste et le sélecteur sont rafraîchis, et le nouveau certificat choisi.
+      // After an import or a Let’s Encrypt issuance from this screen, the list
+      // and the picker are refreshed, and the new certificate selected.
+      async function reloadCerts(selectID) {
+        try {
+          const d = await api('/api/manager/certs');
+          S.certs = d.certs || [];
+          S.proxy = d.proxy || null;
+        } catch { return; }
+        const keep = selectID || certSelect.value;
+        certSelect.replaceChildren(
+          h('option', { value: '' }, t('tunnels.fields.certNone')),
+          ...S.certs.map((c) => h('option', { value: c.id }, (c.domains || []).join(', ') || c.id)));
+        if (draft.certCrt && !S.certs.some((c) => c.crt_path === draft.certCrt)) {
+          certSelect.append(h('option', { value: '__existing' }, draft.certCrt));
+        }
+        certSelect.value = [...certSelect.options].some((o) => o.value === keep) ? keep : '';
+        certField.querySelector('.field-hint').textContent = S.certs.length
+          ? t('tunnels.fields.certHint') : t('tunnels.fields.certMissing');
+        sync();
+      }
+
       // Bandeau jaune des tunnels HTTPS : un port HTTPS n'est servi en reverse
       // proxy avec certificats que si un certificat est choisi ; le réglage
       // correspondant vit dans Réglages → Proxy inverse HTTPS.
@@ -601,17 +685,37 @@ async function editProxy(existing) {
           return;
         }
         httpsNote.hidden = false;
+        // Sans certificat : les deux façons d'en créer un s'ouvrent ici, sans
+        // quitter l'éditeur ; les réglages restent accessibles pour choisir
+        // le mode par défaut des tunnels.
+        // Without a certificate: both ways to create one open here, without
+        // leaving the editor; the settings stay reachable to pick the default
+        // mode of the tunnels.
+        const actions = [];
+        if (!certSelect.value) {
+          actions.push(
+            button(t('tunnels.fields.certAcme'), {
+              size: 'sm', variant: 'secondary', iconName: 'shield',
+              onClick: () => acmeCertDialog({ onSaved: (id) => reloadCerts(id) }),
+            }),
+            button(t('tunnels.fields.certAdd'), {
+              size: 'sm', variant: 'secondary', iconName: 'upload',
+              onClick: () => importCertDialog({ onSaved: (id) => reloadCerts(id) }),
+            }));
+        }
+        actions.push(button(t('tunnels.fields.certProxySettings'), {
+          size: 'sm', variant: 'secondary',
+          onClick: () => { close(false); navigate('settings', { s: 'proxy' }); },
+        }));
         httpsNote.replaceChildren(callout({
           type: 'warn', compact: true,
           text: certSelect.value ? t('tunnels.fields.certProxyOn') : t('tunnels.fields.certProxyOff'),
-          actions: [button(t('tunnels.fields.certProxySettings'), {
-            size: 'sm', variant: 'secondary',
-            onClick: () => { close(false); navigate('settings', { s: 'proxy' }); },
-          })],
+          actions,
         }));
       }
 
       const nameField = field({ label: t('tunnels.fields.name'), hint: t('tunnels.fields.nameHint'), tomlKey: 'name', control: name });
+      const userField = field({ label: t('tunnels.fields.user'), hint: t('tunnels.fields.userHint'), tomlKey: 'annotations.user', optional: true, control: user });
       const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
@@ -723,6 +827,7 @@ async function editProxy(existing) {
         const keepCert = tp === 'https' && certSelect.value === '__existing';
         Object.assign(draft, values, {
           type: tp,
+          user: user.value.trim(),
           domains: domains.value.trim(),
           secretKey: secret.input.value,
           proxyProtocol: ppv.value,
@@ -743,6 +848,7 @@ async function editProxy(existing) {
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: submit, novalidate: true },
           nameField,
+          userField,
           h('div', { class: 'field' },
             h('span', { class: 'field-label' }, t('tunnels.fields.type'), h('span', { class: 'field-key' }, 'type')),
             type, typeHint),
@@ -786,7 +892,7 @@ function editVisitor(existing) {
         typeHint.textContent = t(`tunnels.types.${type.value}`);
       }, { label: t('tunnels.fields.type') });
       const typeHint = h('p', { class: 'field-hint' }, t(`tunnels.types.${draft.type}`));
-      const serverName = input({ value: draft.serverName, placeholder: 'service-partage', mono: true });
+      const serverName = input({ value: draft.serverName, placeholder: t('tunnels.fields.serverNamePlaceholder'), mono: true });
       const secret = secretInput({ value: draft.secretKey, placeholder: t('tunnels.fields.secretPlaceholder') });
       const bindAddr = input({ value: draft.bindAddr, placeholder: '127.0.0.1', mono: true });
       // Pas de clavier numérique : une plage s'écrit avec « - » et « , »
@@ -861,15 +967,106 @@ function editVisitor(existing) {
   });
 }
 
+// ── Import / export TOML ───────────────────────────────────────────────────
+
+/** Télécharge la configuration frpc telle qu'elle est affichée (brouillon
+ *  compris) : tous les paramètres des tunnels, y compris ceux que l'interface
+ *  ne gère pas, sont écrits tels quels.
+ *  Downloads the frpc configuration as displayed (draft included): every tunnel
+ *  parameter, including those the interface does not manage, is written as is. */
+function exportToml() {
+  const content = composeClientConfig(S.baseText, S.proxies, S.visitors);
+  const name = `${(S.iid || 'frpc').replace(/[^\w.-]+/g, '-')}.toml`;
+  const url = URL.createObjectURL(new Blob([content], { type: 'application/toml' }));
+  const link = h('a', { href: url, download: name });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Laissez le navigateur démarrer le téléchargement avant de libérer le blob
+  // Let the browser start the download before freeing the blob
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(t('tunnels.exported', { name }), 'success');
+}
+
+/** Ajoute à la liste les [[proxies]] et [[visitors]] d'un fichier TOML. La
+ *  partie connexion de ce fichier n'est pas reprise : elle appartient à
+ *  l'instance, et se modifie dans sa configuration.
+ *  Adds the [[proxies]] and [[visitors]] of a TOML file to the list. The
+ *  connection part of that file is not taken over: it belongs to the instance
+ *  and is changed in its configuration. */
+function importDialog() {
+  const file = h('input', { type: 'file', accept: '.toml,text/plain', hidden: true });
+  const chosen = h('p', { class: 'field-hint' }, t('tunnels.importNoFile'));
+  const fileBtn = button(t('tunnels.importChoose'), { size: 'sm', iconName: 'upload', onClick: () => file.click() });
+  let text = '';
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    text = '';
+    chosen.textContent = f ? f.name : t('tunnels.importNoFile');
+    if (!f) return;
+    try { text = await f.text(); }
+    catch { toast(t('tunnels.importReadError'), 'error'); }
+  });
+
+  openDialog({
+    title: t('tunnels.importTitle'),
+    description: t('tunnels.importDesc'),
+    build: ({ close }) => {
+      function submit() {
+        if (!text) { toast(t('tunnels.importNoFile'), 'error'); return; }
+        const parsed = parseToml(text);
+        const proxies = parsed.proxies.map(proxyFromBlock).filter((p) => p.name);
+        const visitors = parsed.visitors.map(visitorFromBlock).filter((v) => v.name);
+        // Noms déjà pris, par la liste et par les noms réels de frpc (paires et
+        // plages) : un tunnel en double empêcherait frpc de démarrer
+        // Names already taken, by the list and by frpc's real names (pairs and
+        // ranges): a duplicate tunnel would keep frpc from starting
+        const taken = new Set([
+          ...S.proxies.flatMap((p) => [p.name, ...frpcNames(p)]),
+          ...S.visitors.flatMap((v) => [v.name, ...visitorNames(v)]),
+        ]);
+        const skipped = [];
+        const keep = (item, names) => {
+          if (names.some((n) => taken.has(n))) { skipped.push(item.name); return false; }
+          names.forEach((n) => taken.add(n));
+          return true;
+        };
+        const addedProxies = pairProxies(proxies).filter((p) => keep(p, [p.name, ...frpcNames(p)]));
+        const addedVisitors = visitors.filter((v) => keep(v, [v.name, ...visitorNames(v)]));
+        if (!addedProxies.length && !addedVisitors.length) {
+          toast(skipped.length ? t('tunnels.importSkipped', { names: skipped.join(', ') }) : t('tunnels.importEmpty'), 'error');
+          return;
+        }
+        S.proxies = [...S.proxies, ...addedProxies];
+        S.visitors = [...S.visitors, ...addedVisitors];
+        close(true);
+        render();
+        toast(t('tunnels.importDone', { proxies: addedProxies.length, visitors: addedVisitors.length }), 'success');
+        if (skipped.length) toast(t('tunnels.importSkipped', { names: skipped.join(', ') }), 'error');
+      }
+      return {
+        body: [
+          h('div', { class: 'row-actions' }, fileBtn, file),
+          chosen,
+        ],
+        foot: [
+          button(t('common.cancel'), { onClick: () => close(false) }),
+          button(t('tunnels.importConfirm'), { variant: 'primary', onClick: submit, autofocus: true }),
+        ],
+      };
+    },
+  });
+}
+
 // ── Enregistrement ─────────────────────────────────────────────────────────
 
 async function save(restart) {
   try {
     // Config frpc : on relit la partie connexion au dernier moment
-    const current = await api(`/api/config/${encodeURIComponent(S.iid)}`).catch(() => null);
+    const current = await api(configURL(S.iid)).catch(() => null);
     const base = current && current.ok ? current.content || '' : S.baseText;
     const content = composeClientConfig(base, S.proxies, S.visitors);
-    const d = await post(`/api/config/${encodeURIComponent(S.iid)}`, { content });
+    const d = await post(configURL(S.iid), { content });
     if (!d.ok) { toast(d.msg || t('errors.generic'), 'error'); return; }
     S.baseText = content;
     S.snapshot = snapshotOf();

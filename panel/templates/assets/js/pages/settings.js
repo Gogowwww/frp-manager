@@ -20,6 +20,7 @@ import notifications from './notifications.js';
 import updates from './updates.js';
 import { users, sso } from './users.js';
 import config from './config.js';
+import { importCertDialog, acmeCertDialog } from '../certs.js';
 
 const PASSWORD_MIN = 12;
 
@@ -297,7 +298,13 @@ const access = {
 };
 
 function listenCard(cfg) {
-  const host = input({ value: cfg.bind_host || '127.0.0.1', mono: true });
+  // FRP_MANAGER_HOST (docker-compose.yml) fixe l'adresse réelle : le champ
+  // l'affiche et reste désactivé, sinon il n'aurait aucun effet.
+  // FRP_MANAGER_HOST (docker-compose.yml) sets the real address: the field
+  // shows it and stays disabled, otherwise it would have no effect.
+  const envHost = cfg.bind_host_env === true;
+  const host = input({ value: cfg.bind_host || '0.0.0.0', mono: true });
+  host.disabled = envHost;
   const port = input({ value: cfg.bind_port || 8765, inputmode: 'numeric', mono: true });
   const timeout = input({ value: Math.round((cfg.session_timeout || 3600) / 60), inputmode: 'numeric', mono: true });
   const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'network-form' });
@@ -325,7 +332,9 @@ function listenCard(cfg) {
     title: t('settings.network.listenTitle'), description: t('settings.network.listenDesc'),
     body: h('form', { id: 'network-form', class: 'form-stack', onSubmit: submit, novalidate: true },
       h('div', { class: 'form-grid' },
-        field({ label: t('settings.network.host'), hint: t('settings.network.hostHint'), tomlKey: 'bind_host', control: host }),
+        field({ label: t('settings.network.host'),
+          hint: envHost ? t('settings.network.hostEnvHint', { host: cfg.bind_host }) : t('settings.network.hostHint'),
+          tomlKey: 'bind_host', control: host }),
         field({ label: t('settings.network.port'), tomlKey: 'bind_port', control: port }),
         field({ label: t('settings.network.timeout'), hint: t('settings.network.timeoutHint'), control: timeout })),
       callout({ type: 'neutral', compact: true, text: t('settings.network.restartNote') })),
@@ -401,103 +410,10 @@ function siteCertsCard({ onChange } = {}) {
     } catch (err) { toastError(err); }
   }
 
-  function importCert() {
-    const name = input({ placeholder: t('settings.network.siteCertNamePlaceholder'), mono: true });
-    const certArea = h('textarea', { class: 'input fw-textarea', rows: 7, spellcheck: 'false', placeholder: '-----BEGIN CERTIFICATE-----' });
-    const keyArea = h('textarea', { class: 'input fw-textarea', rows: 7, spellcheck: 'false', placeholder: '-----BEGIN PRIVATE KEY-----' });
-    const saveBtn = button(t('settings.network.siteCertAdd'), { variant: 'primary', type: 'submit', form: 'site-cert-form' });
-    const picker = (area) => {
-      const file = h('input', { type: 'file', accept: '.pem,.crt,.cer,.key,.txt', hidden: true });
-      file.addEventListener('change', async () => {
-        const f = file.files && file.files[0];
-        if (!f) return;
-        try { area.value = await f.text(); setFieldError(area, ''); }
-        catch { toast(t('settings.network.siteCertFileRead'), 'error'); }
-      });
-      return h('div', { class: 'row-actions' },
-        button(t('settings.network.siteCertChooseFile'), { size: 'sm', iconName: 'upload', onClick: () => file.click() }), file);
-    };
-
-    openDialog({
-      title: t('settings.network.siteCertImportTitle'),
-      description: t('settings.network.siteCertImportDesc'),
-      build: ({ close }) => {
-        async function submit(e) {
-          e.preventDefault();
-          const cert = certArea.value.trim();
-          const key = keyArea.value.trim();
-          setFieldError(certArea, cert ? '' : t('settings.network.siteCertMissing'));
-          setFieldError(keyArea, key ? '' : t('settings.network.siteCertMissing'));
-          if (!cert || !key) return;
-          await busy(saveBtn, async () => {
-            try {
-              const d = await api('/api/manager/certs', {
-                method: 'POST',
-                body: { name: name.value.trim(), cert, key },
-              });
-              if (!d.ok) { toastResult(d); return; }
-              toast(d.msg || t('settings.network.siteCertSaved'), 'success');
-              close(true);
-            } catch (err) { toastError(err); }
-          });
-        }
-        return {
-          body: [h('form', { id: 'site-cert-form', class: 'form-stack', onSubmit: submit, novalidate: true },
-            field({ label: t('settings.network.siteCertName'), hint: t('settings.network.siteCertNameHint'), control: name }),
-            field({ label: t('settings.network.siteCertCertLabel'), hint: t('settings.network.siteCertCertHint'), control: certArea }),
-            picker(certArea),
-            field({ label: t('settings.network.siteCertKeyLabel'), hint: t('settings.network.siteCertKeyHint'), control: keyArea }),
-            picker(keyArea))],
-          foot: [button(t('common.cancel'), { onClick: () => close(false) }), saveBtn],
-        };
-      },
-      onClose: (saved) => { if (saved) load(); },
-    });
-  }
-
-  function acme() {
-    const domains = input({ placeholder: 'site.example.com, www.site.example.com', mono: true });
-    const token = secretInput({ placeholder: t('settings.network.acmeTokenPlaceholder') });
-    const staging = switchRow({
-      label: t('settings.network.acmeStaging'),
-      description: t('settings.network.acmeStagingDesc'),
-      checked: acmeState.staging === true,
-    });
-    const goBtn = button(t('settings.network.acmeIssue'), { variant: 'primary', type: 'submit', form: 'acme-cert-form' });
-
-    openDialog({
-      title: t('settings.network.acmeTitle'),
-      description: t('settings.network.acmeDesc'),
-      build: ({ close }) => {
-        async function submit(e) {
-          e.preventDefault();
-          const list = domains.value.trim();
-          setFieldError(domains, list ? '' : t('settings.network.acmeNoDomains'));
-          setFieldError(token.input, token.input.value.trim() ? '' : t('settings.network.acmeNoToken'));
-          if (!list || !token.input.value.trim()) return;
-          await busy(goBtn, async () => {
-            try {
-              const d = await api('/api/manager/certs/acme', {
-                method: 'POST',
-                body: { domains: list, token: token.input.value.trim(), staging: staging.input.checked },
-              });
-              if (!d.ok) { toastResult(d); return; }
-              toast(d.msg || t('settings.network.siteCertSaved'), 'success');
-              close(true);
-            } catch (err) { toastError(err); }
-          });
-        }
-        return {
-          body: [h('form', { id: 'acme-cert-form', class: 'form-stack', onSubmit: submit, novalidate: true },
-            field({ label: t('settings.network.acmeDomains'), hint: t('settings.network.acmeDomainsHint'), control: domains }),
-            field({ label: t('settings.network.acmeToken'), hint: t('settings.network.acmeTokenHint'), control: token.input }),
-            staging)],
-          foot: [button(t('common.cancel'), { onClick: () => close(false) }), goBtn],
-        };
-      },
-      onClose: (saved) => { if (saved) load(); },
-    });
-  }
+  // Dialogues partagés avec l'éditeur de tunnel HTTPS (voir certs.js).
+  // Dialogs shared with the HTTPS tunnel editor (see certs.js).
+  function importCert() { importCertDialog({ onSaved: () => load() }); }
+  function acme() { acmeCertDialog({ state: acmeState, onSaved: () => load() }); }
 
   load();
   return card({

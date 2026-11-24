@@ -11,14 +11,16 @@ import {
 } from '../ui.js';
 
 const FORMATS = ['discord', 'slack', 'telegram', 'ntfy', 'gotify', 'generic', 'text'];
+// Exemples d’adresse, traduits avec l’interface.
+// Address examples, translated with the interface.
 const PLACEHOLDERS = {
-  discord: 'https://discord.com/api/webhooks/…',
-  slack: 'https://hooks.slack.com/services/…',
-  telegram: 'https://api.telegram.org/bot<TOKEN>',
-  ntfy: 'https://ntfy.sh/mon-sujet',
-  gotify: 'https://gotify.example.org/message?token=…',
-  generic: 'https://example.org/hooks/frp',
-  text: 'https://example.org/hooks/frp',
+  discord: 'notifications.urlPlaceholder.discord',
+  slack: 'notifications.urlPlaceholder.slack',
+  telegram: 'notifications.urlPlaceholder.telegram',
+  ntfy: 'notifications.urlPlaceholder.ntfy',
+  gotify: 'notifications.urlPlaceholder.gotify',
+  generic: 'notifications.urlPlaceholder.generic',
+  text: 'notifications.urlPlaceholder.text',
 };
 const LEVEL_BADGE = { info: '', success: 'success', warning: 'warn', error: 'danger' };
 // Événements regroupés dans le formulaire
@@ -162,7 +164,7 @@ async function remove(hook) {
 
 async function edit(existing) {
   const isNew = !existing;
-  const draft = existing ? { ...existing } : { id: '', name: '', enabled: true, format: 'discord', events: ['instance.down', 'instance.up'], instances: [], lang: getLocale() === 'fr' ? 'fr' : 'en', cooldown: 60, template: '', chat_id: '' };
+  const draft = existing ? { ...existing } : { id: '', name: '', enabled: true, format: 'discord', events: ['instance.down', 'instance.up'], instances: [],      lang: getLocale() === 'fr' ? 'fr' : 'en', cooldown: 60, template: '', chat_id: '' };
   const formId = 'nt-form';
 
   await openDialog({
@@ -225,7 +227,7 @@ async function edit(existing) {
       const templateField = field({ label: t('notifications.template'), optional: true, control: template, hint: t('notifications.templateHint') });
       const syncFormat = () => {
         const f = format.value;
-        url.placeholder = existing ? t('notifications.keepUrl', { url: existing.url_hint }) : PLACEHOLDERS[f];
+        url.placeholder = existing ? t('notifications.keepUrl', { url: existing.url_hint }) : t(PLACEHOLDERS[f]);
         formatHint.textContent = t(`notifications.formatHint.${f}`);
         chatField.hidden = f !== 'telegram';
         secretField.hidden = !['generic', 'text'].includes(f);

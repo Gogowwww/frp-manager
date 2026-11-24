@@ -84,9 +84,11 @@ function showWelcome() {
         button(t('welcome.ok'), { variant: 'primary', onClick: () => close('ok') }),
       ].filter(Boolean),
     }),
-    onClose: (result) => {
-      if (result === 'ok') { try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* ignoré */ } }
-    },
+    // Fermé, avec ou sans « J’ai compris » : le message ne revient plus, même
+    // après un changement de langue, qui recharge la page.
+    // Closed, with or without “Got it”: the message does not come back, even
+    // after a language change, which reloads the page.
+    onClose: () => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch { /* ignoré */ } },
   });
 }
 

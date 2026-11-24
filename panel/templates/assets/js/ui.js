@@ -297,11 +297,15 @@ const CALLOUT_ICONS = { info: 'info', warn: 'alert', danger: 'alert', success: '
 /** compact : une ligne discrète (ex. rappels « mode Docker »), titre et texte à la suite. */
 export function callout({ type = 'info', title, text, actions, iconName, compact = false }) {
   if (compact) {
+    // Actions dans le corps, sous le texte : sur une ligne à côté, trois
+    // boutons écrasaient le message dans une colonne d'un mot par ligne.
+    // Actions inside the body, under the text: on a side row, three buttons
+    // squeezed the message into a one-word-per-line column.
     return h('div', { class: `callout callout-compact callout-${type}` },
       icon(iconName || CALLOUT_ICONS[type]),
       h('div', { class: 'callout-body' },
-        title && h('strong', null, title), title && text ? ' ' : null, text),
-      actions && actions.length ? h('div', { class: 'callout-inline-actions' }, actions) : null);
+        title && h('strong', null, title), title && text ? ' ' : null, text,
+        actions && actions.length ? h('div', { class: 'callout-actions' }, actions) : null));
   }
   return h('div', { class: `callout callout-${type}`, role: type === 'danger' ? 'alert' : null },
     icon(iconName || CALLOUT_ICONS[type]),

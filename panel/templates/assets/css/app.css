@@ -429,6 +429,9 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 .badge-info { background: var(--info-soft); color: var(--info-text); }
 .badge-outline { background: transparent; border: 1px solid var(--border-strong); }
 .badge-mono { font-family: var(--font-mono); font-size: 11px; letter-spacing: .02em; height: 20px; padding: 0 6px; border-radius: 5px; }
+/* Identifiant d'utilisateur : coupé s'il est long, la ligne du tunnel garde sa place
+   User identifier: clipped when long, the tunnel row keeps its layout */
+.badge-user { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 .dot-pulse { animation: pulse 1.8s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
@@ -471,7 +474,7 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
   .callout.callout-compact.callout-info { border-color: color-mix(in srgb, var(--info) 40%, transparent); }
 }
 .callout.callout-compact.callout-info > .icon { color: var(--info); }
-.callout-inline-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.callout-compact .callout-actions { margin-top: 8px; gap: 6px; }
 
 /* ── Forms ──────────────────────────────────────────────────────────────── */
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-4) var(--space-5); }

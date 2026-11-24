@@ -150,7 +150,7 @@ function edit(existing) {
     build: ({ close }) => {
       const username = input({ value: draft.username, maxLength: 64, autocomplete: 'off', spellcheck: 'false' });
       const password = secretInput({ autocomplete: 'new-password', placeholder: isNew ? '' : t('users.keepPassword') });
-      const email = input({ value: draft.email || '', type: 'email', autocomplete: 'off', spellcheck: 'false', placeholder: 'prenom.nom@exemple.fr' });
+      const email = input({ value: draft.email || '', type: 'email', autocomplete: 'off', spellcheck: 'false', placeholder: t('users.emailPlaceholder') });
       const passwordField = field({ label: isNew ? t('users.password') : t('users.newPassword'), hint: t('users.passwordHint'), control: password });
       const emailField = field({ label: t('users.email'), hint: t('users.emailHint'), control: email });
       email.disabled = !isNew && existing.linked;
@@ -308,7 +308,7 @@ async function loadOidc() {
 
 function oidcCard(cfg, defaultRedirect) {
   const enabled = switchRow({ label: t('users.oidc.enable'), description: t('users.oidc.enableDesc'), checked: cfg.enabled });
-  const issuer = input({ value: cfg.issuer, mono: true, spellcheck: 'false', placeholder: 'https://auth.exemple.fr/realms/maison' });
+  const issuer = input({ value: cfg.issuer, mono: true, spellcheck: 'false', placeholder: t('users.oidc.issuerPlaceholder') });
   const clientId = input({ value: cfg.client_id, mono: true, spellcheck: 'false' });
   const secret = secretInput({ placeholder: cfg.has_secret ? t('users.oidc.keepSecret') : t('users.oidc.noSecret') });
   const scopes = input({ value: cfg.scopes, mono: true, spellcheck: 'false' });
@@ -318,7 +318,7 @@ function oidcCard(cfg, defaultRedirect) {
   const groupsClaim = input({ value: cfg.groups_claim, mono: true, spellcheck: 'false' });
   const autoCreate = switchRow({ label: t('users.oidc.autoCreate'), description: t('users.oidc.autoCreateDesc'), checked: cfg.auto_create });
   const defaultRole = select(['viewer', 'operator'].map((r) => ({ value: r, label: roleLabel(r) })), cfg.default_role);
-  const domains = input({ value: (cfg.allowed_domains || []).join(', '), mono: true, spellcheck: 'false', placeholder: 'exemple.fr' });
+  const domains = input({ value: (cfg.allowed_domains || []).join(', '), mono: true, spellcheck: 'false', placeholder: t('users.oidc.domainsPlaceholder') });
 
   // Correspondance groupe du fournisseur → rôle
   const rows = h('div', { class: 'kv-rows' });
