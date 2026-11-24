@@ -42,6 +42,12 @@ func TestAcmeDomains(t *testing.T) {
 	}
 }
 
+func TestFinishManualOrderUnknown(t *testing.T) {
+	if _, err := finishManualOrder(context.Background(), "inconnu"); err == nil {
+		t.Fatal("ordre inconnu accepté")
+	}
+}
+
 func TestTxtRecordName(t *testing.T) {
 	cases := map[string]string{
 		"example.com":   "_acme-challenge.example.com",

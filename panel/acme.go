@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -69,6 +70,35 @@ func saveACMECfg(s acmeSettings) error {
 	return err
 }
 
+// acmeDirectory : adresse de l'API ACME, production ou bac à sable.
+// acmeDirectory: ACME API address, production or staging.
+func acmeDirectory(staging bool) string {
+	if staging {
+		return acmeDirectoryStaging
+	}
+	return acmeDirectoryProd
+}
+
+// acmeClient : client ACME avec le compte créé ou retrouvé, et l'adresse de
+// contact configurée quand elle existe.
+// acmeClient: ACME client with the account created or found, and the configured
+// contact address when it exists.
+func acmeClient(ctx context.Context, staging bool, email string) (*acme.Client, error) {
+	accountKey, err := acmeAccountKey()
+	if err != nil {
+		return nil, err
+	}
+	client := &acme.Client{Key: accountKey, DirectoryURL: acmeDirectory(staging)}
+	acct := &acme.Account{}
+	if email != "" {
+		acct.Contact = []string{"mailto:" + email}
+	}
+	if _, err := client.Register(ctx, acct, acme.AcceptTOS); err != nil && !errors.Is(err, acme.ErrAccountAlreadyExists) {
+		return nil, err
+	}
+	return client, nil
+}
+
 func init() {
 	route("POST /api/manager/certs/acme", "api_manager_certs_acme", perm(P("settings.manage"), func(c *Ctx) {
 		domains, err := acmeDomains(c.Body())
@@ -97,6 +127,41 @@ func init() {
 		if err := saveACMECfg(s); err != nil {
 			log.Printf("[WARN] %s", systemLang().M(fmt.Sprintf("Réglages ACME non enregistrés : %v", err),
 				fmt.Sprintf("ACME settings not saved: %v", err)))
+		}
+		info, _ := siteCertInfo(id)
+		c.JSON(J{"ok": true, "id": id, "certificate": info,
+			"msg": c.M("Certificat obtenu et enregistré.", "Certificate issued and saved.")})
+	}))
+
+	// Sans jeton Cloudflare : le panel affiche les enregistrements TXT et
+	// l'administrateur les crée chez son fournisseur DNS.
+	// Without a Cloudflare token: the panel shows the TXT records and the
+	// administrator creates them at their DNS provider.
+	route("POST /api/manager/certs/acme/manual", "api_manager_certs_acme_manual", perm(P("settings.manage"), func(c *Ctx) {
+		domains, err := acmeDomains(c.Body())
+		if err != nil {
+			c.Fail(http.StatusBadRequest, errIn(err, c.Lang))
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.R.Context(), time.Minute)
+		defer cancel()
+		id, records, err := startManualOrder(ctx, domains, truthy(c.Body()["staging"]))
+		if err != nil {
+			c.Fail(http.StatusBadGateway, c.M("Demande ACME impossible : ", "ACME request failed: ")+err.Error())
+			return
+		}
+		c.JSON(J{"ok": true, "id": id, "domains": domains, "records": records,
+			"msg": c.M("Créez ces enregistrements TXT, puis lancez la validation.",
+				"Create these TXT records, then run the validation.")})
+	}))
+
+	route("POST /api/manager/certs/acme/manual/{id}", "api_manager_certs_acme_manual_finish", perm(P("settings.manage"), func(c *Ctx) {
+		ctx, cancel := context.WithTimeout(c.R.Context(), 10*time.Minute)
+		defer cancel()
+		id, err := finishManualOrder(ctx, c.Param("id"))
+		if err != nil {
+			c.Fail(http.StatusBadGateway, c.M("Certificat non obtenu : ", "Certificate not issued: ")+errIn(err, c.Lang))
+			return
 		}
 		info, _ := siteCertInfo(id)
 		c.JSON(J{"ok": true, "id": id, "certificate": info,
@@ -192,20 +257,8 @@ func acmeAccountKey() (*ecdsa.PrivateKey, error) {
 // domain name, with a suffix when a certificate of that name exists; given id:
 // renewal, the pair is replaced.
 func issueSiteCert(ctx context.Context, id string, domains []string, s acmeSettings) (string, error) {
-	accountKey, err := acmeAccountKey()
+	client, err := acmeClient(ctx, s.Staging, s.Email)
 	if err != nil {
-		return "", err
-	}
-	dir := acmeDirectoryProd
-	if s.Staging {
-		dir = acmeDirectoryStaging
-	}
-	client := &acme.Client{Key: accountKey, DirectoryURL: dir}
-	acct := &acme.Account{}
-	if s.Email != "" {
-		acct.Contact = []string{"mailto:" + s.Email}
-	}
-	if _, err := client.Register(ctx, acct, acme.AcceptTOS); err != nil && !errors.Is(err, acme.ErrAccountAlreadyExists) {
 		return "", err
 	}
 	ids := make([]acme.AuthzID, len(domains))
@@ -269,32 +322,49 @@ func issueSiteCert(ctx context.Context, id string, domains []string, s acmeSetti
 		}
 	}
 
-	siteKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	chain, keyPEM, err := orderCertificate(ctx, client, order, domains)
 	if err != nil {
 		return "", err
+	}
+	return saveIssuedCert(id, domains, chain, keyPEM, siteCertMeta{Domains: domains, Provider: "cloudflare",
+		Staging: s.Staging, Issued: time.Now().UTC()})
+}
+
+// orderCertificate : clé du site, CSR et certificat final d'un ordre validé.
+// orderCertificate: site key, CSR and final certificate of a validated order.
+func orderCertificate(ctx context.Context, client *acme.Client, order *acme.Order, domains []string) (certPEM, keyPEM []byte, err error) {
+	siteKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
 	}
 	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{DNSNames: domains}, siteKey)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	ders, _, err := client.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
 	var chain bytes.Buffer
 	for _, der := range ders {
 		if err := pem.Encode(&chain, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
-			return "", err
+			return nil, nil, err
 		}
 	}
 	keyDER, err := x509.MarshalECPrivateKey(siteKey)
 	if err != nil {
-		return "", err
+		return nil, nil, err
 	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 	if _, err := validateSiteCert(chain.Bytes(), keyPEM); err != nil {
-		return "", err
+		return nil, nil, err
 	}
+	return chain.Bytes(), keyPEM, nil
+}
+
+// saveIssuedCert : écrit la paire et ses métadonnées sous un identifiant libre.
+// saveIssuedCert: writes the pair and its metadata under a free id.
+func saveIssuedCert(id string, domains []string, certPEM, keyPEM []byte, meta siteCertMeta) (string, error) {
 	if id == "" {
 		id = siteCertID(strings.TrimPrefix(domains[0], "*."))
 		if id == "" {
@@ -307,14 +377,158 @@ func issueSiteCert(ctx context.Context, id string, domains []string, s acmeSetti
 			crtPath, _ = siteCertPaths(id)
 		}
 	}
-	if err := writeSiteCertPair(id, chain.Bytes(), keyPEM); err != nil {
+	if err := writeSiteCertPair(id, certPEM, keyPEM); err != nil {
 		return "", err
 	}
-	if err := writeSiteCertMeta(id, siteCertMeta{Domains: domains, Provider: "cloudflare",
-		Staging: s.Staging, Issued: time.Now().UTC()}); err != nil {
+	if err := writeSiteCertMeta(id, meta); err != nil {
 		return "", err
 	}
 	return id, nil
+}
+
+// ── Validation DNS-01 manuelle ──────────────────────────────────────────────
+// Sans jeton d'API, l'administrateur crée lui-même les enregistrements TXT chez
+// son fournisseur DNS : le panel les affiche, attend leur propagation, puis
+// valide l'ordre.
+// Manual DNS-01 validation: without an API token, the administrator creates the
+// TXT records at their DNS provider themselves: the panel shows them, waits for
+// propagation, then validates the order.
+
+type manualAuthz struct {
+	url     string
+	txtName string
+	txt     string
+}
+
+type manualOrder struct {
+	client  *acme.Client
+	order   *acme.Order
+	domains []string
+	staging bool
+	authz   []manualAuthz
+	created time.Time
+}
+
+var manualOrders = struct {
+	sync.Mutex
+	m map[string]*manualOrder
+}{m: map[string]*manualOrder{}}
+
+// manualOrderTTL : délai laissé pour créer les enregistrements et valider.
+// manualOrderTTL: time left to create the records and validate.
+const manualOrderTTL = 30 * time.Minute
+
+// startManualOrder : prépare un ordre DNS-01 et renvoie les enregistrements TXT
+// à créer. Rien n'est écrit chez le fournisseur DNS.
+// startManualOrder: prepares a DNS-01 order and returns the TXT records to
+// create. Nothing is written at the DNS provider.
+func startManualOrder(ctx context.Context, domains []string, staging bool) (string, []J, error) {
+	client, err := acmeClient(ctx, staging, acmeCfg().Email)
+	if err != nil {
+		return "", nil, err
+	}
+	ids := make([]acme.AuthzID, len(domains))
+	for i, d := range domains {
+		ids[i] = acme.AuthzID{Type: "dns", Value: d}
+	}
+	order, err := client.AuthorizeOrder(ctx, ids)
+	if err != nil {
+		return "", nil, err
+	}
+	records := []J{}
+	authzList := []manualAuthz{}
+	for _, authzURL := range order.AuthzURLs {
+		authz, err := client.GetAuthorization(ctx, authzURL)
+		if err != nil {
+			return "", nil, err
+		}
+		if authz.Status == acme.StatusValid {
+			continue
+		}
+		chal := challengeOfType(authz, "dns-01")
+		if chal == nil {
+			return "", nil, fmt.Errorf("validation dns-01 indisponible pour %s", authz.Identifier.Value)
+		}
+		value, err := client.DNS01ChallengeRecord(chal.Token)
+		if err != nil {
+			return "", nil, err
+		}
+		name := txtRecordName(authz.Identifier.Value)
+		records = append(records, J{"domain": authz.Identifier.Value, "name": name, "value": value})
+		authzList = append(authzList, manualAuthz{url: authzURL, txtName: name, txt: value})
+	}
+	id := tokenHex(16)
+	manualOrders.Lock()
+	for key, o := range manualOrders.m {
+		if time.Since(o.created) > manualOrderTTL {
+			delete(manualOrders.m, key)
+		}
+	}
+	manualOrders.m[id] = &manualOrder{client: client, order: order, domains: domains,
+		staging: staging, authz: authzList, created: time.Now()}
+	manualOrders.Unlock()
+	return id, records, nil
+}
+
+// finishManualOrder : vérifie la propagation, valide l'ordre et enregistre le
+// certificat. L'ordre reste disponible en cas d'échec de propagation, pour
+// réessayer sans recréer les enregistrements.
+// finishManualOrder: checks propagation, validates the order and saves the
+// certificate. The order stays available when propagation failed, to retry
+// without creating the records again.
+func finishManualOrder(ctx context.Context, id string) (string, error) {
+	manualOrders.Lock()
+	o, ok := manualOrders.m[id]
+	manualOrders.Unlock()
+	if !ok || time.Since(o.created) > manualOrderTTL {
+		return "", langErr("demande expirée : recommencez", "request expired: start again")
+	}
+	for _, a := range o.authz {
+		if err := waitTXT(ctx, a.txtName, a.txt, 2*time.Minute); err != nil {
+			return "", err
+		}
+	}
+	for _, a := range o.authz {
+		authz, err := o.client.GetAuthorization(ctx, a.url)
+		if err != nil {
+			return "", err
+		}
+		switch authz.Status {
+		case acme.StatusValid:
+			continue
+		case acme.StatusInvalid:
+			manualOrders.Lock()
+			delete(manualOrders.m, id)
+			manualOrders.Unlock()
+			return "", langErr("validation refusée par Let’s Encrypt : recommencez la demande",
+				"validation refused by Let’s Encrypt: start the request again")
+		}
+		chal := challengeOfType(authz, "dns-01")
+		if chal == nil {
+			return "", fmt.Errorf("validation dns-01 indisponible pour %s", authz.Identifier.Value)
+		}
+		if _, err := o.client.Accept(ctx, chal); err != nil {
+			return "", err
+		}
+	}
+	for _, a := range o.authz {
+		if _, err := o.client.WaitAuthorization(ctx, a.url); err != nil {
+			return "", err
+		}
+	}
+	chain, keyPEM, err := orderCertificate(ctx, o.client, o.order, o.domains)
+	if err != nil {
+		return "", err
+	}
+	certID, err := saveIssuedCert("", o.domains, chain, keyPEM, siteCertMeta{Domains: o.domains,
+		Provider: "manual", Staging: o.staging, Issued: time.Now().UTC()})
+	if err != nil {
+		return "", err
+	}
+	manualOrders.Lock()
+	delete(manualOrders.m, id)
+	manualOrders.Unlock()
+	return certID, nil
 }
 
 // challengeOfType : la validation ACME du type demandé.
@@ -485,10 +699,12 @@ func txtPresent(ctx context.Context, name, value string) bool {
 	return false
 }
 
-// siteCertRenewLoop : renouvelle les certificats ACME 30 jours avant leur
-// expiration, tant que le jeton reste configuré.
-// siteCertRenewLoop: renews ACME certificates 30 days before expiry, as long as
-// the token stays configured.
+// siteCertRenewLoop : renouvelle les certificats Cloudflare 30 jours avant
+// leur expiration, tant que le jeton reste configuré. Ceux obtenus par
+// validation manuelle (provider « manual ») se renouvellent à la main.
+// siteCertRenewLoop: renews Cloudflare certificates 30 days before expiry, as
+// long as the token stays configured. Ones obtained through manual validation
+// ("manual" provider) are renewed by hand.
 func siteCertRenewLoop() {
 	l := systemLang()
 	time.Sleep(5 * time.Minute)
@@ -500,7 +716,7 @@ func siteCertRenewLoop() {
 		}
 		for _, id := range siteCertIDs() {
 			meta := siteCertMetaOf(id)
-			if meta.Provider == "" || len(meta.Domains) == 0 {
+			if meta.Provider != "cloudflare" || len(meta.Domains) == 0 {
 				continue
 			}
 			info, err := siteCertInfo(id)
