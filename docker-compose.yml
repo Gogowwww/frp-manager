@@ -42,11 +42,11 @@ services:
 
     environment:
       - FRP_MANAGER_PORT=8765
-      # New install: the panel only listens on 127.0.0.1 (reach it through an
-      # SSH tunnel or a local reverse proxy). To open it to your local
-      # network, uncomment the next line, create the account right away and
-      # filter access (firewall, VPN):
-      # - FRP_MANAGER_HOST=0.0.0.0
+      # Le panel écoute sur 0.0.0.0 par défaut (joignable depuis le réseau).
+      # Pour le limiter à cette machine : FRP_MANAGER_HOST=127.0.0.1
+      # The panel listens on 0.0.0.0 by default (reachable from the network).
+      # To restrict it to this machine: FRP_MANAGER_HOST=127.0.0.1
+      # - FRP_MANAGER_HOST=127.0.0.1
       # Port d'écoute du frps créé au premier lancement (par défaut : tiré au
       # hasard entre 10000 et 32767, affiché dans le panel)
       # Listening port of the frps created on first launch (default: picked at
@@ -55,12 +55,12 @@ services:
       # Disable third-party download mirrors (ghproxy, ghfast, gh-proxy):
       # - FRP_MANAGER_NO_MIRRORS=1
 
-    # Sans réseau de l'hôte (réseau Docker par défaut) : retirez network_mode,
-    # publiez le panel, le port de frps et ceux des tunnels, et mettez
-    # FRP_MANAGER_HOST=0.0.0.0 (le panel est alors joint par Docker) :
-    # Without the host network (default Docker network): remove network_mode,
-    # publish the panel, frps's port and the tunnels' ports, and set
-    # FRP_MANAGER_HOST=0.0.0.0 (the panel is then reached through Docker):
+    # Sans réseau de l'hôte (réseau Docker par défaut) : retirez network_mode
+    # et publiez le panel, le port de frps et ceux des tunnels (le panel écoute
+    # déjà sur 0.0.0.0, donc Docker peut le joindre) :
+    # Without the host network (default Docker network): remove network_mode
+    # and publish the panel, frps's port and the tunnels' ports (the panel
+    # already listens on 0.0.0.0, so Docker can reach it):
     # ports:
     #   - "127.0.0.1:8765:8765"
     #   - "7000:7000"

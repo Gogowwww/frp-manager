@@ -317,6 +317,18 @@ func TestManagerConfigNeverExposesSecrets(t *testing.T) {
 	}
 }
 
+func TestConfigReportsEnvironmentListeningAddress(t *testing.T) {
+	e := setup(t)
+	e.setPassword(testPassword, "admin", false)
+	c := e.client()
+	c.login("admin", testPassword)
+	t.Setenv("FRP_MANAGER_HOST", "0.0.0.0")
+	conf := c.get("/api/manager/config").json()["config"].(map[string]any)
+	if conf["bind_host"] != "0.0.0.0" || conf["bind_host_env"] != true {
+		t.Fatalf("adresse effective : %v", conf)
+	}
+}
+
 func TestConfigFileIsPrivate(t *testing.T) {
 	e := setup(t)
 	e.setPassword(testPassword, "admin", false)
@@ -331,12 +343,12 @@ func TestConfigFileIsPrivate(t *testing.T) {
 
 // ── Adresse d'écoute : nouvelle installation et rétrocompatibilité ──────────
 
-func TestNewInstallListensOnLocalhost(t *testing.T) {
+func TestNewInstallListensEverywhere(t *testing.T) {
 	e := setup(t)
 	t.Setenv("FRP_MANAGER_PORT", "9123")
 	ensureManagerConfig()
 	c := e.savedConfig()
-	if c["bind_host"] != "127.0.0.1" || c["bind_port"] != float64(9123) || c["secret_key"] == "" {
+	if c["bind_host"] != "0.0.0.0" || c["bind_port"] != float64(9123) || c["secret_key"] == "" {
 		t.Fatalf("config : %v", c)
 	}
 }

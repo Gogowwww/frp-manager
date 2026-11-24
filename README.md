@@ -22,7 +22,7 @@ curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compo
 docker compose up -d
 ```
 
-The panel listens on `127.0.0.1:8765` only. From your computer, open an SSH tunnel with `ssh -L 8765:127.0.0.1:8765 user@server`, browse to `https://127.0.0.1:8765` and create the administrator account. To open it to your network, see [Reaching the panel from another machine](https://frp-manager.org/docs/installation/#reaching-the-panel-from-another-machine).
+The panel listens on all interfaces (`0.0.0.0:8765`): browse to `https://<server-address>:8765` and create the administrator account right away. To keep it reachable from the machine only, set `bind_host` to `127.0.0.1` (or `FRP_MANAGER_HOST=127.0.0.1` with Docker); see [Reaching the panel from another machine](https://frp-manager.org/docs/installation/#reaching-the-panel-from-another-machine).
 
 Without Docker, the install script sets up the panel (a single program, no dependency), frp and their systemd services:
 
@@ -38,7 +38,7 @@ Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the re
 ## Features
 
 - **Dashboard**: automatic detection of frps/frpc systemd services, binaries, configs and Docker containers, or, with Docker, frps and frpc run by the panel itself; start, stop, restart, start on boot; live status over WebSocket; nicknames; a deleted frps/frpc service can be reinstalled in one click.
-- **Ports (frpc)**: readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options, the same port in TCP and UDP at once, and [port ranges](https://frp-manager.org/docs/installation/#ports-tcp--udp-and-port-ranges) (`30000-30010`). Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](.github/SECURITY.md)).
+- **Ports (frpc)** : readable list (`vps.example.net:25565 → 127.0.0.1:25565`) and a guided editor for `tcp`, `udp`, `http`, `https`, `stcp`, `xtcp` and visitors, with PROXY protocol, encryption and compression options, the same port in TCP and UDP at once, and [port ranges](https://frp-manager.org/docs/installation/#ports-tcp--udp-and-port-ranges) (`30000-30010`). Settings the editor does not handle are kept as they are. A port left without a number gets its public port from the server; the panel can show it, after a confirmation, through frpc's local dashboard (see [SECURITY](.github/SECURITY.md)).
 - **Firewall (frps)**: allow-only or block rules by address, network or whole provider (AS number), applied in the kernel with nftables before Docker's NAT; blocked connections in real time; optional community lists.
 - **Configuration**: frps and frpc settings in sections, each field showing its TOML key; configs are parsed before being written.
 - **Logs**: systemd journal, log file, output of the frps/frpc run by the panel, or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
@@ -76,7 +76,7 @@ The panel controls exposed ports and runs as root, so it is locked down by defau
 
 - **Mandatory initial setup**: no page or API route answers until an administrator account exists (password of 12 characters or more).
 - **Password hashing** with argon2id; older hashes (scrypt, SHA-256) are accepted once and rehashed automatically.
-- **Listens on `127.0.0.1`** in a new install; opening it to the network is an explicit choice.
+- **Listens on all interfaces (`0.0.0.0`)** in a new install; to keep it reachable from the machine only, set `bind_host` to `127.0.0.1` (or `FRP_MANAGER_HOST`).
 - **Brute-force protection**: attempts limited per IP, with a growing lockout.
 - **Least privilege**: every API route and WebSocket checks the account's permissions; an account that manages users can't grant more than it has, and only a full administrator configures single sign-on.
 - **Passkeys (WebAuthn)**: added only after confirming the password, user verification required, passkeys tied to the panel's domain, signature counter checked.

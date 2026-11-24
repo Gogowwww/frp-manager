@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -63,6 +64,19 @@ func generateSelfSignedCert() error {
 	return os.WriteFile(sslCertFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
 }
 
+// panelBindHost : adresse d'écoute effective du panel. FRP_MANAGER_HOST
+// (docker-compose.yml) passe avant bind_host : c'est cette valeur que les
+// réglages du panel doivent montrer.
+// panelBindHost: effective panel listening address. FRP_MANAGER_HOST
+// (docker-compose.yml) takes precedence over bind_host: this is the value the
+// panel settings must show.
+func panelBindHost() string {
+	if h := strings.TrimSpace(os.Getenv("FRP_MANAGER_HOST")); h != "" {
+		return h
+	}
+	return str(cfg(), "bind_host", "0.0.0.0")
+}
+
 // tlsConfig : certificat du panel, ou nil (HTTP) si ssl_enabled est faux ou
 // si le certificat ne peut être ni lu ni créé.
 func tlsConfig() *tls.Config {
@@ -103,11 +117,7 @@ func main() {
 	ensureManagerConfig()
 	initServer()
 
-	// FRP_MANAGER_HOST (Docker : docker-compose.yml) passe avant bind_host
-	host := os.Getenv("FRP_MANAGER_HOST")
-	if host == "" {
-		host = str(cfg(), "bind_host", "127.0.0.1")
-	}
+	host := panelBindHost()
 	port := intv(cfg(), "bind_port", 8765)
 	if port <= 0 {
 		port = 8765

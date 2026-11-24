@@ -268,7 +268,7 @@ for _ in 1 2 3 4 5; do [[ -f /etc/frp-manager/frp-manager.json ]] && break; slee
 if [[ -f /etc/frp-manager/frp-manager.json ]]; then
     grep -Eq '"ssl_enabled": *false' /etc/frp-manager/frp-manager.json && SSL_EN=false || SSL_EN=true
     BIND_HOST=$(sed -n 's/.*"bind_host": *"\([^"]*\)".*/\1/p' /etc/frp-manager/frp-manager.json | head -n1)
-    BIND_HOST="${BIND_HOST:-127.0.0.1}"
+    BIND_HOST="${BIND_HOST:-0.0.0.0}"
     [[ "$SSL_EN" == "false" ]] && PROTO="http"
 fi
 if [[ "$BIND_HOST" == "127.0.0.1" || "$BIND_HOST" == "::1" ]]; then
@@ -289,6 +289,10 @@ echo ""
 echo -e "  $(m "Interface web :" "Web interface:") ${BOLD}${PANEL_URL}${RESET}"
 [[ "$PROTO" == "https" ]] && echo -e "  ${YELLOW}$(m "Certificat auto-signé : acceptez l'avertissement du navigateur." \
                                                      "Self-signed certificate: accept the browser warning.")${RESET}"
+if [[ "$BIND_HOST" != "127.0.0.1" && "$BIND_HOST" != "::1" ]]; then
+    echo -e "  ${YELLOW}$(m "Joignable depuis le réseau (0.0.0.0) : créez l'identifiant administrateur sans attendre, puis filtrez l'accès (pare-feu, VPN)." \
+                                                   "Reachable from the network (0.0.0.0): create the administrator account right away, then filter access (firewall, VPN).")${RESET}"
+fi
 if [[ "$PANEL_URL" == *"127.0.0.1"* ]]; then
     echo -e "  ${YELLOW}$(m "Le panel n'écoute que sur cette machine (127.0.0.1)." "The panel only listens on this machine (127.0.0.1).")${RESET}"
     echo -e "  $(m "Depuis un autre poste :" "From another computer:") ${CYAN}ssh -L ${MANAGER_PORT}:127.0.0.1:${MANAGER_PORT} root@${LOCAL_IP}${RESET}"

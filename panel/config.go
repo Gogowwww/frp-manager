@@ -52,9 +52,12 @@ func tokenHex(n int) string {
 
 func defaultManagerConfig() Cfg {
 	return Cfg{
-		// Nouvelle installation : joignable depuis cette machine seulement.
-		// Pour ouvrir au réseau : Réglages, bind_host, ou FRP_MANAGER_HOST=0.0.0.0.
-		"bind_host":       "127.0.0.1",
+		// Nouvelle installation : joignable depuis le réseau.
+		// Pour la limiter à cette machine : Réglages, bind_host=127.0.0.1,
+		// ou FRP_MANAGER_HOST=127.0.0.1.
+		// New install: reachable from the network. To restrict it to this
+		// machine: Settings, bind_host=127.0.0.1, or FRP_MANAGER_HOST=127.0.0.1.
+		"bind_host":       "0.0.0.0",
 		"bind_port":       float64(8765),
 		"username":        "admin",
 		"password_hash":   "",
@@ -175,8 +178,10 @@ func cfgUpdateLocked(patch Cfg) (Cfg, error) {
 
 // ensureManagerConfig : au démarrage, le fichier existe, avec sa clé de session,
 // et n'est lisible que par root. Une installation antérieure sans fichier (panel
-// jamais configuré) garde son ancienne adresse d'écoute, 0.0.0.0 : la passer à
-// 127.0.0.1 couperait l'accès à distance à la mise à jour.
+// jamais configuré) garde son ancienne adresse d'écoute, 0.0.0.0.
+// ensureManagerConfig: on startup the file exists, with its session key, and is
+// readable by root only. An older install without a file (panel never
+// configured) keeps its previous listening address, 0.0.0.0.
 func ensureManagerConfig() {
 	data, err := readConfigFile()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

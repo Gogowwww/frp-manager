@@ -429,6 +429,14 @@ func init() {
 		}
 		safe["is_owner"] = c.currentUser()["id"] == ownerID
 		safe["has_password"] = !needsSetup()
+		// FRP_MANAGER_HOST (docker-compose.yml) donne l'adresse d'écoute réelle,
+		// même quand bind_host garde l'ancienne valeur du fichier.
+		// FRP_MANAGER_HOST (docker-compose.yml) gives the real listening
+		// address, even when bind_host keeps the file's older value.
+		if h := strings.TrimSpace(os.Getenv("FRP_MANAGER_HOST")); h != "" {
+			safe["bind_host"] = h
+			safe["bind_host_env"] = true
+		}
 		// Contenu exact des statistiques anonymes, montré avant de les activer
 		// Exact content of the anonymous statistics, shown before turning them on
 		safe["anonymous_stats_payload"] = statsPayload()
@@ -552,8 +560,13 @@ func init() {
 			// First ping right away, without waiting for the hourly loop
 			go sendStats()
 		}
-		c.JSON(J{"ok": true, "msg": c.M("Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.",
-			"Saved. Restart frp-manager to apply bind_host/port.")})
+		msg := c.M("Sauvegardé. Redémarrez frp-manager pour appliquer bind_host/port.",
+			"Saved. Restart frp-manager to apply bind_host/port.")
+		if strings.TrimSpace(os.Getenv("FRP_MANAGER_HOST")) != "" {
+			msg = c.M("Adresse enregistrée, mais FRP_MANAGER_HOST (docker-compose.yml) prend le dessus jusqu'à sa suppression.",
+				"Address saved, but FRP_MANAGER_HOST (docker-compose.yml) takes precedence until it is removed.")
+		}
+		c.JSON(J{"ok": true, "msg": msg})
 	}))
 
 	route("GET /api/nicknames", "api_nicknames_get", perm(P("instances.view"), func(c *Ctx) {

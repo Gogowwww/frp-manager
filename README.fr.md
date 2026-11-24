@@ -22,7 +22,7 @@ curl -O https://raw.githubusercontent.com/Gogowwww/frp-manager/main/docker-compo
 docker compose up -d
 ```
 
-Le panel n'écoute que sur `127.0.0.1:8765`. Depuis votre ordinateur, ouvrez un tunnel SSH avec `ssh -L 8765:127.0.0.1:8765 utilisateur@serveur`, allez sur `https://127.0.0.1:8765` et créez l'identifiant administrateur. Pour l'ouvrir à votre réseau, voir [Accéder au panel depuis un autre poste](https://frp-manager.org/fr/docs/installation/#accéder-au-panel-depuis-un-autre-poste).
+Le panel écoute sur toutes les interfaces (`0.0.0.0:8765`) : allez sur `https://<adresse-du-serveur>:8765` et créez l'identifiant administrateur dès la première ouverture. Pour le limiter à la machine, réglez `bind_host` sur `127.0.0.1` (ou `FRP_MANAGER_HOST=127.0.0.1` avec Docker) ; voir [Accéder au panel depuis un autre poste](https://frp-manager.org/fr/docs/installation/#accéder-au-panel-depuis-un-autre-poste).
 
 Sans Docker, le script d'installation met en place le panel (un seul programme, sans dépendance), frp et leurs services systemd :
 
@@ -76,7 +76,7 @@ Le panel contrôle des ports exposés et tourne en root : il est verrouillé par
 
 - **Configuration initiale obligatoire** : aucune page ni route de l'API ne répond tant qu'aucun compte administrateur n'existe (mot de passe de 12 caractères ou plus).
 - **Mot de passe haché** en argon2id ; les anciens hashs (scrypt, SHA-256) sont acceptés une fois puis rehachés automatiquement.
-- **Écoute sur `127.0.0.1`** pour une nouvelle installation ; l'ouvrir au réseau est un choix explicite.
+- **Écoute sur toutes les interfaces (`0.0.0.0`)** pour une nouvelle installation ; pour la limiter à la machine, réglez `bind_host` sur `127.0.0.1` (ou `FRP_MANAGER_HOST`).
 - **Protection contre la force brute** : tentatives limitées par IP, avec un verrouillage croissant.
 - **Moindre privilège** : chaque route de l'API et chaque WebSocket vérifie les permissions du compte ; un compte qui gère les utilisateurs ne peut pas accorder plus qu'il n'a, et seul un administrateur complet configure la connexion unique.
 - **Passkeys (WebAuthn)** : ajoutées seulement après confirmation du mot de passe, vérification de l'utilisateur exigée, passkeys liées au domaine du panel, compteur de signatures contrôlé.
