@@ -13,17 +13,17 @@
 # architectures, pas de rebuild) ; release GitHub passée de pré-release à release
 # normale, marquée « latest » (visible par le bouton « Mettre à jour » des panels
 # installés) ; paquets .deb de la release copiés dans la distribution « stable »
-# du dépôt APT.
+# du dépôt APT ; site frp-manager.org prévenu, pour qu'il affiche la version.
 # Effects, in this order: image :X.Y.Z re-tagged as :latest (same image, all
 # architectures, no rebuild); GitHub release turned from pre-release into a
 # normal release, marked "latest" (seen by the "Update" button of installed
 # panels); .deb packages of the release copied into the "stable" distribution
-# of the APT repository.
+# of the APT repository; frp-manager.org notified, so that it shows the version.
 #
 # Prérequis : pré-release créée par release.yml, secrets APT_GPG_KEY,
-# CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID.
+# CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID et SITE_TOKEN.
 # Requirements: pre-release created by release.yml, secrets APT_GPG_KEY,
-# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+# CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and SITE_TOKEN.
 
 name: Promote
 
@@ -88,6 +88,26 @@ jobs:
         run: |
           gh release edit "$TAG" --prerelease=false --latest
           gh release view "$TAG" --json url --jq '"Release publiée : " + .url'
+
+      # Le site affiche la version de la release « latest » : sans cet appel, il
+      # garderait l'ancienne jusqu'à sa reconstruction planifiée (toutes les 6 h).
+      # The site shows the version of the "latest" release: without this call it
+      # would keep the old one until its scheduled rebuild (every 6 hours).
+      - name: Prévenir le site
+        env:
+          SITE_TOKEN: ${{ secrets.SITE_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "$SITE_TOKEN" ]; then
+            echo "SITE_TOKEN absent : le site se reconstruira à la prochaine passe planifiée"
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $SITE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Gogowwww/frp-manager-site/dispatches \
+            -d '{"event_type":"site"}'
+          echo "Site prévenu"
 
       - name: Récupérer les paquets .deb de la release
         run: |
