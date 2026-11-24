@@ -7,6 +7,7 @@ export default {
     label: 'Main navigation',
     dashboard: 'Dashboard',
     tunnels: 'Ports',
+    clients: 'Clients',
     firewall: 'Firewall',
     logs: 'Logs',
     settings: 'Settings',
@@ -309,6 +310,25 @@ export default {
       stcp: 'Private port: only reachable by machines that have the key (visitors).',
       xtcp: 'Peer-to-peer private port: the connection skips the server when possible.',
     },
+  },
+
+  clients: {
+    title: 'Clients',
+    description: 'The frpc connected to this frps server, and the ports each one hosts.',
+    list: 'Connections',
+    countLine: '{online} of {total} online',
+    col: { client: 'Client', address: 'Address', version: 'Version', ports: 'Hosted ports', last: 'Last connection' },
+    online: 'online',
+    offline: 'offline',
+    noPorts: 'no port',
+    privatePort: 'no public port (stcp, xtcp)',
+    protocol: '{protocol} protocol',
+    emptyTitle: 'No client',
+    emptyText: 'Clients appear as soon as an frpc connects to this frps.',
+    noFrpsTitle: 'No frps server',
+    noFrpsText: 'This page lists the clients of the frps servers installed on this machine.',
+    unavailableTitle: 'Clients unavailable',
+    ago: { s: '{n} s ago', m: '{n} min ago', h: '{n} h ago', d: '{n} d ago' },
   },
 
   firewall: {

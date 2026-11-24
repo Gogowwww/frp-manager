@@ -10,13 +10,14 @@ import { h, button, openDialog, callout } from './ui.js';
 import { registerPage, startRouter, navigate } from './router.js';
 import dashboard from './pages/dashboard.js';
 import tunnels from './pages/tunnels.js';
+import clients from './pages/clients.js';
 import firewall from './pages/firewall.js';
 import logs from './pages/logs.js';
 import settings from './pages/settings.js';
 
 // Configuration, notifications, mises à jour, comptes et connexion unique sont
 // des sections de Réglages
-const PAGES = [dashboard, tunnels, firewall, logs, settings];
+const PAGES = [dashboard, tunnels, clients, firewall, logs, settings];
 const canOpen = (page) => !page.perm || can(page.perm);
 
 const WELCOME_KEY = 'frpMgrWelcomeSeen';
@@ -35,12 +36,13 @@ function setupShell() {
   });
 
   // Navigation : pages permises au compte connecté ; Ports seulement s'il existe
-  // un frpc réellement utilisé, Pare-feu seulement s'il existe un frps réellement
-  // utilisé ; pastille de mise à jour
+  // un frpc réellement utilisé, Clients et Pare-feu seulement s'il existe un frps
+  // réellement utilisé ; pastille de mise à jour
   // État calculé une fois par lien : il n'est réécrit que s'il change
   // State computed once per link: it is only rewritten when it changes
   const inUse = {
     ports: () => store.ready && usedFrpcIds().length > 0,
+    clients: () => store.ready && usedFrpsIds().length > 0,
     firewall: () => store.ready && usedFrpsIds().length > 0,
   };
   store.subscribe(() => {

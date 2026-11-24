@@ -7,6 +7,7 @@ export default {
     label: '主导航',
     dashboard: '仪表盘',
     tunnels: '端口',
+    clients: '客户端',
     firewall: '防火墙',
     logs: '日志',
     settings: '设置',
@@ -309,6 +310,25 @@ export default {
       stcp: '私有端口：仅持有密钥的机器（访问者）可访问。',
       xtcp: '点对点私有端口：可能时连接不经过服务器。',
     },
+  },
+
+  clients: {
+    title: '客户端',
+    description: '连接到此 frps 服务器的 frpc，以及各自托管的端口。',
+    list: '连接',
+    countLine: '{online} / {total} 在线',
+    col: { client: '客户端', address: '地址', version: '版本', ports: '托管端口', last: '最近连接' },
+    online: '在线',
+    offline: '离线',
+    noPorts: '无端口',
+    privatePort: '无公网端口（stcp、xtcp）',
+    protocol: '协议 {protocol}',
+    emptyTitle: '暂无客户端',
+    emptyText: '当 frpc 连接到此 frps 后，客户端会显示在这里。',
+    noFrpsTitle: '没有 frps 服务器',
+    noFrpsText: '此页面列出本机上所有 frps 服务器的客户端。',
+    unavailableTitle: '客户端不可用',
+    ago: { s: '{n} 秒前', m: '{n} 分钟前', h: '{n} 小时前', d: '{n} 天前' },
   },
 
   firewall: {

@@ -243,6 +243,42 @@ func init() {
 		c.JSON(res)
 	}))
 
+	// Clients connectés à chaque frps, et les ports que chacun héberge
+	// Clients connected to each frps, and the ports each one hosts
+	route("GET /api/clients", "api_clients", perm(P("ports.view"), func(c *Ctx) {
+		detectFrp(false)
+		allowed := userInstances(c.currentUser())
+		out := []J{}
+		for _, inst := range frpsInstances() {
+			if allowed != nil && !allowed[inst.ID] {
+				continue
+			}
+			entry := J{"iid": inst.ID, "reachable": false, "error": "", "clients": []frpsClient{}}
+			text, ok := frpsConfigText(inst)
+			var conf map[string]any
+			if !ok || toml.Unmarshal([]byte(text), &conf) != nil || conf == nil {
+				entry["error"] = c.M("Configuration illisible.", "Unreadable configuration.")
+				out = append(out, entry)
+				continue
+			}
+			clients, err := frpsClients(conf)
+			if err != nil {
+				if errors.Is(err, errNoDashboard) {
+					entry["error"] = c.M("Tableau de bord frps désactivé : ajoutez un bloc [webServer] à sa configuration pour voir ses clients.",
+						"frps dashboard disabled: add a [webServer] block to its configuration to see its clients.")
+				} else {
+					entry["error"] = c.M("API du tableau de bord frps injoignable : ", "frps dashboard API unreachable: ") + short(err.Error(), 160)
+				}
+				out = append(out, entry)
+				continue
+			}
+			entry["reachable"] = true
+			entry["clients"] = clients
+			out = append(out, entry)
+		}
+		c.JSON(J{"ok": true, "frps": out})
+	}))
+
 	// Active, à la demande, l'API d'administration de frpc (127.0.0.1, mot de
 	// passe tiré au hasard) pour lire les ports attribués par frps ; prise en
 	// compte au prochain redémarrage de frpc.

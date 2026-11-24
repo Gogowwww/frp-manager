@@ -755,6 +755,13 @@ legend.fieldset-title + * { clear: both; }
 .fw-as { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fw-cell-menu { width: 1%; text-align: right; padding-top: 4px !important; padding-bottom: 4px !important; }
 .fw-table td.mono, .fw-table td .mono { white-space: nowrap; }
+
+/* ── Clients : qui est connecté, et les ports que chacun héberge ─────────── */
+.client-table td { vertical-align: top; }
+.client-name { font-weight: 600; }
+.client-id { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.client-state { display: flex; align-items: center; gap: 6px; margin-top: 4px; color: var(--accent); }
+.client-ports { display: flex; flex-wrap: wrap; gap: 4px; }
 .fw-test-form { display: flex; gap: var(--space-2); max-width: 420px; }
 .fw-verdicts { list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .fw-verdicts li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
