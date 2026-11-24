@@ -1330,7 +1330,6 @@ export const HTTPS_PLUGIN_TYPES = ['https2http', 'https2https'];
 const PROXY_KEYS = new Set([
   'name', 'type', 'localIP', 'localPort', 'remotePort', 'customDomains', 'secretKey',
   'transport.useCompression', 'transport.useEncryption', 'transport.proxyProtocolVersion',
-  'annotations.user',
 ]);
 const VISITOR_KEYS = new Set(['name', 'type', 'serverName', 'secretKey', 'bindAddr', 'bindPort']);
 
@@ -1531,9 +1530,6 @@ export function proxyFromBlock(block) {
     certCrt: managed ? v['plugin.crtPath'] || '' : '',
     certKey: managed ? v['plugin.keyPath'] || '' : '',
     certHost: managed ? v['plugin.hostHeaderRewrite'] || '' : '',
-    // Identifiant de l'utilisateur du tunnel, gardé dans l'annotation frp « user »
-    // Tunnel user identifier, kept in the frp "user" annotation
-    user: v['annotations.user'] || '',
     extras: extrasOf(block, PROXY_KEYS).filter(([k]) => !(managed && pluginKeys.includes(k))),
     comments: block.comments || [],
     notes: block.notes || {},
@@ -1598,7 +1594,7 @@ export function randomPort() {
 export function newProxy() {
   return {
     uid: uid(), name: '', type: 'tcp', localIP: '127.0.0.1', localPort: '', remotePort: '',
-    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, user: '', extras: [], comments: [],
+    domains: '', secretKey: '', proxyProtocol: '', compression: false, encryption: false, extras: [], comments: [],
     certPlugin: '', certCrt: '', certKey: '', certHost: '',
   };
 }
@@ -1648,7 +1644,6 @@ export function generateProxy(p) {
   const L = ranged
     ? [head, '[[proxies]]', `name = ${str(`${p.name}-${port}`)}`, `type = ${str(p.type)}`]
     : ['[[proxies]]', `name = ${str(p.name)}`, `type = ${str(p.type)}`];
-  if (p.user) L.push(`annotations.user = ${str(p.user)}`);
   if (p.localIP) L.push(`localIP = ${str(unbracket(p.localIP))}`);
   if (ranged) L.push(`localPort = ${port}`);
   else if (p.localPort) L.push(`localPort = ${p.localPort}`);

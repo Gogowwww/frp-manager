@@ -22,7 +22,6 @@ import { importCertDialog, acmeCertDialog } from '../certs.js';
 
 const S = {
   iid: '',
-  filter: '', // recherche par identifiant d'utilisateur / search by user identifier
   baseText: '',
   serverAddr: '',
   // Identifiant de l'instance (clé frpc « user ») : frp en préfixe les noms de
@@ -67,7 +66,6 @@ export default {
     const ids = frpcIds();
     S.iid = ids.includes(params.iid) ? params.iid : ids[0] || '';
     S.snapshot = '';
-    S.filter = '';
     window.addEventListener('beforeunload', beforeUnload);
 
     const actions = [];
@@ -78,10 +76,6 @@ export default {
       sel.addEventListener('change', async () => {
         if (isDirty() && !(await confirmLeave())) { sel.value = S.iid; return; }
         S.iid = sel.value;
-        // Le filtre porte sur les identifiants de l'instance quittée
-        // The filter applies to the identifiers of the instance being left
-        S.filter = '';
-        if (S.els.filter) S.els.filter.value = '';
         replaceParams({ iid: S.iid });
         load();
       });
@@ -100,18 +94,8 @@ export default {
 
     S.els.statusHint = h('div');
     S.els.instanceUser = h('div');
-    // Filtre par identifiant : la barre reste en place pendant la frappe, seules
-    // les lignes sont redessinées
-    // Filter by identifier: the bar stays in place while typing, only the rows
-    // are redrawn
-    S.els.filter = input({
-      type: 'search', placeholder: t('tunnels.filterPlaceholder'), 'aria-label': t('tunnels.filterPlaceholder'),
-    });
-    S.els.filter.addEventListener('input', () => { S.filter = S.els.filter.value.trim(); renderProxies(); });
-    S.els.filterBar = h('div', { class: 'toolbar', hidden: true },
-      h('div', { class: 'input-affix' }, icon('search'), S.els.filter));
     S.els.proxyList = h('div');
-    S.els.proxies = h('div', { class: 'card' }, S.els.filterBar, S.els.proxyList);
+    S.els.proxies = h('div', { class: 'card' }, S.els.proxyList);
     S.els.visitors = h('div', { class: 'card' });
     S.els.savebar = saveBar({
       onDiscard: discard,
@@ -173,8 +157,8 @@ async function load(discarded = false) {
   // Page quittée pendant la requête : plus rien à redessiner
   // Page left during the request: nothing left to redraw
   if (!S.els.proxyList) return;
-  // Seul le conteneur des lignes est remplacé : la barre de filtre reste en place
-  // Only the rows container is replaced: the filter bar stays in place
+  // Seul le conteneur des lignes est remplacé à chaque chargement
+  // Only the rows container is replaced on each load
   S.els.proxyList.replaceChildren(h('div', { class: 'skeleton', style: { height: '120px', margin: '16px' } }));
   S.baseFix = false;
   try {
@@ -283,13 +267,6 @@ function stateOf(item, list) {
 function renderProxies() {
   const host = S.els.proxyList;
   if (!host) return;
-  // Le filtre ne s'affiche qu'une fois un identifiant saisi quelque part ; le
-  // retirer du dernier tunnel vide aussi la recherche en cours
-  // The filter only shows once an identifier has been set somewhere; removing it
-  // from the last tunnel also clears the current search
-  const anyUser = S.proxies.some((p) => p.user);
-  if (!anyUser && S.filter) clearFilter();
-  S.els.filterBar.hidden = !anyUser;
   if (!S.proxies.length) {
     host.replaceChildren(emptyState({
       iconName: 'tunnels', title: t('tunnels.emptyTitle'), text: t('tunnels.emptyText'),
@@ -297,23 +274,7 @@ function renderProxies() {
     }));
     return;
   }
-  const q = S.filter.toLowerCase();
-  const shown = q ? S.proxies.filter((p) => (p.user || '').toLowerCase().includes(q)) : S.proxies;
-  if (!shown.length) {
-    host.replaceChildren(emptyState({
-      iconName: 'search', title: t('tunnels.filterEmptyTitle'), text: t('tunnels.filterEmptyText'),
-      actions: [button(t('tunnels.filterClear'), { onClick: clearFilter })],
-    }));
-    return;
-  }
-  host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, shown.map(proxyRow)));
-}
-
-/** Vide le filtre par identifiant et redessine la liste.
- *  Clears the identifier filter and redraws the list. */
-function clearFilter() {
-  S.filter = '';
-  if (S.els.filter) S.els.filter.value = '';
+  host.replaceChildren(h('ul', { class: 'rows', 'aria-label': t('tunnels.title') }, S.proxies.map(proxyRow)));
 }
 
 /** Port attribué par le serveur : comment le connaître quand l'API de frpc manque. */
@@ -492,8 +453,7 @@ function proxyRow(p) {
   },
   h('div', { class: 'row-name' },
     h('span', { title: halves.length > 1 ? halves.map((x) => x.name).join(', ') : null }, p.name || t('tunnels.unnamed')),
-    halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase())),
-    p.user ? badge(p.user, 'user', { title: t('tunnels.fields.user') }) : null),
+    halves.map((x) => h('span', { class: 'badge badge-mono badge-outline' }, x.type.toUpperCase()))),
   route(t('tunnels.public'), publicEndpoint(p), t('tunnels.local'), joinHostPort(p.localIP || '127.0.0.1', p.localPort || '?'),
     hasSecret(p.type) || (serverPicked(p) && !live?.remote_addr) || (hasDomains(p.type) && !p.domains), publicCopyValue(p)),
   h('div', { class: 'row-flags' }, flags),
@@ -629,11 +589,6 @@ async function editProxy(existing) {
     size: 'lg',
     build: ({ close }) => {
       const name = input({ value: draft.name, placeholder: t('tunnels.fields.namePlaceholder'), mono: true, autocomplete: 'off' });
-      // Identifiant de l'utilisateur du tunnel : annotation frp, reprise dans la
-      // liste et sur le tableau de bord de frps
-      // Tunnel user identifier: frp annotation, shown in the list and on the
-      // frps dashboard
-      const user = input({ value: draft.user, placeholder: t('tunnels.fields.userPlaceholder'), maxlength: '64' });
       const typeHint = h('p', { class: 'field-hint' });
       // « TCP + UDP » à la création, et pour une paire déjà regroupée (elle peut
       // redevenir un seul type) : pas pour un tunnel seul, que cela renommerait
@@ -750,7 +705,6 @@ async function editProxy(existing) {
       }
 
       const nameField = field({ label: t('tunnels.fields.name'), hint: t('tunnels.fields.nameHint'), tomlKey: 'name', control: name });
-      const userField = field({ label: t('tunnels.fields.user'), hint: t('tunnels.fields.userHint'), tomlKey: 'annotations.user', optional: true, control: user });
       const remoteField = field({ label: t('tunnels.fields.remotePort'), hint: t('tunnels.fields.remotePortHint', { server: S.serverAddr || t('tunnels.server') }), tomlKey: 'remotePort', control: remotePort });
       const domainsField = field({ label: t('tunnels.fields.domains'), hint: t('tunnels.fields.domainsHint'), tomlKey: 'customDomains', control: domains });
       const secretField = field({ label: t('tunnels.fields.secret'), hint: t('tunnels.fields.secretHint'), tomlKey: 'secretKey', control: secret });
@@ -862,7 +816,6 @@ async function editProxy(existing) {
         const keepCert = tp === 'https' && certSelect.value === '__existing';
         Object.assign(draft, values, {
           type: tp,
-          user: user.value.trim(),
           domains: domains.value.trim(),
           secretKey: secret.input.value,
           proxyProtocol: ppv.value,
@@ -883,7 +836,6 @@ async function editProxy(existing) {
       return {
         body: [h('form', { id: formId, class: 'form-stack', onSubmit: submit, novalidate: true },
           nameField,
-          userField,
           h('div', { class: 'field' },
             h('span', { class: 'field-label' }, t('tunnels.fields.type'), h('span', { class: 'field-key' }, 'type')),
             type, typeHint),
