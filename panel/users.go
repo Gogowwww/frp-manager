@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -168,6 +169,25 @@ func cleanUsername(raw any) string {
 	return ""
 }
 
+// displayNameMax : longueur maximale du nom affiché (comme celui venu d'OpenID Connect).
+// displayNameMax: maximum length of the display name (like the one from OpenID Connect).
+const displayNameMax = 64
+
+// cleanDisplayName : nom affiché saisi par le compte ; "" l'efface.
+// cleanDisplayName: display name typed by the account; "" clears it.
+func cleanDisplayName(raw any) (string, bool) {
+	name := strings.TrimSpace(pyStr(raw))
+	if utf8.RuneCountInString(name) > displayNameMax {
+		return "", false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return "", false
+		}
+	}
+	return name, true
+}
+
 func cleanEmail(raw any) string {
 	if raw == nil {
 		return ""
@@ -240,7 +260,76 @@ func init() {
 			return
 		}
 		c.startSession(str(u, "id", "")) // cette session reste ouverte, les autres sont déconnectées
+		c.closeOtherSessions(str(u, "id", ""))
 		c.JSON(J{"ok": true, "msg": c.M("Mot de passe modifié.", "Password changed.")})
+	}))
+
+	// Nom affiché : chaque compte règle le sien (barre latérale, listes).
+	// Display name: each account sets its own (sidebar, lists).
+	route("PUT /api/me", "api_me_update", loginRequired(func(c *Ctx) {
+		u := c.currentUser()
+		name, ok := cleanDisplayName(c.Body()["display_name"])
+		if !ok {
+			c.Fail(http.StatusBadRequest, c.M(fmt.Sprintf("Nom affiché invalide (%d caractères au plus, sans caractère de contrôle).", displayNameMax),
+				fmt.Sprintf("Invalid display name (%d characters at most, no control character).", displayNameMax)))
+			return
+		}
+		uid := str(u, "id", ownerID)
+		var err error
+		if uid == ownerID {
+			_, err = cfgUpdate(Cfg{"display_name": name})
+		} else {
+			err = usersUpdate(func(users map[string]any) {
+				if rec, ok := users[uid].(map[string]any); ok {
+					rec["display_name"] = name
+				}
+			})
+		}
+		if err != nil {
+			c.Fail(http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.userLoaded = false
+		c.user = nil
+		c.JSON(J{"ok": true, "user": meView(allUsers()[uid]), "msg": c.M("Nom affiché enregistré.", "Display name saved.")})
+	}))
+
+	// Sessions du compte : les appareils connectés, et la révocation de l'un d'eux.
+	// The account's sessions: connected devices, and revocation of one of them.
+	route("GET /api/me/sessions", "api_me_sessions", loginRequired(func(c *Ctx) {
+		uid := str(c.currentUser(), "id", ownerID)
+		c.JSON(J{"ok": true, "sessions": userSessions(uid, c.sess.get("sid"))})
+	}))
+
+	route("DELETE /api/me/sessions/{sid}", "api_me_session_revoke", loginRequired(func(c *Ctx) {
+		uid := str(c.currentUser(), "id", ownerID)
+		sid := c.Param("sid")
+		if sid == c.sess.get("sid") {
+			c.Fail(http.StatusBadRequest, c.M("C'est la session de cet appareil : utilisez « Se déconnecter ».",
+				"This is this device's session: use \"Sign out\"."))
+			return
+		}
+		if !sessionOpen(sid, uid) {
+			c.Fail(http.StatusNotFound, c.M("Session inconnue ou déjà fermée.", "Unknown or already closed session."))
+			return
+		}
+		if err := closeSession(sid); err != nil {
+			c.Fail(http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.JSON(J{"ok": true, "msg": c.M("Session fermée.", "Session closed.")})
+	}))
+
+	route("DELETE /api/me/sessions", "api_me_sessions_close", loginRequired(func(c *Ctx) {
+		uid := str(c.currentUser(), "id", ownerID)
+		closed := c.closeOtherSessions(uid)
+		msg := c.M("Aucune autre session ouverte.", "No other open session.")
+		if closed == 1 {
+			msg = c.M("1 autre session fermée.", "1 other session closed.")
+		} else if closed > 1 {
+			msg = c.M(fmt.Sprintf("%d autres sessions fermées.", closed), fmt.Sprintf("%d other sessions closed.", closed))
+		}
+		c.JSON(J{"ok": true, "count": closed, "msg": msg})
 	}))
 
 	route("GET /api/users", "api_users_list", perm(P("users.manage"), func(c *Ctx) {
@@ -430,6 +519,16 @@ func init() {
 			c.Fail(http.StatusInternalServerError, err.Error())
 			return
 		}
+		// Mot de passe changé ou compte désactivé : ses sessions se retirent du
+		// registre (le changement de mot de passe les ferme déjà, voir
+		// sessionFingerprint).
+		// Password changed or account disabled: its sessions leave the registry
+		// (a password change already closes them, see sessionFingerprint).
+		if _, changed := patch["password_hash"]; changed || !boolv(patch, "enabled", true) {
+			if _, err := closeUserSessions(uid, ""); err != nil {
+				log.Printf("[WARN] %s", systemLang().M("Sessions non fermées : "+err.Error(), "Sessions not closed: "+err.Error()))
+			}
+		}
 		c.JSON(J{"ok": true, "user": userView(allUsers()[uid]), "msg": c.M("Compte modifié.", "Account updated.")})
 	}))
 
@@ -446,6 +545,11 @@ func init() {
 		if err := usersUpdate(func(users map[string]any) { delete(users, uid) }); err != nil {
 			c.Fail(http.StatusInternalServerError, err.Error())
 			return
+		}
+		// Le compte n'existe plus : ses sessions quittent le registre.
+		// The account is gone: its sessions leave the registry.
+		if _, err := closeUserSessions(uid, ""); err != nil {
+			log.Printf("[WARN] %s", systemLang().M("Sessions non fermées : "+err.Error(), "Sessions not closed: "+err.Error()))
 		}
 		c.JSON(J{"ok": true, "msg": c.M("Compte supprimé.", "Account deleted.")})
 	}))

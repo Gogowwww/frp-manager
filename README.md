@@ -45,7 +45,7 @@ Not ready to install? The [live demo](https://frp-manager.org/demo/) runs the re
 - **Logs**: systemd journal, log file, output of the frps/frpc run by the panel, or Docker container, streamed live (WebSocket, SSE fallback), with a filter.
 - **Notifications**: webhooks to Discord, Slack, Telegram, ntfy, Gotify or any URL (JSON template, HMAC signature) for stopped instances, locked-out addresses and updates.
 - **Updates**: one-click frp install with SHA-256 verification, manual archive upload, one-click panel update.
-- **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included.
+- **Users and permissions**: several accounts, each with a role (administrator, operator, viewer) or a custom set of permissions, optionally limited to some instances; changes apply at once, open sessions included. Each account sets its own display name and sees its open sessions, to revoke one or sign out all the others.
 - **Single sign-on**: OpenID Connect (Keycloak, Authentik, Authelia, Zitadel, Google, Microsoft Entra…), with accounts prepared by email or created on first sign-in, and roles taken from the provider's groups.
 - **Passkeys**: sign in without a password, with your phone, computer or security key (fingerprint, face, PIN); several passkeys per account.
 - **Interface**: light and dark themes, desktop and mobile, in English, French and Simplified Chinese (picked from your browser, changeable in Settings).

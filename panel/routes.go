@@ -530,7 +530,7 @@ func init() {
 		safe := J{}
 		for k, v := range cfg() {
 			switch k {
-			case "password_hash", "secret_key", "webhooks", "users", "oidc", "firewall", ownerPasskeysKey:
+			case "password_hash", "secret_key", "webhooks", "users", "oidc", "firewall", ownerPasskeysKey, "sessions":
 			default:
 				safe[k] = v
 			}
@@ -662,6 +662,7 @@ func init() {
 		}
 		if newPw {
 			c.startSession(ownerID) // cette session reste ouverte, les autres sont déconnectées
+			c.closeOtherSessions(ownerID)
 		}
 		if truthy(patch["anonymous_stats"]) {
 			// Premier signal tout de suite, sans attendre la boucle horaire

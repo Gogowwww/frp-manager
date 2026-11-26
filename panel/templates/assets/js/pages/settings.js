@@ -34,20 +34,49 @@ const account = {
   mount(host) {
     host.append(profileCard(), store.me?.owner ? ownerCard() : passwordCard());
     if (store.me?.source !== 'oidc') host.append(passkeysCard());
+    host.append(sessionsCard());
   },
 };
 
-/** Identifiant, rôle et instances du compte connecté. */
+const DISPLAY_NAME_MAX = 64;
+
+/** Identifiant, nom affiché, rôle et instances du compte connecté. */
 function profileCard() {
   const me = store.me || {};
   const role = t(`users.roles.${me.role || 'viewer'}`);
   const cell = (label, value) => h('div', { class: 'version-cell' }, h('dt', null, label), h('dd', { title: value }, value));
+  // Compte OpenID Connect : le nom vient du fournisseur d'identité et revient à
+  // chaque connexion, il n'est donc pas modifiable ici.
+  // OpenID Connect account: the name comes from the identity provider and is
+  // restored on every sign-in, so it cannot be edited here.
+  const oidc = me.source === 'oidc';
+  const name = input({ value: me.display_name || '', maxlength: DISPLAY_NAME_MAX, autocomplete: 'nickname' });
+  const saveBtn = button(t('common.save'), { variant: 'primary', type: 'submit', form: 'profile-form' });
+
+  async function submit(e) {
+    e.preventDefault();
+    await busy(saveBtn, async () => {
+      try {
+        const d = await api('/api/me', { method: 'PUT', body: { display_name: name.value.trim() } });
+        if (!d.ok) { toastResult(d); return; }
+        toast(d.msg, 'success');
+        store.set({ me: { ...store.me, ...d.user } });
+        name.value = d.user.display_name || '';
+      } catch (err) { toastError(err); }
+    });
+  }
+
   return card({
-    title: t('settings.account.profile'),
-    body: h('dl', { class: 'versions profile-cells' },
-      cell(t('settings.account.username'), me.display_name ? `${me.username} · ${me.display_name}` : me.username || '—'),
-      cell(t('settings.account.role'), me.owner ? `${role} · ${t('users.owner')}` : role),
-      cell(t('settings.account.instances'), me.instances === '*' || !me.instances ? t('users.allInstances') : me.instances.join(', '))),
+    title: t('settings.account.profile'), description: t('settings.account.profileDesc'),
+    body: [
+      h('dl', { class: 'versions profile-cells' },
+        cell(t('settings.account.username'), oidc && me.display_name ? `${me.username} · ${me.display_name}` : me.username || '—'),
+        cell(t('settings.account.role'), me.owner ? `${role} · ${t('users.owner')}` : role),
+        cell(t('settings.account.instances'), me.instances === '*' || !me.instances ? t('users.allInstances') : me.instances.join(', '))),
+      !oidc && h('form', { id: 'profile-form', class: 'form-stack', style: { marginTop: 'var(--space-4)' }, onSubmit: submit, novalidate: true },
+        field({ label: t('settings.account.displayName'), hint: t('settings.account.displayNameHint'), control: name })),
+    ],
+    foot: oidc ? null : [saveBtn],
   });
 }
 
@@ -245,6 +274,86 @@ function passkeysCard() {
     title: t('settings.passkeys.title'), description: t('settings.passkeys.desc'),
     body: [reason && callout({ type: 'neutral', compact: true, iconName: 'info', text: t(`settings.passkeys.unavailable.${reason}`) }), list],
     foot: [addBtn],
+  });
+}
+
+/** Nom lisible d'un navigateur d'après son User-Agent : « Chrome · Windows ». */
+function deviceName(ua) {
+  const browser = [['Edg/', 'Edge'], ['OPR/', 'Opera'], ['Firefox/', 'Firefox'], ['Chrome/', 'Chrome'], ['Safari/', 'Safari']]
+    .find(([k]) => ua.includes(k));
+  const system = [['Windows', 'Windows'], ['Android', 'Android'], ['iPhone', 'iOS'], ['iPad', 'iPadOS'],
+    ['Mac OS X', 'macOS'], ['Linux', 'Linux']].find(([k]) => ua.includes(k));
+  if (!browser && !system) return t('settings.account.unknownDevice');
+  return [browser?.[1], system?.[1]].filter(Boolean).join(' · ');
+}
+
+/** Sessions ouvertes du compte : appareils connectés, révocation de l'un d'eux. */
+function sessionsCard() {
+  const list = h('div', null, h('p', { class: 'muted' }, t('common.loading')));
+  const closeBtn = button(t('settings.account.closeOthers'), { iconName: 'logout', onClick: closeOthers });
+  const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString(getLocale()) : t('users.never'));
+  let items = [];
+
+  async function load() {
+    try {
+      const d = await apiOk('/api/me/sessions');
+      items = d.sessions || [];
+      render();
+    } catch (e) {
+      list.replaceChildren(callout({ type: 'danger', title: t('settings.loadError'), text: e.message }));
+    }
+  }
+
+  function render() {
+    closeBtn.disabled = items.length < 2;
+    if (!items.length) {
+      list.replaceChildren(h('p', { class: 'muted' }, t('settings.account.sessionsEmpty')));
+      return;
+    }
+    list.replaceChildren(h('ul', { class: 'rows' }, items.map((s) => {
+      const device = deviceName(s.ua || '');
+      return h('li', { class: 'row us-row' },
+        h('div', { class: 'row-name' }, h('span', { title: s.ua || '' }, device),
+          s.current && badge(t('settings.account.thisDevice'), 'success')),
+        h('div', { class: 'fw-detail' },
+          h('span', null, h('small', null, t('settings.account.address')), h('span', { title: s.ip || '' }, s.ip || '—')),
+          h('span', null, h('small', null, t('settings.account.lastSeen')), h('span', null, when(s.last_seen)))),
+        h('div', { class: 'row-actions' },
+          !s.current && button('', { variant: 'ghost-danger', size: 'sm', iconName: 'logout',
+            title: t('settings.account.revoke'), onClick: () => revoke(s, device) })));
+    })));
+  }
+
+  async function revoke(s, device) {
+    const ok = await confirmDialog({
+      title: t('settings.account.revokeTitle'), message: t('settings.account.revokeText', { device }),
+      confirmLabel: t('settings.account.revoke'), danger: true,
+    });
+    if (!ok) return;
+    try {
+      const d = await api(`/api/me/sessions/${encodeURIComponent(s.id)}`, { method: 'DELETE' });
+      toastResult(d);
+      if (d.ok) load();
+    } catch (err) { toastError(err); }
+  }
+
+  async function closeOthers() {
+    const ok = await confirmDialog({
+      title: t('settings.account.closeOthersTitle'), message: t('settings.account.closeOthersText'),
+      confirmLabel: t('settings.account.closeOthers'), danger: true,
+    });
+    if (!ok) return;
+    try {
+      const d = await api('/api/me/sessions', { method: 'DELETE' });
+      toastResult(d);
+      if (d.ok) load();
+    } catch (err) { toastError(err); }
+  }
+
+  load();
+  return card({
+    title: t('settings.account.sessions'), description: t('settings.account.sessionsDesc'),
+    body: list, foot: [closeBtn],
   });
 }
 

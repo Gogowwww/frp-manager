@@ -88,6 +88,9 @@ func defaultManagerConfig() Cfg {
 		// et connexion unique OpenID Connect
 		"users": Cfg{},
 		"oidc":  Cfg{},
+		// Sessions ouvertes (sessions.go) : identifiant → compte, adresse et navigateur
+		// Open sessions (sessions.go): identifier → account, address and browser
+		"sessions": Cfg{},
 	}
 }
 

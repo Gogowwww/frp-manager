@@ -31,6 +31,10 @@ function setupShell() {
   document.querySelectorAll('.nav-link[data-route]').forEach((a) => a.addEventListener('click', closeNav));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
 
+  // Nom du compte : mène à Réglages → Mon compte (profil, mot de passe, sessions)
+  // Account name: leads to Settings → My account (profile, password, sessions)
+  document.getElementById('sidebar-user').addEventListener('click', closeNav);
+
   document.getElementById('logout').addEventListener('click', async () => {
     try { await api('/api/logout', { method: 'POST' }); } finally { location.href = '/login'; }
   });
@@ -55,7 +59,7 @@ function setupShell() {
     who.hidden = !store.me;
     if (store.me) {
       who.textContent = store.me.display_name || store.me.username;
-      who.title = t(`users.roles.${store.me.role}`);
+      who.title = t('nav.account');
     }
     const upd = store.updates.frp || store.updates.panel;
     document.getElementById('updates-badge').hidden = !upd;

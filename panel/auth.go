@@ -325,8 +325,8 @@ func isFullAdmin(u User) bool {
 
 func ownerUser() User {
 	c := cfg()
-	return User{"id": ownerID, "username": str(c, "username", "admin"), "source": "local",
-		"password_hash": str(c, "password_hash", ""), "enabled": true,
+	return User{"id": ownerID, "username": str(c, "username", "admin"), "display_name": str(c, "display_name", ""),
+		"source": "local", "password_hash": str(c, "password_hash", ""), "enabled": true,
 		"role": "admin", "instances": "*", "owner": true}
 }
 
@@ -426,10 +426,36 @@ func (c *Ctx) currentUser() User {
 		subtle.ConstantTimeCompare([]byte(c.sess.get("pwfp")), []byte(sessionFingerprint(u))) == 1 {
 		// Session ouverte avec une passkey : elle se ferme quand la passkey est supprimée
 		if pk := c.sess.get("pk"); pk == "" || passkeyByID(u, pk) != nil {
-			c.user = u
+			if c.sessionValid(u) {
+				c.user = u
+			}
 		}
 	}
 	return c.user
+}
+
+// sessionValid : la session est toujours ouverte dans le registre du compte. Une
+// session d'avant le registre (cookie sans identifiant) y entre à sa première
+// requête, pour ne pas déconnecter les panels mis à jour.
+// sessionValid: the session is still open in the account's registry. A session
+// from before the registry (cookie without identifier) enters it on its first
+// request, so updated panels do not sign everyone out.
+func (c *Ctx) sessionValid(u User) bool {
+	uid := str(u, "id", ownerID)
+	sid := c.sess.get("sid")
+	if sid == "" {
+		sid = newSessionID()
+		c.sess.set("sid", sid)
+		if err := registerSession(uid, sid, c.RemoteIP(), c.R.UserAgent()); err != nil {
+			log.Printf("[WARN] %s", systemLang().M("Session non enregistrée : "+err.Error(), "Session not registered: "+err.Error()))
+		}
+		return true
+	}
+	if !sessionOpen(sid, uid) {
+		return false
+	}
+	touchSession(sid)
+	return true
 }
 
 // startSession : nouvelle session après authentification (pas de fixation). Le
@@ -441,6 +467,15 @@ func (c *Ctx) startSession(uid string) {
 	c.sess.set("authenticated", true)
 	c.sess.set("uid", uid)
 	c.sess.set("pwfp", sessionFingerprint(allUsers()[uid]))
+	// Identifiant de session : il entre dans le registre, qui permet de lister et
+	// de révoquer les appareils connectés (sessions.go).
+	// Session identifier: it enters the registry, which lists and revokes the
+	// connected devices (sessions.go).
+	sid := newSessionID()
+	c.sess.set("sid", sid)
+	if err := registerSession(uid, sid, c.RemoteIP(), c.R.UserAgent()); err != nil {
+		log.Printf("[WARN] %s", systemLang().M("Session non enregistrée : "+err.Error(), "Session not registered: "+err.Error()))
+	}
 	if tok == "" {
 		tok = tokenURLSafe(32)
 	}
@@ -685,6 +720,13 @@ func init() {
 	})
 
 	route("POST /api/logout", "api_logout", func(c *Ctx) {
+		// La session sort du registre : elle ne s'affiche plus dans « Sessions ».
+		// The session leaves the registry: it no longer shows in "Sessions".
+		if sid := c.sess.get("sid"); sid != "" {
+			if err := closeSession(sid); err != nil {
+				log.Printf("[WARN] %s", systemLang().M("Session non fermée : "+err.Error(), "Session not closed: "+err.Error()))
+			}
+		}
 		c.sess.clear()
 		c.JSON(J{"ok": true})
 	})
