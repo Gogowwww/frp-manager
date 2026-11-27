@@ -6,13 +6,15 @@
 # Pré-release : pré-release GitHub (un panel installé en pré-release suit les
 # pré-releases) ; image :X.Y.Z et :dev (:latest ne bouge pas) pour amd64, arm64
 # et armv7 ; paquets .deb joints à la release et publiés dans le canal
-# « testing » du dépôt APT (apt.frp-manager.org). promote.yml la rend
-# ensuite définitive telle quelle, sans reconstruire.
+# « testing » du dépôt APT (apt.frp-manager.org) ; site prévenu, pour qu'il
+# reconstruise /demo/pre/. promote.yml la rend ensuite définitive telle quelle,
+# sans reconstruire.
 # Pre-release: GitHub pre-release (a panel installed as pre-release follows
 # pre-releases); image :X.Y.Z and :dev (:latest does not move) for amd64, arm64
 # and armv7; .deb packages attached to the release and published in the
-# "testing" channel of the APT repository (apt.frp-manager.org). promote.yml then
-# makes it final as is, without rebuilding.
+# "testing" channel of the APT repository (apt.frp-manager.org); site notified,
+# so that it rebuilds /demo/pre/. promote.yml then makes it final as is,
+# without rebuilding.
 #
 # Fichiers joints : frp-manager.zip, sa somme frp-manager.zip.sha256 (vérifiée
 # par la mise à jour du panel), et les .deb.
@@ -158,6 +160,26 @@ jobs:
           gh release create "$TAG" --verify-tag --prerelease --latest=false \
             --title "$(jq -r .name notes.json)" --notes-file notes.md \
             dist/frp-manager.zip dist/frp-manager.zip.sha256 dist/deb/*.deb
+
+      # Le site affiche la pré-release dans /demo/pre/ : sans cet appel, la vue
+      # resterait l'ancienne jusqu'à sa reconstruction planifiée (toutes les 6 h).
+      # The site shows the pre-release in /demo/pre/: without this call, the view
+      # would keep the old one until its scheduled rebuild (every 6 hours).
+      - name: Prévenir le site
+        env:
+          SITE_TOKEN: ${{ secrets.SITE_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "$SITE_TOKEN" ]; then
+            echo "SITE_TOKEN absent : le site se reconstruira à la prochaine passe planifiée"
+            exit 0
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $SITE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Gogowwww/frp-manager-site/dispatches \
+            -d '{"event_type":"site"}'
+          echo "Site prévenu"
 
       # wrangler (envoi vers Cloudflare Pages) demande Node.js 22 ou plus
       # wrangler (upload to Cloudflare Pages) needs Node.js 22 or later
