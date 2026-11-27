@@ -227,6 +227,11 @@ code, kbd, pre { font-family: var(--font-mono); font-size: .92em; }
 .sidebar {
   position: sticky; top: 0; height: 100vh;
   display: flex; flex-direction: column;
+  /* Menu plus haut que l'écran (téléphone en paysage) : la barre défile pour
+     garder les derniers liens accessibles. */
+  /* Menu taller than the screen (landscape phone): the sidebar scrolls to keep
+     the last links reachable. */
+  overflow-y: auto;
   background: var(--surface);
   border-right: 1px solid var(--border);
   padding: var(--space-4) var(--space-3);
